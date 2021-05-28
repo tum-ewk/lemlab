@@ -135,13 +135,13 @@ automatically check if such a prosumer exists. If that is the case, it will be p
 most devices will be plotted. The second optional argument *id_user* allows the user to specify which exact user is to
 be plotted. The value can either be inserted as integer if numeric values are used as user IDs or otherwise as string.
 
-.. image:: images/household_power.png
+.. image:: images/household_power_(20).png
     :width: 400px
     :align: center
     :height: 300px
     :alt: Power profile of household
 
-.. image:: images/household_finance.png
+.. image:: images/household_finance_(20).png
     :width: 400px
     :align: center
     :height: 300px
@@ -157,11 +157,6 @@ Costs per type prosumer
 
 To be done once the exact information is decided on.
 
-.. image:: images/balance_per_type.png
-    :width: 400px
-    :align: center
-    :height: 300px
-    :alt: Specific costs per type of prosumer
 
 Creating your own plots
 -----------------------

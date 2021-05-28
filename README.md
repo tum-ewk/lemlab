@@ -1,7 +1,7 @@
 lemlab
 =======
 
-![Logo](./docs/images/lemlab_logo.png)
+![lemlab](./docs/images/lemlab_logo.png)
 
 An open-source tool for the agent-based development and testing of local energy market applications.
 
@@ -107,7 +107,17 @@ If using PyCharm, clone the repository to `./PyCharmProjects/lemlab/`
 
 Your installation was successful if you see plots similar to the following:
 
+![feeder flow](./docs/images/virtual_feeder_flow.png)
 
+![market clearing prices](./docs/images/mcp_ex_ante_da.png)
+
+![participant balances](./docs/images/balance_0.png)
+
+![prive vs. quality](./docs/images/price_type_ex_ante_da.png)
+
+![household power flows](./docs/images/household_power_(20).png)
+
+![household spending](./docs/images/household_finance_(20).png)
 
 ## Contact
 Feel free to contact us if you want to contribute to this project, cooperate on an interesting research question

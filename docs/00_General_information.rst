@@ -1,6 +1,5 @@
 General information
 ===================
-@Sebastian
 
 :Authors: `Sebastian D. Lumpp`_, `Michel Zadé`_, `Markus Doepfert`_
 :Organization: `Chair of Energy Economy and Application Technology`_, Technical University of Munich
@@ -11,7 +10,15 @@ General information
 
 Features
 --------
-* list features of lemlab, which are also specified in the readme
+lemlab offers...
+
+* a fully open-source, agent-based local energy market modelling toolbox
+* a modular and extendable design for easy adaptation to your own research questions
+* real-time capabilities for the development and testing of hard- and software
+* a database-agnostic approach that enables the integration of multiple database technologies
+* integrated time-series data for several plant types (household loads, pv, wind, heat pumps, electric vehicles etc...)
+* template functionality for load and generation forecasting, trading strategies, cutting-edge market clearing
+  algorithms designed specifically for LEMs [paper under review] and much more...
 
 Changes
 -------

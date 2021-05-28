@@ -108,8 +108,8 @@ class ScenarioAnalyzer:
         self.plot_mcp()                             # plots the market clearing prices and their weighted average
         self.plot_balance()                         # plots the balance of each household at the end
         self.plot_price_type()                      # plots price vs. type of energy over time
-        self.plot_household((1, 0, 0, 0, 0))        # plots the power profile of one household as example
-        # self.plot_balance_per_type(False)           # plots the weighted costs per energy for each household type
+        self.plot_household((1, 1, 0, 0, 0, 0))     # plots the power profile of one household as example
+        # self.plot_balance_per_type(False)         # plots the weighted costs per energy for each household type
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -536,7 +536,7 @@ class ScenarioAnalyzer:
         if self.show_figures:
             plt.show()
 
-    def plot_household(self, type_household: tuple = (1, 0, 0, 0, 0), id_user: int = None) -> None:
+    def plot_household(self, type_household: tuple = (1, 0, 0, 0, 0, 0), id_user: int = None) -> None:
         """gathers information about the chosen example household and calls the subfunctions to plot the power profile
         and the power purchases and sales over time
 
@@ -598,7 +598,7 @@ class ScenarioAnalyzer:
                 idx = [sum(x) for x in df_users["PV_Bat_EV_HP_Wind_Fix"]]
                 idx = idx.index(max(idx))
                 print(f"Chosen household type does not exist. The following household type was chosen: "
-                      f"{df_users['PV_Bat_EV_HP_Wind_Fix'][idx]} (PV, Battery, EV, Heat pump, Fixed gen)")
+                      f"{df_users['PV_Bat_EV_HP_Wind_Fix'][idx]} (PV, Battery, EV, Heat pump, Wind, Fixed gen)")
                 type_household = df_users["PV_Bat_EV_HP_Wind_Fix"][idx]  # update type_household to find the correct meter IDs
                 id_meter = df_users["main_id"][idx]
 

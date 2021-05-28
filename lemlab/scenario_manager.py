@@ -556,7 +556,7 @@ class Scenario:
 
         # Dict containing all specifications of the PV system
         dict_pv = {"type": "pv",
-                   "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                   "has_submeter": True,
                    }
 
         # Check for the type of participant
@@ -599,7 +599,7 @@ class Scenario:
 
         # Dict containing all specifications of the battery
         dict_bat = {"type": "bat",
-                    "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                    "has_submeter": True,
                     }
 
         # Check if prosumer has PV system otherwise size according to household consumption
@@ -633,7 +633,7 @@ class Scenario:
 
         # Generate dict with all specifications and append to the list
         dict_ev = {"type": "ev",
-                   "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                   "has_submeter": True,
                    "efficiency": self.config["prosumer"]["ev_efficiency"],
                    "v2g": self.config["prosumer"]["ev_v2g"],
                    "charging_power": choice(self.config["prosumer"]["ev_charging_power"]),
@@ -661,7 +661,7 @@ class Scenario:
 
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
-                   "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                   "has_submeter": True,
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
@@ -684,7 +684,7 @@ class Scenario:
 
         # Dict containing all specifications of the wind power system
         dict_wind = {"type": "wind",
-                     "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                     "has_submeter": True,
                      }
 
         # Check for the type of participant
@@ -728,7 +728,7 @@ class Scenario:
 
         # Dict containing all specifications of the wind power system
         dict_fixedgen = {"type": "fixedgen",
-                         "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                         "has_submeter": True,
                          }
 
         # If participant type is produce always set "has_submeter" to False
