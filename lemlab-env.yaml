@@ -1,0 +1,16 @@
+name: lemlab
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python
+  - numpy
+  - matplotlib
+  - pandas
+  - pyomo
+  - feather-format
+  - ruamel.yaml
+  - sqlalchemy
+  - psycopg2
+  - scipy
+  - tqdm
