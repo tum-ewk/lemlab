@@ -1,7 +1,7 @@
 .. image:: images/lemlab_logo.png
-    :width: 1157px
+    :width: 578px
     :align: center
-    :height: 421px
+    :height: 210px
     :alt: lemlab
 
 :Authors: `Sebastian D. Lumpp`_, `Michel Zadé`_, `Markus Doepfert`_
