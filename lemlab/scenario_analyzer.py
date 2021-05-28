@@ -38,7 +38,7 @@ class ScenarioAnalyzer:
         function that establishes a connection to the database
     max_time : int
         maximum timestep that is to be considered for the analysis
-    pv_bat_ev_hp_fix : dataframe
+    pv_bat_ev_hp_wind_fix : dataframe
         contains the information about which household has which type of plants
     conv_to_kWh : float
         conversion factor to kWh
@@ -89,7 +89,7 @@ class ScenarioAnalyzer:
         self.db_conn = db_conn.DatabaseConnection(db_dict=self.config['db_connections']['database_connection_admin'],
                                                   lem_config=self.config['lem'])
         self.max_time = self.__max_timestamp()
-        self.pv_bat_ev_hp_fix = self.__check_pv_bat_ev_hp_fix()
+        self.pv_bat_ev_hp_wind_fix = self.__check_pv_bat_ev_hp_wind_fix()
         self.conv_to_kWh = 1/1000           # to convert from Wh to kWh
         self.conv_to_kW = 1/250             # to convert from Wh per 15 min to kW
         self.conv_to_EUR = 1/1000000000     # to convert from sigma to €
@@ -109,7 +109,7 @@ class ScenarioAnalyzer:
         self.plot_balance()                         # plots the balance of each household at the end
         self.plot_price_type()                      # plots price vs. type of energy over time
         self.plot_household((1, 0, 0, 0, 0))        # plots the power profile of one household as example
-        self.plot_balance_per_type(False)           # plots the weighted costs per energy for each household type
+        # self.plot_balance_per_type(False)           # plots the weighted costs per energy for each household type
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -289,7 +289,7 @@ class ScenarioAnalyzer:
         plt.close("all")
 
         # Create dataframe to gather all the information and do the necessary calculations
-        df_results = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Fix", "revenue_sold_€",
+        df_results = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Wind_Fix", "revenue_sold_€",
                                            "cost_bought_€", "balance_€"]).set_index(db_p.ID_USER)
 
         # Look up each participants main meter id
@@ -303,7 +303,7 @@ class ScenarioAnalyzer:
         df_results[db_p.ID_METER] = df_temp
 
         # Check which market participants have PV, batteries, EVs and heat pumps
-        df_results["PV_Bat_EV_HP_Fix"] = self.pv_bat_ev_hp_fix
+        df_results["PV_Bat_EV_HP_Wind_Fix"] = self.pv_bat_ev_hp_wind_fix
 
         # Sort all the transactions according to the user for the time period max_time
         df_transactions = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_LOGS_TRANSACTIONS}.csv",
@@ -325,8 +325,11 @@ class ScenarioAnalyzer:
         if self.config["aggregator"]["id_user"] in df_results.index.values:
             df_results = df_results.drop([self.config["aggregator"]["id_user"]])
 
+        # Check for large-scale producers
+        self.get_producers(df_results)
+
         # Transpose list and replace the booleans with checkmarks and blanks
-        cell_texts = self.create_checkmarks(df_results["PV_Bat_EV_HP_Fix"])
+        cell_texts = self.create_checkmarks(df_results["PV_Bat_EV_HP_Wind_Fix"])
 
 
         # Plots
@@ -341,7 +344,7 @@ class ScenarioAnalyzer:
             scplotter.ax.bar(xvalues, yvalues, color="0.6")
             # Create table
             columns = [f"#{x}" for x in xvalues]
-            rows = ["PV", "Battery", "EV", "Heat pump", "Fixed gen"]
+            rows = ["PV", "Battery", "EV", "Heat pump", "Wind", "Fixed gen"]
             cell_text = [cell[x * max_par:(x + 1) * max_par] for cell in cell_texts]
             the_table = scplotter.ax.table(cellText=cell_text, rowLabels=rows, colLabels=columns,
                                            loc="bottom", cellLoc="center")
@@ -555,7 +558,7 @@ class ScenarioAnalyzer:
         df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
 
         # Create dataframe to store the information about the participants
-        df_users = pd.DataFrame(columns=[db_p.ID_USER, "main_id", "PV_Bat_EV_HP_Fix"])
+        df_users = pd.DataFrame(columns=[db_p.ID_USER, "main_id", "PV_Bat_EV_HP_Wind_Fix"])
         df_users[db_p.ID_USER] = df_meters[db_p.ID_USER].unique()
         df_users.set_index(db_p.ID_USER, inplace=True)
 
@@ -570,7 +573,7 @@ class ScenarioAnalyzer:
             [db_p.ID_METER].values
 
         # Check which market participants have PV, batteries, EVs and heat pumps
-        df_users["PV_Bat_EV_HP_Fix"] = self.pv_bat_ev_hp_fix
+        df_users["PV_Bat_EV_HP_Wind_Fix"] = self.pv_bat_ev_hp_wind_fix
 
         # Check if a specific user was provided to be analyzed, if not plot a random household with the provided config
         if id_user:
@@ -582,21 +585,21 @@ class ScenarioAnalyzer:
             else:
                 raise TypeError("id_user can only be an integer or a string.")
             id_meter = df_users["main_id"][idx]
-            type_household = df_users["PV_Bat_EV_HP_Fix"][idx]
+            type_household = df_users["PV_Bat_EV_HP_Wind_Fix"][idx]
         else:
             # Get example household based on type_household
-            users = df_users.loc[df_users["PV_Bat_EV_HP_Fix"] == type_household, "main_id"]
+            users = df_users.loc[df_users["PV_Bat_EV_HP_Wind_Fix"] == type_household, "main_id"]
 
             # If a user has the specifications as in type_household, choose last user
             if len(users) > 0:
                 id_meter = users.values[-1]  # take last value to avoid picking supplier01 with (0, 0, 0, 0, 0)
             # Else find the user with the most devices to depict
             else:
-                idx = [sum(x) for x in df_users["PV_Bat_EV_HP_Fix"]]
+                idx = [sum(x) for x in df_users["PV_Bat_EV_HP_Wind_Fix"]]
                 idx = idx.index(max(idx))
                 print(f"Chosen household type does not exist. The following household type was chosen: "
-                      f"{df_users['PV_Bat_EV_HP_Fix'][idx]} (PV, Battery, EV, Heat pump, Fixed gen)")
-                type_household = df_users["PV_Bat_EV_HP_Fix"][idx]  # update type_household to find the correct meter IDs
+                      f"{df_users['PV_Bat_EV_HP_Wind_Fix'][idx]} (PV, Battery, EV, Heat pump, Fixed gen)")
+                type_household = df_users["PV_Bat_EV_HP_Wind_Fix"][idx]  # update type_household to find the correct meter IDs
                 id_meter = df_users["main_id"][idx]
 
         # Get the meter ids of the submeters and setup plot labels and colors
@@ -618,9 +621,9 @@ class ScenarioAnalyzer:
                                  db_p.ID_METER].values[0]]
 
         # Optional meters
-        devices_opt = ("pv", "bat", "ev", "hp", "fixedgen")  # optional devices that the participant might have
-        labels_opt = ["PV", "Battery", "EV", "Heat pump", "Fixed gen"]  # the according labels for the devices
-        colors_opt = ["#ffd045", "#ec6a0e", "#2791be", "#c33528", "0.7"]  # the according colors for the devices
+        devices_opt = ("pv", "bat", "ev", "hp", "wind", "fixedgen")  # optional devices that the participant might have
+        labels_opt = ["PV", "Battery", "EV", "Heat pump", "Wind", "Fixed gen"]  # according labels for the devices
+        colors_opt = ["#ffd045", "#ec6a0e", "#2791be", "#c33528", "#28a9c3", "0.7"]  # according colors for the devices
         for idx, elem in enumerate(type_household):
             if type_household[idx]:  # check if type of device should be included in plot
                 # Get ID of optional device. If it does not exist, ignore it since it is part of the residual load
@@ -782,7 +785,7 @@ class ScenarioAnalyzer:
         plt.close("all")
 
         # Create dataframe to gather all the information and do the necessary calculations
-        df_info = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Fix", "energy_sold_kWh",
+        df_info = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Wind_Fix", "energy_sold_kWh",
                                         "revenue_sold_€", "energy_bought_kWh", "cost_bought_€", "energy_total_kWh",
                                         "balance_€", "avg_price_€/kWh"]).set_index(db_p.ID_USER)
 
@@ -795,7 +798,7 @@ class ScenarioAnalyzer:
         df_info[db_p.ID_METER] = df_temp
 
         # Check which market participants have PV, batteries, EVs and heat pumps
-        df_info["PV_Bat_EV_HP_Fix"] = self.__check_pv_bat_ev_hp_fix()
+        df_info["PV_Bat_EV_HP_Wind_Fix"] = self.__check_pv_bat_ev_hp_wind_fix()
 
         # Sort all the transactions according to the user for the time period max_time
         df_transactions = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_LOGS_TRANSACTIONS}.csv",
@@ -817,15 +820,15 @@ class ScenarioAnalyzer:
         df_info["avg_price_€/kWh"] = - df_info["balance_€"].abs() / df_info["energy_total_kWh"]
         df_info.loc[abs(df_info["avg_price_€/kWh"]) == float("inf"), "avg_price_€/kWh"] = 0
 
-        # Group all participants by PV_Bat_EV_HP_Fix
-        df_temp = df_info.groupby("PV_Bat_EV_HP_Fix").sum()
+        # Group all participants by PV_Bat_EV_HP_Wind_Fix
+        df_temp = df_info.groupby("PV_Bat_EV_HP_Wind_Fix").sum()
         df_temp["avg_price_€/kWh"] = df_temp["balance_€"] / df_temp["energy_total_kWh"]
 
         # Create dataframe to store the information for the graph depending on display type
         if all_types and len(df_temp) < 16:
-            df_results = pd.DataFrame(columns=["PV_Bat_EV_HP_Fix", "avg_price_€/kWh", "n_participants"])
-            df_results["PV_Bat_EV_HP_Fix"] = list(it.product([0, 1], repeat=len(df_temp.index.values[0])))
-            df_results.set_index("PV_Bat_EV_HP_Fix", inplace=True)
+            df_results = pd.DataFrame(columns=["PV_Bat_EV_HP_Wind_Fix", "avg_price_€/kWh", "n_participants"])
+            df_results["PV_Bat_EV_HP_Wind_Fix"] = list(it.product([0, 1], repeat=len(df_temp.index.values[0])))
+            df_results.set_index("PV_Bat_EV_HP_Wind_Fix", inplace=True)
             df_results["avg_price_€/kWh"] = df_temp["avg_price_€/kWh"]
             df_results["n_participants"] = df_temp["n_participants"]
             df_results = df_results.fillna(0)
@@ -844,7 +847,7 @@ class ScenarioAnalyzer:
         scplotter.ax.bar(xvalues, yvalues, color="0.6")
         # Create table
         columns = [f"n={round(x)}" for x in df_results["n_participants"]]
-        rows = ["PV", "Battery", "EV", "Heat pump", "Fixed gen"]
+        rows = ["PV", "Battery", "EV", "Heat pump", "Wind", "Fixed gen"]
         the_table = scplotter.ax.table(cellText=cell_texts, rowLabels=rows, colLabels=columns,
                                        loc="bottom", cellLoc="center", colLoc="center")
         self.change_table_height(the_table, 1.2)
@@ -886,7 +889,7 @@ class ScenarioAnalyzer:
 
         return max(db_settlement_status[db_settlement_status[db_p.STATUS_SETTLEMENT_COMPLETE] == 1][db_p.TS_DELIVERY])
 
-    def __check_pv_bat_ev_hp_fix(self) -> tuple:
+    def __check_pv_bat_ev_hp_wind_fix(self) -> tuple:
         """checks the plant configuration for all prosumers and returns results as boolean tuples
 
         Args:
@@ -900,26 +903,34 @@ class ScenarioAnalyzer:
         df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
 
         # Prepare temporary dataframe to create tuple column that contains if participants have devices
-        df_temp = pd.DataFrame(columns=[db_p.ID_USER, "PV_Bat_EV_HP_Fix"])
+        df_temp = pd.DataFrame(columns=[db_p.ID_USER, "PV_Bat_EV_HP_Wind_Fix"])
         df_temp[db_p.ID_USER] = df_meters[db_p.ID_USER].unique()
         df_temp.set_index(db_p.ID_USER, inplace=True)
-        df_temp["PV_Bat_EV_HP_Fix"] = df_temp["PV_Bat_EV_HP_Fix"].apply(lambda x: (0, 0, 0, 0, 0))
+        df_temp["PV_Bat_EV_HP_Wind_Fix"] = df_temp["PV_Bat_EV_HP_Wind_Fix"].apply(lambda x: (0, 0, 0, 0, 0, 0))
 
         # Check which market participants have PV, batteries, EVs and heat pumps
-        devices = ("pv", "bat", "ev", "hp", "fixedgen")
+        devices = ("pv", "bat", "ev", "hp", "wind", "fixedgen")
+
         for device in devices:
+            # " ".join(["virtual submeter", device])
             df_temp[device] = df_meters[df_meters[db_p.INFO_ADDITIONAL] == device]. \
                               set_index(db_p.ID_USER)[db_p.INFO_ADDITIONAL]
+            # df_temp[device] += df_meters[df_meters[db_p.INFO_ADDITIONAL] == "virtual submeter" + device]. \
+            #                    set_index(db_p.ID_USER)[db_p.INFO_ADDITIONAL]
 
-        # Post-process data to create tuples of (x, x, x, x) x ∈ [0, 1] and return information
+        # Post-process data to create tuples of (x, x, x, x, x, x) x ∈ [0, 1] and return information
         df_temp = df_temp.fillna(0)
         df_temp = df_temp.stack()
         df_temp[df_temp != 0] = 1
         df_temp = df_temp.unstack()
-        df_temp["PV_Bat_EV_HP_Fix"] = tuple(zip(df_temp["pv"], df_temp["bat"], df_temp["ev"],
-                                                df_temp["hp"], df_temp["fixedgen"]))
+        df_temp["PV_Bat_EV_HP_Wind_Fix"] = tuple(zip(df_temp["pv"], df_temp["bat"], df_temp["ev"],
+                                                     df_temp["hp"], df_temp["wind"], df_temp["fixedgen"]))
 
-        return df_temp["PV_Bat_EV_HP_Fix"]
+        return df_temp["PV_Bat_EV_HP_Wind_Fix"]
+
+    def get_producers(self, df_results) -> tuple:
+        # print(df_results.to_string())
+        pass
 
     def __load_config(self) -> dict:
         """loads the config file
@@ -1108,7 +1119,7 @@ class ScenarioPlotter:
         """
 
         # maximum number of x-ticks
-        n_max = 13
+        n_max = 10
 
         if not xticks_style:
             # turn x-ticks off

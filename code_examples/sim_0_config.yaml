@@ -12,7 +12,7 @@ simulation:
                                             # simulated at an accelerated rate, before the rts commences
 
   # sim only
-  "sim_start": "2021-03-20 00:00"           # simulation start as unix timestamp
+  "sim_start": "2021-03-22 00:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
   "sim_length": 1                           # length of the simulation in days
 
@@ -192,7 +192,7 @@ prosumer:
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
-                                            #                     the average of yesterday and the day before
+                                            #                     the average the last 7 days
                                             #   "smoothed" - prediction value is a moving mean
                                             #                of the future values. window width of
                                             #                9 timesteps
@@ -214,17 +214,18 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "perfect"                      # pv production forecasting method
-                                             #   "perfect" - perfect knowledge of the future
-                                             #   "smoothed" - prediction value is a moving mean of the future values.
-                                             #                window width of 9 time steps
-                                             #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
+  "pv_fcast": "perfect"                     # pv production forecasting method
+                                            #   "perfect" - perfect knowledge of the future
+                                            #   "smoothed" - prediction value is a moving mean of the future values.
+                                            #                window width of 9 time steps
+                                            #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
   ################################ small-scale wind settings ####################################
+  ################################ wind power is coming soon
 
-  "wind_fraction": 0                      # fraction of prosumers with wind power plants
+  "wind_fraction": 0                        # fraction of prosumers with wind power plants
 
   "wind_sizing_power": 0.7                  # sizing of wind power plant
                                             # 1 = 1000 w of wind for every 1000 kwh/a of household consumption
@@ -233,11 +234,11 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "perfect"                    # wind production forecasting method
-                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
-                                             #                           and turbine model
-                                             #   "wind_lookup_file_fcast" - weather forecast from file used with
-                                             #                              turbine model
+  "wind_fcast": "perfect"                   # wind production forecasting method
+                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
+                                            #                           and turbine model
+                                            #   "wind_lookup_file_fcast" - weather forecast from file used with
+                                            #                              turbine model
 
   "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
@@ -266,8 +267,9 @@ prosumer:
   "bat_quality": "local"                    # quality that the generated energy should be labelled with on the lem
 
   ################################ heat pump settings ####################################
+  ################################ heat pumps are coming soon
 
-  "hp_fraction": 0                        # fraction of prosumers with heat pumps
+  "hp_fraction": 0                          # fraction of prosumers with heat pumps
 
   "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
@@ -361,42 +363,43 @@ producer:
 
   ################################ large-scale pv generation settings ####################################
 
-  "pv_active": false                         # is there a large-scale pv producer?
+  "pv_active": false                        # is there a large-scale pv producer?
 
-  "pv_power": 600000                         # peak power of photovoltaic plant in w
+  "pv_power": 60000                         # peak power of photovoltaic plant in w
 
-  "pv_controllable": false                   # can the generator be controlled? (can power be decreased?)
+  "pv_controllable": false                  # can the generator be controlled? (can power be decreased?)
 
-  "pv_fcast": "perfect"                      # pv production forecasting method
-                                             #   "perfect" - perfect knowledge of the future
-                                             #   "smoothed" - prediction value is a moving mean of the future values.
-                                             #                window width of 9 time steps
-                                             #   "file_nn" - forecast based on weather forecast file (coming soon)
+  "pv_fcast": "perfect"                     # pv production forecasting method
+                                            #   "perfect" - perfect knowledge of the future
+                                            #   "smoothed" - prediction value is a moving mean of the future values.
+                                            #                window width of 9 time steps
+                                            #   "file_nn" - forecast based on weather forecast file (coming soon)
 
 
-  "pv_quality": "green_local"                # quality that the generated energy should be labelled with on the lem
+  "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
   ################################ large-scale wind generation settings ####################################
+  ################################ wind power is coming soon
 
-  "wind_active": false                       # is there a large-scale wind producer?
+  "wind_active": false                      # is there a large-scale wind producer?
 
-  "wind_power": 3000000                      # peak power of wind power generator in w
+  "wind_power": 30000                       # peak power of wind power generator in w
 
-  "wind_controllable": false                 # can the generator be controlled? (can power be decreased?)
+  "wind_controllable": false                # can the generator be controlled? (can power be decreased?)
 
-  "wind_fcast": "perfect"                    # wind production forecasting method
-                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
-                                             #                           and turbine model
-                                             #   "wind_lookup_file_forecast" - weather forecast from file used with
-                                             #                                 turbine model
+  "wind_fcast": "perfect"                   # wind production forecasting method
+                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
+                                            #                           and turbine model
+                                            #   "wind_lookup_file_forecast" - weather forecast from file used with
+                                            #                                 turbine model
 
-  "wind_quality": "green_local"              # quality that the generated energy should be labelled with on the lem
+  "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
   ################################ large-scale fixed generator settings ####################################
 
   "fixedgen_active": false                  # is there a large-scale fixed generation producer?
 
-  "fixedgen_power": 20000000                # peak power of fixed power generator in w
+  "fixedgen_power": 20000                   # peak power of fixed power generator in w
                                             # (p.u. power read from file)
 
   "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
@@ -440,7 +443,7 @@ aggregator:
                                             #     "perfect" - perfect knowledge of the future
                                             #     "naive"   - today will be the same as yesterday
                                             #     "naive_average" - today will be the same as
-                                            #       the average of yesterday and the day before
+                                            #       the last 7 days
                                             #     "sarma"   - full sarma model of order below
 
                                             # order of double seasonal arma model

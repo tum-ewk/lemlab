@@ -3,8 +3,8 @@ lemlab: local energy market laboratory
 
 :Authors: `Sebastian D. Lumpp`_, `Michel Zadé`_, `Markus Doepfert`_
 :Organization: `Chair of Energy Economy and Application Technology`_, Technical University of Munich
-:Version: 0.x
-:Date: 18.03.2021
+:Version: 1.0
+:Date: 28.05.2021
 :Copyright: The model code is licensed under the `GNU General Public License 3.0`_.
             This documentation is licensed under a `Creative Commons Attribution 4.0 International`_ license.
 

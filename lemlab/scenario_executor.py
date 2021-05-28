@@ -360,7 +360,11 @@ class ScenarioExecutor:
                 if plant_config[plant].get("has_submeter") is False:
                     dict_meter[self.db_conn_admin.db_param.ID_METER] = [self.__gen_rand_id(10)]
                     dict_meter[self.db_conn_admin.db_param.TYPE_METER] = [4]
-                    dict_meter[self.db_conn_admin.db_param.INFO_ADDITIONAL] = ["virtual submeter"]
+                    if plant_config[plant].get("type") == "hh":
+                        dict_meter[self.db_conn_admin.db_param.INFO_ADDITIONAL] = ["residual load"]
+                    else:
+                        dict_meter[self.db_conn_admin.db_param.INFO_ADDITIONAL] = \
+                            [f"virtual submeter {plant_config[plant].get('type')}"]
                 self.db_conn_admin.register_meter(pd.DataFrame().from_dict(dict_meter))
 
             # create a local log for all energy flows, log_ems.ft
@@ -787,7 +791,7 @@ class ScenarioExecutor:
         # assigned to a virtual meter.
         if self.config["lem"]["calculate_virtual_submeters"]:
             lem_settlement.calculate_virtual_submeters(db_obj=self.db_conn_admin,
-                                                   list_ts_delivery=list_ts_delivery_ready)
+                                                       list_ts_delivery=list_ts_delivery_ready)
         # if ex-ante market selected, clear market
         if self.config["lem"]["types_clearing_ex_ante"]:
             clearing_ex_ante.market_clearing(db_obj=self.db_conn_admin,
