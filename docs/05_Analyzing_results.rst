@@ -6,10 +6,6 @@ Analyzing results
 lemlab comes with a variety of preconfigured plots that allow a first analysis. Additionally it is
 possible to create your own plots and display them in the lemlab format.
 
-**TO-DOs:**
-
-* `Costs per type prosumer`_: To be written once plot is finalized.
-
 Using the analysis toolbox
 --------------------------
 All plotting capabilities are bundled in *scenario_analyzer.py*. The file contains two classes. ScenarioAnalyzer

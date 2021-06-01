@@ -2,17 +2,12 @@ Configuring and executing scenarios
 ===================================
 The following sections explain how to configure new scenarios using the provided scenario generator. As of version 1.0
 it is possible to create scenarios with single-family homes only. Future versions will also include multi-dwelling
-units, commerce and service buildings as well as industry.
-
-**TO-DOs:**
-
-* `pv`_: the link to `weather`_ has not been made yet. Naming scheme needs to be adjusted once weather is clear
-* `weather`_: needs to be written once design is decided on
+units, commercial and service buildings as well as industry.
 
 The config file
 ---------------
 The config file specifies all parameters that are needed for the setup up. Two config files can be found in the example
-folder, which can be used as starter for either a real-time (rts) or non-real-time (sim) simulation Furthermore, the
+folder, which can be used as starter for simulation (SIM) or real-time (RTS) modes. Furthermore, the
 example folder contains standard files to create, run and analyze new scenarios.
 
 Each config file is divided into the following categories:
@@ -21,6 +16,7 @@ Each config file is divided into the following categories:
 * lem
 * supplier
 * prosumer
+* producer
 * aggregator
 * db_connections
 
@@ -28,8 +24,6 @@ simulation
 ^^^^^^^^^^
 All general parameters that the simulation requires to run are gathered in "simulation". These differ depending on, if
 the simulation is real-time or not.
-
-.. _lem:
 
 lem
 ^^^
@@ -40,10 +34,13 @@ is based on the very first provided method.
 
 supplier
 ^^^^^^^^
-The supplier represents the entity that ensures the balance of the market by selling additional energy and buying surplus
-energy. The price at which the supplier sells/buys energy sets the boundaries between which the participants will trade
-as they would never be willing to pay more than what is guaranteed by the supplier. Likewise they would not sell their
-energy at a lower price than the supplier's minimum price.
+The supplier represents the entity that ensures the balance of the market by selling additional energy and buying
+surplus energy. The price at which the supplier sells/buys energy sets the boundaries between which the participants
+will trade as they would never be willing to pay more than what is guaranteed by the supplier. Likewise they would not
+sell their energy at a lower price than the supplier's minimum price.
+
+The simplest possible supplier simply creates a market price floor and ceiling by entering unlimited buy and sell offers
+at fixed prices. Limited coupling capacity can be represented by limiting these buy and sell offers.
 
 prosumer
 ^^^^^^^^
@@ -81,6 +78,11 @@ pay 20 % more for local energy.
 
 The **metering settings** are mainly relevant for real-time simulations as lemlab allows to operate Hardware-in-the-Loop
 (HiL) LEMs. They allow to simulate that meter readings arrive either late or never.
+
+producer
+^^^^^^^^
+The producer is a simple prosumer with only one generator. This allows the inclusion of a large producer, for example a
+community wind or PV farm.
 
 aggregator
 ^^^^^^^^^^

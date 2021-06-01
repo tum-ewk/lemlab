@@ -123,8 +123,8 @@ class DatabaseConnection:
     def get_map_everything_to_main_meter(self):
         info_meter = self._query_data_free(f"SELECT {self.db_param.ID_METER}, {self.db_param.ID_USER}"
                                            f" FROM {self.db_param.NAME_TABLE_INFO_METER}"
-                                           f" WHERE {self.db_param.INFO_ADDITIONAL} != 'residual load'"
-                                           f" AND {self.db_param.TYPE_METER} != 3")
+                                           f" WHERE {self.db_param.TYPE_METER} != 3 "
+                                           f" AND {self.db_param.TYPE_METER} != 4")
 
         map_meter_to_meter = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter"])])
 

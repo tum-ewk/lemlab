@@ -12,7 +12,7 @@ simulation:
                                             # simulated at an accelerated rate, before the rts commences
 
   # sim only
-  "sim_start": "2021-03-22 00:00"           # simulation start as unix timestamp
+  "sim_start": "2021-03-23 00:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
   "sim_length": 1                           # length of the simulation in days
 
@@ -188,11 +188,11 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "naive"                       # household load forecasting method
+  "hh_fcast": "naive_average"               # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
-                                            #                     the average the last 7 days
+                                            #                     the average the last 2 days
                                             #   "smoothed" - prediction value is a moving mean
                                             #                of the future values. window width of
                                             #                9 timesteps
@@ -207,14 +207,14 @@ prosumer:
 
   "pv_fraction": 0.7                        # fraction of prosumers with pv plants
 
-  "pv_sizing_power": 1.25                   # sizing of pv plant
+  "pv_sizing_power": 1.5                    # sizing of pv plant
                                             # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
 
   "pv_sizing_power_deviation": 0.2          # random positive/negative deviation from pv_sizing_power
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "perfect"                     # pv production forecasting method
+  "pv_fcast": "smoothed"                    # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -302,10 +302,10 @@ prosumer:
 
   ################################ fixed generator settings ####################################
 
-  "fixedgen_fraction": 0.05                 # fraction of prosumers with constant power generators
+  "fixedgen_fraction": 0                    # fraction of prosumers with constant power generators
                                             # (p.u. power read from file)
 
-  "fixedgen_power": 500                     # peak power of constant power generator
+  "fixedgen_power": 1                       # peak power of constant power generator
 
   "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
 
@@ -363,7 +363,7 @@ producer:
 
   ################################ large-scale pv generation settings ####################################
 
-  "pv_active": false                        # is there a large-scale pv producer?
+  "pv_active": False                        # is there a large-scale pv producer?
 
   "pv_power": 60000                         # peak power of photovoltaic plant in w
 
@@ -397,9 +397,9 @@ producer:
 
   ################################ large-scale fixed generator settings ####################################
 
-  "fixedgen_active": false                  # is there a large-scale fixed generation producer?
+  "fixedgen_active": True                   # is there a large-scale fixed generation producer?
 
-  "fixedgen_power": 20000                   # peak power of fixed power generator in w
+  "fixedgen_power": 3000                    # peak power of fixed power generator in w
                                             # (p.u. power read from file)
 
   "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
@@ -443,7 +443,7 @@ aggregator:
                                             #     "perfect" - perfect knowledge of the future
                                             #     "naive"   - today will be the same as yesterday
                                             #     "naive_average" - today will be the same as
-                                            #       the last 7 days
+                                            #       the last 2 days
                                             #     "sarma"   - full sarma model of order below
 
                                             # order of double seasonal arma model

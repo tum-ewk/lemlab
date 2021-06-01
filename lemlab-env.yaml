@@ -14,3 +14,4 @@ dependencies:
   - psycopg2
   - scipy
   - tqdm
+  - tensorflow
