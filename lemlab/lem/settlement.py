@@ -139,6 +139,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
         # return MAIN meter reading deltas and ex-ante market results
         main_meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, type_meter="main")
         market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
+
         # relabel market results by main meters, so comparison to energy flows can be made
         market_results = market_results.replace({db_obj.db_param.ID_USER_BID: map_id_ma_to_main_meter,
                                                  db_obj.db_param.ID_USER_OFFER: map_id_ma_to_main_meter})

@@ -108,8 +108,8 @@ class ScenarioAnalyzer:
         self.plot_mcp()                             # plots the market clearing prices and their weighted average
         self.plot_balance()                         # plots the balance of each household at the end
         self.plot_price_type()                      # plots price vs. type of energy over time
-        self.plot_household((1, 1, 0, 0, 0, 0))     # plots the power profile of one household as example
-        # self.plot_balance_per_type(False)         # plots the weighted costs per energy for each household type
+        self.plot_household()                       # plots the power profile of one household as example
+        # self.plot_balance_per_type()                # plots the weighted costs per energy for each household type
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -536,7 +536,7 @@ class ScenarioAnalyzer:
         if self.show_figures:
             plt.show()
 
-    def plot_household(self, type_household: tuple = (1, 0, 0, 0, 0, 0), id_user: int = None) -> None:
+    def plot_household(self, type_household: tuple = (1, 1, 1, 0, 0, 0), id_user: int = None) -> None:
         """gathers information about the chosen example household and calls the subfunctions to plot the power profile
         and the power purchases and sales over time
 
@@ -592,7 +592,7 @@ class ScenarioAnalyzer:
 
             # If a user has the specifications as in type_household, choose last user
             if len(users) > 0:
-                id_meter = users.values[-1]  # take last value to avoid picking supplier01 with (0, 0, 0, 0, 0)
+                id_meter = users.values[0]
             # Else find the user with the most devices to depict
             else:
                 idx = [sum(x) for x in df_users["PV_Bat_EV_HP_Wind_Fix"]]
@@ -614,11 +614,19 @@ class ScenarioAnalyzer:
                                  (df_meters[db_p.INFO_ADDITIONAL] == devices[0]),
                                  db_p.ID_METER].values[0]]
         except IndexError:
-            devices = ["residual load"]
-            labels = ["Main meter", "Residual load"]
-            ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
-                                 (df_meters[db_p.INFO_ADDITIONAL] == devices[0]),
-                                 db_p.ID_METER].values[0]]
+            try:
+                devices = ["residual load"]
+                labels = ["Main meter", "Residual load"]
+                ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+                                     (df_meters[db_p.INFO_ADDITIONAL] == devices[0]),
+                                     db_p.ID_METER].values[0]]
+            except IndexError:
+                devices = ["virtual submeter"]
+                labels = ["Main meter", "Plant"]
+                # print(df_meters[db_p.INFO_ADDITIONAL].isin(devices))
+                ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+                                     (df_meters[db_p.INFO_ADDITIONAL].str.contains(devices[0])),
+                                     db_p.ID_METER].values[0]]
 
         # Optional meters
         devices_opt = ("pv", "bat", "ev", "hp", "wind", "fixedgen")  # optional devices that the participant might have
@@ -633,7 +641,7 @@ class ScenarioAnalyzer:
                                              db_p.ID_METER].values[0])
                 except IndexError:
                     print(f"The user has a {labels_opt[idx]} plant, however, it has no separate meter and is included "
-                          f"in the residual load.")
+                          f"in the main meter/residual load.")
                 else:
                     devices.append(devices_opt[idx])
                     labels.append(labels_opt[idx])
@@ -717,9 +725,13 @@ class ScenarioAnalyzer:
                                       index_col=0)
         df_transactions = df_transactions[df_transactions[db_p.TS_DELIVERY] <= self.max_time]
         df_temp_revenue = df_transactions[df_transactions[db_p.DELTA_BALANCE] >= 0]
-        df_temp_cost_fix = df_transactions[(df_transactions[db_p.DELTA_BALANCE] < 0) &
-                                           (df_transactions[db_p.TYPE_TRANSACTION] != "market")]
-        df_temp_cost_var = df_transactions[(df_transactions[db_p.DELTA_BALANCE] < 0) &
+        df_temp_bal_pos = df_transactions[(df_transactions[db_p.DELTA_BALANCE] >= 0) &
+                                          (df_transactions[db_p.TYPE_TRANSACTION] == "balancing")]
+        df_temp_bal_neg = df_transactions[(df_transactions[db_p.DELTA_BALANCE] < 0) &
+                                          (df_transactions[db_p.TYPE_TRANSACTION] == "balancing")]
+        df_temp_levies = df_transactions[(df_transactions[db_p.DELTA_BALANCE] < 0) &
+                                           (df_transactions[db_p.TYPE_TRANSACTION] == "levies")]
+        df_temp_market = df_transactions[(df_transactions[db_p.DELTA_BALANCE] < 0) &
                                            (df_transactions[db_p.TYPE_TRANSACTION] == "market")]
 
         # Create dataframe to gather all the information and do the necessary calculations
@@ -727,7 +739,8 @@ class ScenarioAnalyzer:
             col = id_users
         else:
             col = [id_user]
-        col = pd.MultiIndex.from_product([col, ["revenue_€", "cost_fix_€", "cost_var_€", "balance_€"]])
+        col = pd.MultiIndex.from_product([col, ["revenue_€", "balancing_pos_€", "balancing_neg_€", "levies_€",
+                                                "market_€"]])
         df_balance = pd.DataFrame(index=sorted(df_transactions[db_p.TS_DELIVERY].unique()),
                                   columns=col)
         df_balance.index.name = db_p.TS_DELIVERY
@@ -735,35 +748,51 @@ class ScenarioAnalyzer:
         for column in df_balance.columns.get_level_values(level=0).unique():
             df_balance.loc[:, (column, "revenue_€")] = df_temp_revenue[df_temp_revenue[db_p.ID_USER] == column].\
                 groupby(db_p.TS_DELIVERY).sum()[db_p.DELTA_BALANCE] * self.conv_to_EUR
-            df_balance.loc[:, (column, "cost_fix_€")] = df_temp_cost_fix[df_temp_cost_fix[db_p.ID_USER] == column].\
+            df_balance.loc[:, (column, "balancing_pos_€")] = df_temp_bal_pos[df_temp_bal_pos[db_p.ID_USER] == column].\
                 groupby(db_p.TS_DELIVERY).sum()[db_p.DELTA_BALANCE] * self.conv_to_EUR
-            df_balance.loc[:, (column, "cost_var_€")] = df_temp_cost_var[df_temp_cost_var[db_p.ID_USER] == column].\
+            df_balance.loc[:, (column, "balancing_neg_€")] = df_temp_bal_neg[df_temp_bal_neg[db_p.ID_USER] == column].\
+                groupby(db_p.TS_DELIVERY).sum()[db_p.DELTA_BALANCE] * self.conv_to_EUR
+            df_balance.loc[:, (column, "levies_€")] = df_temp_levies[df_temp_levies[db_p.ID_USER] == column].\
+                groupby(db_p.TS_DELIVERY).sum()[db_p.DELTA_BALANCE] * self.conv_to_EUR
+            df_balance.loc[:, (column, "market_€")] = df_temp_market[df_temp_market[db_p.ID_USER] == column].\
                 groupby(db_p.TS_DELIVERY).sum()[db_p.DELTA_BALANCE] * self.conv_to_EUR
             df_balance = df_balance.fillna(0)
             df_balance.loc[:, (column, "balance_€")] = df_balance[column]["revenue_€"] \
-                                                       + df_balance[column]["cost_fix_€"] \
-                                                       + df_balance[column]["cost_var_€"]
+                                                       + df_balance[column]["balancing_pos_€"] \
+                                                       + df_balance[column]["balancing_neg_€"] \
+                                                       + df_balance[column]["levies_€"] \
+                                                       + df_balance[column]["market_€"]
+
         df_balance = df_balance.sort_index()
 
         # Plots
         scplotter = ScenarioPlotter()
         xvalues = df_balance.index.values
         bar_width = (xvalues[1] - xvalues[0]) * 0.8
-        # Bar plot of revenue
-        yvalues = [yvalue * 100 for yvalue in df_balance[id_user]["revenue_€"].tolist()]
-        scplotter.ax.bar(xvalues, yvalues, bar_width, color="green", label="Revenue", alpha=0.8)
-        # Stacked bars of costs
-        yvalues1 = [yvalue * 100 for yvalue in df_balance[id_user]["cost_fix_€"].tolist()]
-        scplotter.ax.bar(xvalues, yvalues1, bar_width,  color="#a02222", label="Fix. costs", alpha=0.8)
-        yvalues = [yvalue * 100 for yvalue in df_balance[id_user]["cost_var_€"].tolist()]
-        scplotter.ax.bar(xvalues, yvalues, bar_width,  bottom=yvalues1, color="0.3", label="Var. costs", alpha=0.8)
+        # Y-values of monetary inflow
+        yvalues_pos = [yvalue * 100 for yvalue in df_balance[id_user]["revenue_€"].tolist()]
+        yvalues1_pos = [yvalue * 100 for yvalue in df_balance[id_user]["balancing_pos_€"].tolist()]
+        # Y-values of monetary outflow
+        yvalues_neg = [yvalue * 100 for yvalue in df_balance[id_user]["market_€"].tolist()]
+        yvalues1_neg = [yvalue * 100 for yvalue in df_balance[id_user]["levies_€"].tolist()]
+        ybottom = [yvalues_neg[x]+yvalues1_neg[x] for x in range(len(yvalues_neg))] # auxiliary values
+        yvalues2_neg = [yvalue * 100 for yvalue in df_balance[id_user]["balancing_neg_€"].tolist()]
+        # Stacked bar chart (Note: Order is different than expected due to legend labeling behavior of matplotlib)
+        scplotter.ax.bar(xvalues, yvalues_neg, bar_width,  color="#a02222", alpha=0.9, label="Cost")
+        scplotter.ax.bar(xvalues, yvalues_pos, bar_width, color="green", alpha=0.9, label="Revenue")
+        scplotter.ax.bar(xvalues, yvalues1_neg, bar_width,  bottom=yvalues_neg, color="#a02222", alpha=0.5,
+                         label="Levies")
+        scplotter.ax.bar(xvalues, yvalues1_pos, bar_width, bottom=yvalues_pos, color="green", alpha=0.3,
+                         label="Pos. Balancing")
+        scplotter.ax.bar(xvalues, yvalues2_neg, bar_width,  bottom=ybottom, color="#a02222", alpha=0.3,
+                         label="Neg. Balancing")
         # Line plot of balance
-        yvalues = [yvalue * 100 for yvalue in (df_balance[id_user]["balance_€"]).to_list()]
-        scplotter.ax.plot(xvalues, yvalues, color="0.1", label="Balance", linewidth=2)
+        yvalues_bal = [yvalue * 100 for yvalue in (df_balance[id_user]["balance_€"]).to_list()]
+        scplotter.ax.plot(xvalues, yvalues_bal, color="0.1", linewidth=2)
         # Figure setup
         xlims = [min(xvalues), max(xvalues)]
-        scplotter.ax.legend(bbox_to_anchor=(0.5, -0.2), ncol=4)
-        scplotter.figure_setup(title=f"Finances of household #{int(id_user)}", ylabel="Cents",
+        labels = ("Balance", "Cost", "Revenue", "Levies", "Pos. Balancing", "Neg. Balancing")
+        scplotter.figure_setup(title=f"Finances of household #{int(id_user)}", ylabel="Cents", legend_labels=labels,
                                xlims=xlims, xticks_style="date")
         if self.save_figures:
             self.__save_figure(name=f"household_finance_({int(id_user)})")
@@ -912,11 +941,8 @@ class ScenarioAnalyzer:
         devices = ("pv", "bat", "ev", "hp", "wind", "fixedgen")
 
         for device in devices:
-            # " ".join(["virtual submeter", device])
-            df_temp[device] = df_meters[df_meters[db_p.INFO_ADDITIONAL] == device]. \
+            df_temp[device] = df_meters[(df_meters[db_p.INFO_ADDITIONAL] == device) | (df_meters[db_p.INFO_ADDITIONAL] == "virtual submeter " + device)]. \
                               set_index(db_p.ID_USER)[db_p.INFO_ADDITIONAL]
-            # df_temp[device] += df_meters[df_meters[db_p.INFO_ADDITIONAL] == "virtual submeter" + device]. \
-            #                    set_index(db_p.ID_USER)[db_p.INFO_ADDITIONAL]
 
         # Post-process data to create tuples of (x, x, x, x, x, x) x ∈ [0, 1] and return information
         df_temp = df_temp.fillna(0)
@@ -929,6 +955,9 @@ class ScenarioAnalyzer:
         return df_temp["PV_Bat_EV_HP_Wind_Fix"]
 
     def get_producers(self, df_results) -> tuple:
+        """
+        TODO: Create function that gives out the user ids of the producers to exclude them in plots
+        """
         # print(df_results.to_string())
         pass
 
@@ -1086,9 +1115,12 @@ class ScenarioPlotter:
         self.ax.tick_params(axis='both', which='major')
 
         # Legend
-        if len(legend_labels) > 0:  # change labels of legend, if desired
+        if 0 < len(legend_labels) <= 5:  # change labels of legend, if desired
+            self.ax.legend(legend_labels, bbox_to_anchor=(0.5, -0.2-(0.1*int(len(legend_labels)/4))), ncol=4)
+        elif len(legend_labels) > 5:
+            # legend_labels = legend_labels
             self.ax.legend(legend_labels, bbox_to_anchor=(0.5, -0.2-(0.1*int(len(legend_labels)/4))),
-                           ncol=min(4, len(legend_labels)))
+                           ncol=min(4, math.ceil(round(len(legend_labels)/2))))
 
         # Scale x-axis tightly
         self.ax.autoscale(enable=True, axis='x', tight=True)
