@@ -218,11 +218,20 @@ class Scenario:
                                (f"{self.path_scenario}/lem", True),
                                (f"{self.path_scenario}/supplier", True),
                                (f"{self.path_scenario}/prosumer", True),
-                               (f"{self.path_scenario}/aggregator", True)])
+                               (f"{self.path_scenario}/aggregator", True),
+                               (f"{self.path_scenario}/weather", True),
+                               (f"{self.path_scenario}/weather/forecast", True)])
 
         # Copy config file to scenario directory
         with open(f"{self.path_scenario}/config.yaml", 'w') as file:
             self.yaml.dump(self.config, file)
+
+        # Copy weather files as feather files to scenario directory
+        df_weather = pd.read_csv(f"{self.path_input_data}/weather/weather.csv").set_index("timestamp")
+        ft.write_dataframe(df_weather.reset_index(), f"{self.path_scenario}/weather/weather.ft")
+        for file in os.listdir(f"{self.path_input_data}/weather/forecast"):
+            df_forecast = pd.read_csv(f"{self.path_input_data}/weather/forecast/{file}").set_index("timestamp")
+            ft.write_dataframe(df_forecast.reset_index(), f"{self.path_scenario}/weather/forecast/{file.split('.')[0]}")
 
     def __create_folders(self, list_paths: list) -> None:
         """creates new or replaces existing folders specified in the list of paths
