@@ -4,7 +4,7 @@ __license__ = ""
 __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
 
-from sqlalchemy import Text, BigInteger
+from sqlalchemy import Text, BigInteger, Boolean
 import dataclasses
 from dataclasses import field
 
@@ -29,9 +29,9 @@ NAME_ACCOUNT_USER = "market_participant"
 # Column names (sorted alphabetically)
 BALANCE_ACCOUNT = 'balance_account'
 DELTA_BALANCE = 'delta_balance'
-ENERGY_CUMULATED = 'energy_cumulated'
 ENERGY_BALANCING_NEGATIVE = 'energy_balancing_negative'
 ENERGY_BALANCING_POSITIVE = 'energy_balancing_positive'
+ENERGY_CUMULATED = 'energy_cumulated'
 ENERGY_IN = 'energy_in'
 ENERGY_IN_CUM = 'energy_in_cum'
 ENERGY_OUT = 'energy_out'
@@ -40,59 +40,58 @@ EXTENSION_BID = '_bid'
 EXTENSION_OFFER = '_offer'
 HORIZON_TRADING = 'horizon_trading'
 ID_AGGREGATOR = 'id_aggregator'
+ID_BID = 'id_bid'
 ID_MARKET_AGENT = 'id_market_agent'
+ID_MATCHING = 'id_matching'
 ID_METER = 'id_meter'
 ID_METER_MAIN = 'id_meter_main'
+ID_METER_SUPER = 'id_meter_super'
+ID_OFFER = 'id_offer'
+ID_SOURCE = 'id_source'
 ID_USER = 'id_user'
 ID_USER_BID = 'id_user_bid'
 ID_USER_OFFER = 'id_user_offer'
-ID_OFFER = 'id_offer'
-ID_BID = 'id_bid'
-ID_SOURCE = 'id_source'
-ID_MATCHING = 'id_matching'
 INFO_ADDITIONAL = 'info_additional'
 NUMBER_POSITION = 'number_position'
-NUMBER_POSITION_OFFER = 'number_position_offer'
 NUMBER_POSITION_BID = 'number_position_bid'
-
+NUMBER_POSITION_OFFER = 'number_position_offer'
+PREFERENCE_QUALITY = 'preference_quality'
 PREMIUM_PREFERENCE_QUALITY = 'premium_preference_quality'
 PRICE_ENERGY = 'price_energy'
 PRICE_ENERGY_BALANCING_NEGATIVE = 'price_energy_balancing_negative'
 PRICE_ENERGY_BALANCING_POSITIVE = 'price_energy_balancing_positive'
 PRICE_ENERGY_BID = 'price_energy_bid'
-PRICE_ENERGY_BID_MIN = 'price_energy_bid_min'
 PRICE_ENERGY_BID_MAX = 'price_energy_bid_max'
-PRICE_ENERGY_MARKET = 'price_energy_market'
-PRICE_ENERGY_LEVIES_POSITIVE = "price_energy_levies_positive"
+PRICE_ENERGY_BID_MIN = 'price_energy_bid_min'
 PRICE_ENERGY_LEVIES_NEGATIVE = "price_energy_levies_negative"
+PRICE_ENERGY_LEVIES_POSITIVE = "price_energy_levies_positive"
+PRICE_ENERGY_MARKET = 'price_energy_market'
 PRICE_ENERGY_OFFER = 'price_energy_offer'
-PRICE_ENERGY_OFFER_MIN = 'price_energy_offer_min'
 PRICE_ENERGY_OFFER_MAX = 'price_energy_offer_max'
+PRICE_ENERGY_OFFER_MIN = 'price_energy_offer_min'
+QTY_ENERGY = 'qty_energy'
+QTY_ENERGY_BIDS_CUM = "qty_energy_bids_cum"
+QTY_ENERGY_OFFERS_CUM = "qty_energy_offers_cum"
+QTY_ENERGY_TRADED = 'qty_energy_traded'
+QTY_ENERGY_TRADED_CUM = "qty_energy_traded_cum"
 QUALITY_ENERGY = 'quality_energy'
-QUALITY_ENERGY_OFFER = 'quality_energy_offer'
 QUALITY_ENERGY_BID = 'quality_energy_bid'
 QUALITY_ENERGY_MARKET = 'quality_energy_market'
-PREFERENCE_QUALITY = 'preference_quality'
-QTY_ENERGY = 'qty_energy'
-QTY_ENERGY_TRADED = 'qty_energy_traded'
-STATUS_POSITION = 'status_position'
+QUALITY_ENERGY_OFFER = 'quality_energy_offer'
 STATUS_METER_READINGS_PROCESSED = 'status_meter_readings_processed'
+STATUS_POSITION = 'status_position'
 STATUS_SETTLEMENT_COMPLETE = 'status_settlement_complete'
-T_UPDATE_BALANCE = 't_update_balance'
-T_SUBMISSION = 't_submission'
+STRATEGY_MARKET_AGENT = 'strategy_market_agent'
 TS_DELIVERY = 'ts_delivery'
 TS_DELIVERY_FIRST = 'ts_delivery_first'
 TS_DELIVERY_LAST = 'ts_delivery_last'
+TYPE_METER = 'type_meter'
+TYPE_POSITION = 'type_position'
+TYPE_TRANSACTION = 'type_transaction'
 T_CLEARED = 't_cleared'
 T_READING = 't_reading'
-TYPE_POSITION = 'type_position'
-STRATEGY_MARKET_AGENT = 'strategy_market_agent'
-TYPE_METER = 'type_meter'
-TYPE_TRANSACTION = 'type_transaction'
-
-QTY_ENERGY_BIDS_CUM = "qty_energy_bids_cum"
-QTY_ENERGY_OFFERS_CUM = "qty_energy_offers_cum"
-QTY_ENERGY_TRADED_CUM = "qty_energy_traded_cum"
+T_SUBMISSION = 't_submission'
+T_UPDATE_BALANCE = 't_update_balance'
 
 # Column base names to be dynamically added
 PRICE_ENERGY_MARKET_ = PRICE_ENERGY_MARKET + '_'
@@ -155,7 +154,8 @@ table_info_meter = LemlabTable()
 table_info_meter.name = NAME_TABLE_INFO_METER
 table_info_meter.list_columns = [LemlabColumn(ID_METER, Text(), True),
                                  LemlabColumn(ID_USER, Text()),
-                                 LemlabColumn(TYPE_METER, BigInteger()),
+                                 LemlabColumn(ID_METER_SUPER, Text()),
+                                 LemlabColumn(TYPE_METER, Text()),
                                  LemlabColumn(ID_METER_MAIN, Text()),
                                  LemlabColumn(ID_AGGREGATOR, Text()),
                                  LemlabColumn(QUALITY_ENERGY, Text()),

@@ -81,35 +81,53 @@ def calculate_virtual_submeters(db_obj, list_ts_delivery):
     :return None:
     """
     for ts_delivery in list_ts_delivery:
-        # get a list of meters active at the ts_delivery under consideration
+        # get a list of virtual meters active at the ts_delivery under consideration
         df_info_meter = db_obj.get_info_meter(ts_delivery_active=ts_delivery)
-        list_main_meters = list(df_info_meter[df_info_meter["type_meter"] == 2]["id_meter"])
+        list_virtual_meters = list(df_info_meter[df_info_meter["type_meter"].str.contains("virtual")]["id_meter"])
+
         df_readings_meter_delta = db_obj.get_meter_readings_delta(ts_delivery_first=list_ts_delivery[0],
                                                                   ts_delivery_last=list_ts_delivery[-1])
         list_readings_meter_delta = []
         # for all main meters under consideration
-        for main_meter in list_main_meters:
-            # list of submeters belonging to main meter
-            df_submeters = df_info_meter[df_info_meter["id_meter_main"] == main_meter]
-            list_submeters = list(df_submeters[df_submeters["type_meter"] == 3]["id_meter"])
-            # virtual meter belonging to main meter
-            virtual_meter = list(df_submeters[df_submeters["type_meter"] == 4]["id_meter"])[0]
-            cum_energy = 0
-            # determine missing energy flow
-            for meter in list_submeters:
-                cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
-                                                   (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
-                cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
+        for virtual_meter in list_virtual_meters:
+            # list of submeters @ same level
+            supermeter = df_info_meter.set_index("id_meter").loc[virtual_meter, "id_meter_super"]
+            if supermeter != "0000000000":
+                df_submeters = df_info_meter[(df_info_meter["id_meter_super"] == supermeter)
+                                             & (df_info_meter["id_meter"] != virtual_meter)]
+                list_submeters = list(df_submeters["id_meter"])
 
-            mm_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == main_meter) &
-                                              (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                cum_energy = 0
+                # determine missing energy flow
+                for meter in list_submeters:
+                    cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
+                                                       (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                    cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
 
-            mm_energy = int(mm_temp["energy_out"]) - int(mm_temp["energy_in"])
-            vm_energy = mm_energy - cum_energy
+                mm_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == supermeter) &
+                                                  (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+
+                mm_energy = int(mm_temp["energy_out"]) - int(mm_temp["energy_in"])
+                vm_energy = mm_energy - cum_energy
+            else:
+                supermeter = virtual_meter
+                df_submeters = df_info_meter[df_info_meter["id_meter_super"] == supermeter]
+                list_submeters = list(df_submeters["id_meter"])
+
+                cum_energy = 0
+                # determine missing energy flow
+                for meter in list_submeters:
+                    cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
+                                                       (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                    cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
+
+                vm_energy = cum_energy
+
             list_readings_meter_delta.append([ts_delivery,
                                               _decomp_float(vm_energy, "neg"),
                                               _decomp_float(vm_energy, "pos"),
                                               virtual_meter])
+
         # log virtual meter deltas to database
         df_meter_reading_delta = pd.DataFrame(list_readings_meter_delta,
                                               columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ENERGY_IN,
@@ -127,7 +145,8 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
     :return None:
     """
     # get mapping of market agent IDs to main meter
-    map_id_ma_to_main_meter = db_obj.get_map_everything_to_main_meter()
+    map_id_ma_to_main_meter = db_obj.get_map_to_main_meter()
+
     dict_bal_ener = {
         db_obj.db_param.ID_METER: [],
         db_obj.db_param.TS_DELIVERY: [],
@@ -137,7 +156,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
 
     for ts_d in list_ts_delivery:
         # return MAIN meter reading deltas and ex-ante market results
-        main_meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, type_meter="main")
+        main_meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
         market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
 
         # relabel market results by main meters, so comparison to energy flows can be made
@@ -340,7 +359,7 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
 
     for ts_d in list_ts_delivery:
         # get meter readings and levy prices
-        meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, type_meter="main")
+        meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
         settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d)
         levies_pos = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_LEVIES_POSITIVE])
         levies_neg = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_LEVIES_NEGATIVE])
@@ -455,9 +474,9 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         dict_results_ex_post[db_obj.db_param.TS_DELIVERY].append(ts_d)
 
         main_meter_flows = db_obj.get_meter_readings_by_type(ts_delivery=ts_d,
-                                                             type_meter="main")
+                                                             types_meters=[4, 5])
         submeter_flows = db_obj.get_meter_readings_by_type(ts_delivery=ts_d,
-                                                           type_meter="submeter")
+                                                           types_meters=[0, 1])
         # determine energy exchange across market boundaries
         df_outside_flow = main_meter_flows.groupby("ts_delivery").sum()
         if len(main_meter_flows):

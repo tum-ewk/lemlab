@@ -331,8 +331,8 @@ class ScenarioExecutor:
             dict_meter = {
                 self.db_conn_admin.db_param.ID_METER:          [prosumer_config["id_meter_main"]],
                 self.db_conn_admin.db_param.ID_USER:           [prosumer],
-                self.db_conn_admin.db_param.TYPE_METER:        [2],
-                self.db_conn_admin.db_param.ID_METER_MAIN:     [null_id],
+                self.db_conn_admin.db_param.ID_METER_SUPER:    [null_id],
+                self.db_conn_admin.db_param.TYPE_METER:        [self.config["lem"]["types_meter"][4]],
                 self.db_conn_admin.db_param.ID_AGGREGATOR:     [null_id],
                 self.db_conn_admin.db_param.QUALITY_ENERGY:    ["na"],
                 self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
@@ -350,8 +350,8 @@ class ScenarioExecutor:
                 dict_meter = {
                     self.db_conn_admin.db_param.ID_METER: [plant],
                     self.db_conn_admin.db_param.ID_USER: [prosumer],
-                    self.db_conn_admin.db_param.TYPE_METER: [3],
-                    self.db_conn_admin.db_param.ID_METER_MAIN: [prosumer_config["id_meter_main"]],
+                    self.db_conn_admin.db_param.TYPE_METER: [self.config["lem"]["types_meter"][0]],
+                    self.db_conn_admin.db_param.ID_METER_SUPER: [prosumer_config["id_meter_main"]],
                     self.db_conn_admin.db_param.ID_AGGREGATOR: [agg_id],
                     self.db_conn_admin.db_param.QUALITY_ENERGY: [plant_config[plant].get("quality")],
                     self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
@@ -359,12 +359,12 @@ class ScenarioExecutor:
                     self.db_conn_admin.db_param.INFO_ADDITIONAL: [plant_config[plant].get("type")]}
                 if plant_config[plant].get("has_submeter") is False:
                     dict_meter[self.db_conn_admin.db_param.ID_METER] = [self.__gen_rand_id(10)]
-                    dict_meter[self.db_conn_admin.db_param.TYPE_METER] = [4]
+                    dict_meter[self.db_conn_admin.db_param.TYPE_METER] = [self.config["lem"]["types_meter"][1]]
                     if plant_config[plant].get("type") == "hh":
                         dict_meter[self.db_conn_admin.db_param.INFO_ADDITIONAL] = ["residual load"]
                     else:
                         dict_meter[self.db_conn_admin.db_param.INFO_ADDITIONAL] = \
-                            [f"virtual submeter {plant_config[plant].get('type')}"]
+                            [f"{plant_config[plant].get('type')}"]
                 self.db_conn_admin.register_meter(pd.DataFrame().from_dict(dict_meter))
 
             # create a local log for all energy flows, log_ems.ft
@@ -437,19 +437,8 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.HORIZON_TRADING:            [config_agg["ma_horizon"]],
                 self.db_conn_admin.db_param.TS_DELIVERY_FIRST:          [ts_delivery_first],
                 self.db_conn_admin.db_param.TS_DELIVERY_LAST:           [(2 ** 31) - 1]}
+
             self.db_conn_admin.register_user(pd.DataFrame().from_dict(dict_user))
-            # register aggregator as virtual meter in database
-            dict_meter = {
-                self.db_conn_admin.db_param.ID_METER: [config_agg["id_user"]],
-                self.db_conn_admin.db_param.ID_USER: [config_agg["id_user"]],
-                self.db_conn_admin.db_param.TYPE_METER: [0],
-                self.db_conn_admin.db_param.ID_METER_MAIN: [null_id],
-                self.db_conn_admin.db_param.ID_AGGREGATOR: [null_id],
-                self.db_conn_admin.db_param.QUALITY_ENERGY: ["na"],
-                self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
-                self.db_conn_admin.db_param.TS_DELIVERY_LAST: [2 ** 31 - 1],
-                self.db_conn_admin.db_param.INFO_ADDITIONAL: ["virtual meter"]}
-            self.db_conn_admin.register_meter(pd.DataFrame().from_dict(dict_meter))
 
     def __setup_lem(self, t_override=None) -> None:
         """
@@ -504,21 +493,8 @@ class ScenarioExecutor:
             self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
             self.db_conn_admin.db_param.TS_DELIVERY_LAST: [(2**31)-1]}
         self.db_conn_admin.register_user(pd.DataFrame().from_dict(dict_user))
-        # register supplier's virtual meter
-        dict_meter = {
-            self.db_conn_admin.db_param.ID_METER: [self.config["supplier"]["id_user"]],
-            self.db_conn_admin.db_param.ID_USER:  [self.config["supplier"]["id_user"]],
-            self.db_conn_admin.db_param.TYPE_METER: [0],
-            self.db_conn_admin.db_param.ID_METER_MAIN: [null_id],
-            self.db_conn_admin.db_param.ID_AGGREGATOR: [null_id],
-            self.db_conn_admin.db_param.QUALITY_ENERGY: [self.config["supplier"]["quality"]],
-            self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
-            self.db_conn_admin.db_param.TS_DELIVERY_LAST: [2 ** 31 - 1],
-            self.db_conn_admin.db_param.INFO_ADDITIONAL: ["virtual meter"]}
-        self.db_conn_admin.register_meter(pd.DataFrame().from_dict(dict_meter))
 
     # simulation execution
-
     def __execute(self):
 
         # choose execution mode: "real-time" or normal simulation
@@ -789,9 +765,9 @@ class ScenarioExecutor:
         list_ts_delivery_ready = lem_settlement.get_list_ts_delivery_ready(db_obj=self.db_conn_admin)
         # in some simulations, some plant have no physical meters. Their power flow must be implicitly calculated and
         # assigned to a virtual meter.
-        if self.config["lem"]["calculate_virtual_submeters"]:
-            lem_settlement.calculate_virtual_submeters(db_obj=self.db_conn_admin,
-                                                       list_ts_delivery=list_ts_delivery_ready)
+
+        lem_settlement.calculate_virtual_submeters(db_obj=self.db_conn_admin,
+                                                   list_ts_delivery=list_ts_delivery_ready)
         # if ex-ante market selected, clear market
         if self.config["lem"]["types_clearing_ex_ante"]:
             clearing_ex_ante.market_clearing(db_obj=self.db_conn_admin,

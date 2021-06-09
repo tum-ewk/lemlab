@@ -106,10 +106,12 @@ class DatabaseConnection:
     def get_mapping_to_user(self):
         info_meter = self._query_data_free(f"SELECT {self.db_param.ID_METER}, {self.db_param.ID_USER}"
                                            f" FROM {self.db_param.NAME_TABLE_INFO_METER}")
+
         dict_mapping_1 = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_user"])])
 
         info_user = self._query_data_free(f"SELECT {self.db_param.ID_USER}, {self.db_param.ID_MARKET_AGENT}"
                                           f" FROM {self.db_param.NAME_TABLE_INFO_USER}")
+
         dict_mapping_2 = dict([(i, a) for i, a in zip(info_user["id_market_agent"], info_user["id_user"])])
 
         dict_mapping = {**dict_mapping_1, **dict_mapping_2}
@@ -120,24 +122,24 @@ class DatabaseConnection:
             dict_mapping[user] = user
         return dict_mapping
 
-    def get_map_everything_to_main_meter(self):
+    def get_map_to_main_meter(self):
         info_meter = self._query_data_free(f"SELECT {self.db_param.ID_METER}, {self.db_param.ID_USER}"
                                            f" FROM {self.db_param.NAME_TABLE_INFO_METER}"
-                                           f" WHERE {self.db_param.TYPE_METER} != 3 "
-                                           f" AND {self.db_param.TYPE_METER} != 4")
+                                           f" WHERE {self.db_param.TYPE_METER} LIKE '%%grid%%'")
 
-        map_meter_to_meter = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter"])])
+        map_grid_meter_to_self = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter"])])
 
         map_user_to_meter = dict([(i, a) for i, a in zip(info_meter["id_user"], info_meter["id_meter"])])
 
         info_user = self._query_data_free(f"SELECT {self.db_param.ID_USER}, {self.db_param.ID_MARKET_AGENT}"
                                           f" FROM {self.db_param.NAME_TABLE_INFO_USER}")
+
         map_ma_to_user = dict([(i, a) for i, a in zip(info_user["id_market_agent"], info_user["id_user"])])
 
         map_everything_to_main_meter = {}
         for id_ma in map_ma_to_user:
-            map_everything_to_main_meter[id_ma] = map_user_to_meter[map_ma_to_user[id_ma]]
-        map_everything_to_main_meter = {**map_everything_to_main_meter, **map_meter_to_meter, **map_user_to_meter}
+            map_everything_to_main_meter[id_ma] = map_user_to_meter.get(map_ma_to_user[id_ma], "0000000000")
+        map_everything_to_main_meter = {**map_everything_to_main_meter, **map_grid_meter_to_self, **map_user_to_meter}
         return map_everything_to_main_meter
 
     def get_list_main_meters(self, ts_delivery_active=None):
@@ -160,8 +162,7 @@ class DatabaseConnection:
             sql += f" WHERE ({self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery_active}" \
                    f" AND {self.db_param.TS_DELIVERY_LAST} >= {ts_delivery_active})"
         if non_virtual:
-            sql += f" AND {self.db_param.TYPE_METER} != 0 " \
-                   f" AND {self.db_param.TYPE_METER} != 4"
+            sql += f" AND {self.db_param.TYPE_METER} NOT LIKE 'virtual%%'"
         return list(self._query_data_free(sql).loc[:, self.db_param.ID_METER])
 
     def get_map_meter_to_quality(self):
@@ -404,30 +405,15 @@ class DatabaseConnection:
             f"ORDER BY {self.db_param.TS_DELIVERY}")
         return readings_meter_delta
 
-    def get_meter_readings_by_type(self, ts_delivery, type_meter=None):
-        list_meters = []
-        if type_meter is None:
-            list_meters = list(
-                self._query_data_free(f"SELECT {self.db_param.ID_METER} FROM {self.db_param.NAME_TABLE_INFO_METER}"
-                                      f" WHERE {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery} "
-                                      f" AND {self.db_param.TS_DELIVERY_LAST} >= {ts_delivery}"
-                                      ).loc[:, self.db_param.ID_METER])
-        elif type_meter == "main":
-            list_meters = list(
-                self._query_data_free(f"SELECT {self.db_param.ID_METER} FROM {self.db_param.NAME_TABLE_INFO_METER}"
-                                      f" WHERE {self.db_param.TYPE_METER} = 1"
-                                      f" OR {self.db_param.TYPE_METER} = 2 "
-                                      f" AND {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery} "
-                                      f" AND {self.db_param.TS_DELIVERY_LAST} >= {ts_delivery}"
-                                      ).loc[:, self.db_param.ID_METER])
-        elif type_meter == "submeter":
-            list_meters = list(
-                self._query_data_free(f"SELECT {self.db_param.ID_METER} FROM {self.db_param.NAME_TABLE_INFO_METER}"
-                                      f" WHERE {self.db_param.TYPE_METER} = 3"
-                                      f" OR {self.db_param.TYPE_METER} = 4"
-                                      f" AND {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery}"
-                                      f" AND {self.db_param.TS_DELIVERY_LAST} >= {ts_delivery}"
-                                      ).loc[:, self.db_param.ID_METER])
+    def get_meter_readings_by_type(self, ts_delivery, types_meters=[]):
+        if len(types_meters) == 0:
+            types_meters = [0, 1, 2, 3, 4, 5]
+
+        df_meters = self._query_data_free(f"SELECT * FROM {self.db_param.NAME_TABLE_INFO_METER}"
+                                          f" WHERE {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery} "
+                                          f" AND {self.db_param.TS_DELIVERY_LAST} >= {ts_delivery}")
+        df_meters = df_meters[df_meters["type_meter"].isin([self.lem_config["types_meter"][i] for i in types_meters])]
+        list_meters = list(df_meters["id_meter"])
 
         str_list_meters = "\'" + '\', \''.join(list_meters) + "\'"
 
@@ -436,17 +422,6 @@ class DatabaseConnection:
               f"AND {self.db_param.TS_DELIVERY} = {ts_delivery} " \
               f"ORDER BY {self.db_param.TS_DELIVERY}"
 
-        #
-        # for i, meter in enumerate(list_meters):
-        #     if i == 0:
-        #         sql += f"({self.db_param.ID_METER} LIKE '{meter}'"
-        #     else:
-        #         sql += f" OR {self.db_param.ID_METER} LIKE '{meter}'"
-        # if len(list_meters) != 0:
-        #     sql += f") AND "
-        #
-        # sql += f"{self.db_param.TS_DELIVERY} = '{ts_delivery}' " \
-        #        f"ORDER BY {self.db_param.TS_DELIVERY}"
         return self._query_data_free(sql)
 
     ###################################################
