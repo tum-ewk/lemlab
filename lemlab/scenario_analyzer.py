@@ -126,8 +126,8 @@ class ScenarioAnalyzer:
 
         # Get IDs of all main meters (1=utility with multiple submeters, 2=utility meter)
         df_meter_info = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
-        list_main_meters = list(df_meter_info[(df_meter_info[db_p.TYPE_METER] == 1)
-                                              | (df_meter_info[db_p.TYPE_METER] == 2)][db_p.ID_METER])
+        list_main_meters = list(df_meter_info[df_meter_info[db_p.TYPE_METER].isin(
+            ["grid meter", "virtual grid meter"])][db_p.ID_METER])
 
         # Get power flows of all meters in list_main_meters
         df_meter_readings_delta = pd.read_csv(f"{self.path_results}/db_snapshot/"
@@ -293,9 +293,8 @@ class ScenarioAnalyzer:
                                            "cost_bought_€", "balance_€"]).set_index(db_p.ID_USER)
 
         # Look up each participants main meter id
-        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
-        df_temp = df_meters[df_meters[db_p.INFO_ADDITIONAL].str.contains("main meter")
-                            | df_meters[db_p.INFO_ADDITIONAL].str.contains("virtual meter")] \
+        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0, dtype={"id_user": str})
+        df_temp = df_meters[df_meters[db_p.TYPE_METER].isin(["grid meter", "virtual grid meter"])]\
             [[db_p.ID_USER, db_p.ID_METER]]
         df_temp.set_index(db_p.ID_USER, inplace=True)
         df_results[db_p.ID_USER] = df_temp.index
@@ -304,7 +303,6 @@ class ScenarioAnalyzer:
 
         # Check which market participants have PV, batteries, EVs and heat pumps
         df_results["PV_Bat_EV_HP_Wind_Fix"] = self.pv_bat_ev_hp_wind_fix
-
         # Sort all the transactions according to the user for the time period max_time
         df_transactions = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_LOGS_TRANSACTIONS}.csv",
                                       index_col=0)
@@ -320,10 +318,14 @@ class ScenarioAnalyzer:
         df_results["balance_€"] = df_results["revenue_sold_€"] - df_results["cost_bought_€"]
 
         # Get rid of supplier and aggregator
-        if self.config["supplier"]["id_user"] in df_results.index.values:
+        try:
             df_results = df_results.drop([self.config["supplier"]["id_user"]])
-        if self.config["aggregator"]["id_user"] in df_results.index.values:
+        except:
+            pass
+        try:
             df_results = df_results.drop([self.config["aggregator"]["id_user"]])
+        except:
+            pass
 
         # Check for large-scale producers
         self.get_producers(df_results)
@@ -555,26 +557,30 @@ class ScenarioAnalyzer:
         plt.close("all")
 
         # Load meter information
-        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
+        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0, dtype={"id_user": str})
 
         # Create dataframe to store the information about the participants
         df_users = pd.DataFrame(columns=[db_p.ID_USER, "main_id", "PV_Bat_EV_HP_Wind_Fix"])
         df_users[db_p.ID_USER] = df_meters[db_p.ID_USER].unique()
+        df_users["main_id"] = df_users[db_p.ID_USER]
         df_users.set_index(db_p.ID_USER, inplace=True)
 
         # Get rid of supplier and aggregator
-        if self.config["supplier"]["id_user"] in df_users.index.values:
+        try:
             df_users = df_users.drop([self.config["supplier"]["id_user"]])
-        if self.config["aggregator"]["id_user"] in df_users.index.values:
+        except:
+            pass
+        try:
             df_users = df_users.drop([self.config["aggregator"]["id_user"]])
-
+        except:
+            pass
         # Find the ID of each main meter
-        df_users.loc[:, "main_id"] = df_meters[df_meters[db_p.INFO_ADDITIONAL].str.contains("main meter")] \
-            [db_p.ID_METER].values
+        df_temp = df_meters[df_meters[db_p.TYPE_METER].isin(["grid meter", "virtual grid meter"])]
+        map_user_to_meter = dict([(i, a) for i, a in zip(df_temp["id_user"], df_temp["id_meter"])])
 
         # Check which market participants have PV, batteries, EVs and heat pumps
         df_users["PV_Bat_EV_HP_Wind_Fix"] = self.pv_bat_ev_hp_wind_fix
-
+        df_users = df_users.replace({"main_id": map_user_to_meter})
         # Check if a specific user was provided to be analyzed, if not plot a random household with the provided config
         if id_user:
             # id_user can be specified either as integer or as string
@@ -610,21 +616,21 @@ class ScenarioAnalyzer:
         # Get ID of household meter. If no household meter exists, look for virtual meter that represents the
         #   residual load
         try:
-            ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+            ids = [df_meters.loc[(df_meters[db_p.ID_METER_SUPER] == id_meter) &
                                  (df_meters[db_p.INFO_ADDITIONAL] == devices[0]),
                                  db_p.ID_METER].values[0]]
         except IndexError:
             try:
                 devices = ["residual load"]
                 labels = ["Main meter", "Residual load"]
-                ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+                ids = [df_meters.loc[(df_meters[db_p.ID_METER_SUPER] == id_meter) &
                                      (df_meters[db_p.INFO_ADDITIONAL] == devices[0]),
                                      db_p.ID_METER].values[0]]
             except IndexError:
                 devices = ["virtual submeter"]
                 labels = ["Main meter", "Plant"]
                 # print(df_meters[db_p.INFO_ADDITIONAL].isin(devices))
-                ids = [df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+                ids = [df_meters.loc[(df_meters[db_p.ID_METER_SUPER] == id_meter) &
                                      (df_meters[db_p.INFO_ADDITIONAL].str.contains(devices[0])),
                                      db_p.ID_METER].values[0]]
 
@@ -636,7 +642,7 @@ class ScenarioAnalyzer:
             if type_household[idx]:  # check if type of device should be included in plot
                 # Get ID of optional device. If it does not exist, ignore it since it is part of the residual load
                 try:
-                    ids.append(df_meters.loc[(df_meters[db_p.ID_METER_MAIN] == id_meter) &
+                    ids.append(df_meters.loc[(df_meters[db_p.ID_METER_SUPER] == id_meter) &
                                              (df_meters[db_p.INFO_ADDITIONAL] == devices_opt[idx]),
                                              db_p.ID_METER].values[0])
                 except IndexError:
@@ -929,7 +935,7 @@ class ScenarioAnalyzer:
         """
 
         # Load meter information
-        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
+        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0, dtype={"id_user": str})
 
         # Prepare temporary dataframe to create tuple column that contains if participants have devices
         df_temp = pd.DataFrame(columns=[db_p.ID_USER, "PV_Bat_EV_HP_Wind_Fix"])
@@ -941,7 +947,7 @@ class ScenarioAnalyzer:
         devices = ("pv", "bat", "ev", "hp", "wind", "fixedgen")
 
         for device in devices:
-            df_temp[device] = df_meters[(df_meters[db_p.INFO_ADDITIONAL] == device) | (df_meters[db_p.INFO_ADDITIONAL] == "virtual submeter " + device)]. \
+            df_temp[device] = df_meters[(df_meters[db_p.INFO_ADDITIONAL] == device)]. \
                               set_index(db_p.ID_USER)[db_p.INFO_ADDITIONAL]
 
         # Post-process data to create tuples of (x, x, x, x, x, x) x ∈ [0, 1] and return information
@@ -951,7 +957,6 @@ class ScenarioAnalyzer:
         df_temp = df_temp.unstack()
         df_temp["PV_Bat_EV_HP_Wind_Fix"] = tuple(zip(df_temp["pv"], df_temp["bat"], df_temp["ev"],
                                                      df_temp["hp"], df_temp["wind"], df_temp["fixedgen"]))
-
         return df_temp["PV_Bat_EV_HP_Wind_Fix"]
 
     def get_producers(self, df_results) -> tuple:
