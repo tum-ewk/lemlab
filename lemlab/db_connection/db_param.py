@@ -44,7 +44,6 @@ ID_BID = 'id_bid'
 ID_MARKET_AGENT = 'id_market_agent'
 ID_MATCHING = 'id_matching'
 ID_METER = 'id_meter'
-ID_METER_MAIN = 'id_meter_main'
 ID_METER_SUPER = 'id_meter_super'
 ID_OFFER = 'id_offer'
 ID_SOURCE = 'id_source'
@@ -156,7 +155,6 @@ table_info_meter.list_columns = [LemlabColumn(ID_METER, Text(), True),
                                  LemlabColumn(ID_USER, Text()),
                                  LemlabColumn(ID_METER_SUPER, Text()),
                                  LemlabColumn(TYPE_METER, Text()),
-                                 LemlabColumn(ID_METER_MAIN, Text()),
                                  LemlabColumn(ID_AGGREGATOR, Text()),
                                  LemlabColumn(QUALITY_ENERGY, Text()),
                                  LemlabColumn(TS_DELIVERY_FIRST, BigInteger()),

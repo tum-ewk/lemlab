@@ -329,7 +329,7 @@ class ScenarioExecutor:
             # register main meter in DB
 
             dict_meter = {
-                self.db_conn_admin.db_param.ID_METER:          [prosumer_config["id_meter_main"]],
+                self.db_conn_admin.db_param.ID_METER:          [prosumer_config["id_meter_grid"]],
                 self.db_conn_admin.db_param.ID_USER:           [prosumer],
                 self.db_conn_admin.db_param.ID_METER_SUPER:    [null_id],
                 self.db_conn_admin.db_param.TYPE_METER:        [self.config["lem"]["types_meter"][4]],
@@ -351,7 +351,7 @@ class ScenarioExecutor:
                     self.db_conn_admin.db_param.ID_METER: [plant],
                     self.db_conn_admin.db_param.ID_USER: [prosumer],
                     self.db_conn_admin.db_param.TYPE_METER: [self.config["lem"]["types_meter"][0]],
-                    self.db_conn_admin.db_param.ID_METER_SUPER: [prosumer_config["id_meter_main"]],
+                    self.db_conn_admin.db_param.ID_METER_SUPER: [prosumer_config["id_meter_grid"]],
                     self.db_conn_admin.db_param.ID_AGGREGATOR: [agg_id],
                     self.db_conn_admin.db_param.QUALITY_ENERGY: [plant_config[plant].get("quality")],
                     self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
@@ -368,7 +368,7 @@ class ScenarioExecutor:
                 self.db_conn_admin.register_meter(pd.DataFrame().from_dict(dict_meter))
 
             # create a local log for all energy flows, log_ems.ft
-            list_columns = ["timestamp", f"gr_{prosumer_config['id_meter_main']}"]
+            list_columns = ["timestamp", f"gr_{prosumer_config['id_meter_grid']}"]
             for plant in prosumer_config["list_plants"]:
                 list_columns.append(f"{plant_config[plant]['type']}_{plant}")
 
@@ -881,7 +881,7 @@ class ScenarioExecutor:
         :return: list, instances of Aggregator class
         """
         list_aggregator_obj = []
-        if self.config["aggregator"]["active"] is True:
+        if self.config["simulation"]["agents_active"] and self.config["aggregator"]["active"]:
             list_aggregator_obj.append(Aggregator(path=f"{self.path_results}/aggregator/",
                                                   t_override=self.t_now))
         return list_aggregator_obj
@@ -911,7 +911,7 @@ class ScenarioExecutor:
         :return: None
         """
 
-        columns = ["timestamp", f"power_{prosumer_config['id_meter_main']}"]
+        columns = ["timestamp", f"power_{prosumer_config['id_meter_grid']}"]
         for plant in prosumer_config["list_plants"]:
             if plant_config[plant].get("type") == "ev":
                 columns.append(f"power_{plant}")
