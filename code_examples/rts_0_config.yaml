@@ -92,6 +92,14 @@ lem:
   "prices_settlement_in_advance": 0         # how many steps in advance are settlement prices
                                             # posted to the platform; currently only 0 possible
 
+  "types_meter": {0: "plant submeter",      # types of meter defined
+                  1: "virtual plant submeter",
+                  2: "dividing meter",
+                  3: "virtual dividing meter",
+                  4: "grid meter",
+                  5: "virtual grid meter"
+                  }
+
   # defining balancing energy pricing
   "bal_energy_pricing_mechanism": "fixed"   # how should balancing energy prices be set?
                                             #      "fixed" - dual prices as defined below
@@ -363,7 +371,7 @@ producer:
 
   ################################ large-scale pv generation settings ####################################
 
-  "pv_active": False                        # is there a large-scale pv producer?
+  "pv_active": false                        # is there a large-scale pv producer?
 
   "pv_power": 60000                         # peak power of photovoltaic plant in w
 
@@ -374,7 +382,6 @@ producer:
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
                                             #   "file_nn" - forecast based on weather forecast file (coming soon)
-
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 

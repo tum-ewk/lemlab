@@ -777,7 +777,7 @@ class Scenario:
 
         # Add new information to account dict
         account.update({"id_user": id_user,
-                        "id_meter_main": self.__gen_rand_id(id_len),
+                        "id_meter_grid": self.__gen_rand_id(id_len),
                         "list_plants": list_plant_ids,
                         "id_market_agent": id_user})
 
@@ -790,7 +790,7 @@ class Scenario:
             plant_dict[list_plant_ids[i]] = plant
 
         # Initialize prosumer's main meter
-        self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_main'),
+        self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_grid'),
                           init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
 
         # Initialize all other meters and create device-dependent files

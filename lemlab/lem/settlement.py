@@ -466,7 +466,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
 
     # get required mappings
     info_meter = db_obj.get_info_meter()
-    map_submeter_to_main = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter_main"])])
+    map_submeter_to_main = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter_super"])])
     map_quality = db_obj.get_map_meter_to_quality()
 
     for ts_d in list_ts_delivery:
