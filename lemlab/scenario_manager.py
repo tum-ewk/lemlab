@@ -926,7 +926,7 @@ class Scenario:
 
         # Read respective household time series from input data directory
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filenames_hh[idx]}"
-        df_hh = pd.read_csv(filename_hh).set_index("timestamp") * (-1)
+        df_hh = pd.read_csv(filename_hh, usecols=["timestamp", "power"]).set_index("timestamp") * (-1)
 
         # Update consumption information to actual consumption
         account["list_plant_specs"][0]["annual_consumption"] = consumptions_hh[idx]
@@ -1033,6 +1033,21 @@ class Scenario:
         # Read necessary keyword arguments
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
+
+        # Find out the annual consumption to identify the correct household heat demand time series
+        hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
+        annual_consumption = hh_plant["annual_consumption"]
+
+        # Read respective household time series from input data directory
+        filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
+                           if str(annual_consumption) in household)
+        filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
+        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", "heat"]).set_index("timestamp") * (-1)
+
+        # Write heat demand time series to prosumer specifications directory
+        ft.write_dataframe(df_heat.reset_index(),
+                           f"{self.path_scenario}/prosumer/{account['id_user']}"
+                           f"/raw_data_{plant_id}.ft")
 
         # Read random heat pump file from input data directory and copy to prosumer specifications directory
         filename_hp = choice(os.listdir(f'{self.path_input_data}/prosumers/hp/'))
