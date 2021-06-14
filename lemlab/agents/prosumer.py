@@ -17,7 +17,7 @@ import warnings
 class Prosumer:
     """Prosumer defines objects and methods used to simulate a single family home in a local energy market
 
-       This class is intended for use in conjunction with the Supplier and Simulation classes. In addition, the
+       This class is intended for use in conjunction with the Retailer and Simulation classes. In addition, the
        functionality of the Platform/clearing_ex_ante.py module is required in order for market clearing to be enacted.
 
        A single family home can simulate the following physical plants, depending on the selected configuration:
@@ -997,7 +997,7 @@ class Prosumer:
                               + 15*60*self.config_dict["ma_horizon"])]
             [f"power_{self.config_dict['id_meter_grid']}"]) / 4
 
-        df_potential_bids.rename(columns={f"power_{self.config_dict['id_meter_grid']}": "net_bids"}, inplace=True)
+        df_potential_bids.rename(columns={f"power_{self.config_dict['R']}": "net_bids"}, inplace=True)
 
         df_potential_bids["net_bids"] = df_potential_bids["net_bids"] - self.matched_bids_by_timestep["net_bids"]
 

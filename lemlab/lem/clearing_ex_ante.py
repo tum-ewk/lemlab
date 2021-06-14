@@ -22,7 +22,7 @@ import string
 
 def market_clearing(db_obj,
                     config_lem,
-                    config_supplier=None,
+                    config_retailer=None,
                     t_override=None,
                     plotting=False,
                     verbose=False):
@@ -30,7 +30,7 @@ def market_clearing(db_obj,
     Function clears all offers and bids from database and writes stores unmatched and matched bids back in database.
     @param db_obj: database connection object
     @param config_lem: configuration dictionary of local energy market
-    @param config_supplier: configuration dictionary of supplier
+    @param config_retailer: configuration dictionary of retailer
     @param t_override: defines the current time, mostly used for simulation purpose [unix time]
     @param plotting: boolean value to visualize clearing results
     @param verbose: boolean value to print updates to console
@@ -106,11 +106,11 @@ def market_clearing(db_obj,
                 if verbose:
                     iterations.set_description(str(pd.Timestamp(t_clearing_current, unit="s", tz="Europe/Berlin")) +
                                                ' Clearing                                  ')
-                # Check whether this is the first clearing period and whether the flag supplier bids is true
-                if config_supplier is not None:
-                    # Insert supplier bids and offers
-                    bids_ts_d, offers_ts_d = _add_supplier_bids(db_obj,
-                                                                config_supplier,
+                # Check whether this is the first clearing period and whether the flag retailer bids is true
+                if config_retailer is not None:
+                    # Insert retailer bids and offers
+                    bids_ts_d, offers_ts_d = _add_retailer_bids(db_obj,
+                                                                config_retailer,
                                                                 t_clearing_current,
                                                                 bids_ts_d,
                                                                 offers_ts_d)
@@ -1386,26 +1386,26 @@ def calc_market_position_shares(db_obj, config_lem, offers, bids, positions_clea
     return positions_cleared
 
 
-def _add_supplier_bids(db_obj,
-                       config_supplier,
+def _add_retailer_bids(db_obj,
+                       config_retailer,
                        t_clearing_current,
                        sorted_bids_t_d,
                        sorted_offers_t_d):
     """
-    Adds supplier bid and offer to offers and bids.
+    Adds retailer bid and offer to offers and bids.
     @param db_obj: DatabaseConnection object
     @param t_clearing_current: time of delivery for which bid and offer are inserted
-    @param sorted_bids_t_d: dataframe of bids in which supplier bid is inserted
-    @param sorted_offers_t_d: dataframe of offers in which supplier offer is inserted
+    @param sorted_bids_t_d: dataframe of bids in which retailer bid is inserted
+    @param sorted_offers_t_d: dataframe of offers in which retailer offer is inserted
     @return: dataframes of offers and bids
     """
     temp_df = pd.DataFrame(columns=db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_POSITIONS_MARKET_EX_ANTE))
     temp_df.at[0, db_obj.db_param.T_SUBMISSION] = round(time.time())
-    temp_df.at[0, db_obj.db_param.ID_USER] = config_supplier['id_user']
-    temp_df.at[0, db_obj.db_param.QTY_ENERGY] = config_supplier['qty_energy_offer']
+    temp_df.at[0, db_obj.db_param.ID_USER] = config_retailer['id_user']
+    temp_df.at[0, db_obj.db_param.QTY_ENERGY] = config_retailer['qty_energy_offer']
     temp_df.at[0, db_obj.db_param.TYPE_POSITION] = 0
     temp_df.at[0, db_obj.db_param.PRICE_ENERGY] = int(
-        config_supplier['price_sell'] * db_obj.db_param.EURO_TO_SIGMA / 1000)
+        config_retailer['price_sell'] * db_obj.db_param.EURO_TO_SIGMA / 1000)
     temp_df.at[0, db_obj.db_param.QUALITY_ENERGY] = 0
     temp_df.at[0, db_obj.db_param.NUMBER_POSITION] = 0
     temp_df.at[0, db_obj.db_param.STATUS_POSITION] = 0
@@ -1415,8 +1415,8 @@ def _add_supplier_bids(db_obj,
 
     temp_df.at[0, db_obj.db_param.TYPE_POSITION] = 1
     temp_df.at[0, db_obj.db_param.PRICE_ENERGY] = int(
-        config_supplier['price_buy'] * db_obj.db_param.EURO_TO_SIGMA / 1000)
-    temp_df.at[0, db_obj.db_param.QTY_ENERGY] = config_supplier['qty_energy_bid']
+        config_retailer['price_buy'] * db_obj.db_param.EURO_TO_SIGMA / 1000)
+    temp_df.at[0, db_obj.db_param.QTY_ENERGY] = config_retailer['qty_energy_bid']
     sorted_bids_t_d = sorted_bids_t_d.append(temp_df, ignore_index=True)
 
     return sorted_bids_t_d, sorted_offers_t_d
@@ -1705,15 +1705,15 @@ if __name__ == '__main__':
         positions.loc[:, db_obj.db_param.STATUS_POSITION] = int(0)
         positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer', db_obj.db_param.PRICE_ENERGY] = [
             int(x * db_obj.db_param.EURO_TO_SIGMA / 1000)
-            for x in random.choices(np.arange(config['supplier']['price_buy'],
-                                              config['supplier']['price_sell'], 0.0001),
+            for x in random.choices(np.arange(config['retailer']['price_buy'],
+                                              config['retailer']['price_sell'], 0.0001),
                                     k=len(positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer', :]))]
         positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer',
                       db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = int(0)
         positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid', db_obj.db_param.PRICE_ENERGY] = [
             int(x * db_obj.db_param.EURO_TO_SIGMA / 1000)
-            for x in random.choices(np.arange(config['supplier']['price_buy'],
-                                              config['supplier']['price_sell'], 0.0001),
+            for x in random.choices(np.arange(config['retailer']['price_buy'],
+                                              config['retailer']['price_sell'], 0.0001),
                                     k=len(positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid', :]))]
         positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid',
                       db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = random.choices(range(0, 50, 1), k=len(

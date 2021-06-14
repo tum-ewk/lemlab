@@ -19,7 +19,7 @@ from ruamel.yaml import YAML
 from lemlab.db_connection.db_connection import DatabaseConnection
 from lemlab.agents.prosumer import Prosumer
 from lemlab.agents.aggregator import Aggregator
-from lemlab.agents.supplier import Supplier
+from lemlab.agents.retailer import Retailer
 import lemlab.lem.clearing_ex_ante as clearing_ex_ante
 import lemlab.lem.settlement as lem_settlement
 
@@ -254,8 +254,8 @@ class ScenarioExecutor:
         # check whether a full or partial simulation is desired and delete agents accordingly
         if self.config["simulation"]["rts"] is True:
             if self.config["simulation"]["lem_active"] is False:
-                # remove supplier if lem is not to be simulated
-                shutil.rmtree(f"{self.path_results}/supplier")
+                # remove retailer if lem is not to be simulated
+                shutil.rmtree(f"{self.path_results}/retailer")
             else:
                 # else finalize setup
                 self.__setup_lem()
@@ -312,9 +312,9 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.ID_USER:                    [prosumer],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
                 self.db_conn_admin.db_param.T_UPDATE_BALANCE:           [t_setup],
-                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [self.config["supplier"]["price_sell"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [self.config["retailer"]["price_sell"]
                                                                          * euro_kwh_to_sigma_wh],
-                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [self.config["supplier"]["price_buy"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [self.config["retailer"]["price_buy"]
                                                                          * euro_kwh_to_sigma_wh],
                 self.db_conn_admin.db_param.PREFERENCE_QUALITY:         [prosumer_config["ma_preference_quality"]],
                 self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY:
@@ -396,7 +396,7 @@ class ScenarioExecutor:
 
             init_price_data = np.zeros(shape=(len(index), 7))
             init_price_data[:, 0] = index
-            init_price_data[:, 1] = (self.config["supplier"]["price_sell"] + self.config["supplier"]["price_buy"]) / 2
+            init_price_data[:, 1] = (self.config["retailer"]["price_sell"] + self.config["retailer"]["price_buy"]) / 2
             init_price_data[:, 2] = 0
             init_price_data[:, 3] = self.config["lem"]["price_energy_balancing_positive"]
             init_price_data[:, 4] = self.config["lem"]["price_energy_balancing_negative"]
@@ -426,9 +426,9 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.ID_USER:                    [config_agg["id_user"]],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
                 self.db_conn_admin.db_param.T_UPDATE_BALANCE:           [t_setup],
-                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [self.config["supplier"]["price_sell"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [self.config["retailer"]["price_sell"]
                                                                          * euro_kwh_to_sigma_wh],
-                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [self.config["supplier"]["price_buy"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [self.config["retailer"]["price_buy"]
                                                                          * euro_kwh_to_sigma_wh],
                 self.db_conn_admin.db_param.PREFERENCE_QUALITY:         [config_agg["preference_quality"]],
                 self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY: [config_agg["premium_preference_quality"]],
@@ -442,7 +442,7 @@ class ScenarioExecutor:
 
     def __setup_lem(self, t_override=None) -> None:
         """
-        Finalize LEM lem set up by initializing db and registering supplier account
+        Finalize LEM lem set up by initializing db and registering retailer account
 
         :param: None
 
@@ -469,26 +469,26 @@ class ScenarioExecutor:
                                              path_simulation=self.path_results,
                                              list_ts_delivery=[t_setup - t_setup % 900])
 
-        # supplier setup
+        # retailer setup
 
         ts_delivery_first = int((t_setup - t_setup % 900 + 900))
         null_id = "0" * 10
 
         euro_kwh_to_sigma_wh = self.db_conn_admin.db_param.EURO_TO_SIGMA / 1000
 
-        # register supplier as participant
+        # register retailer as participant
         dict_user = {
-            self.db_conn_admin.db_param.ID_USER: [self.config["supplier"]["id_user"]],
+            self.db_conn_admin.db_param.ID_USER: [self.config["retailer"]["id_user"]],
             self.db_conn_admin.db_param.BALANCE_ACCOUNT: [0],
             self.db_conn_admin.db_param.T_UPDATE_BALANCE: [self.t_now],
-            self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX: [self.config["supplier"]["price_sell"]
+            self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX: [self.config["retailer"]["price_sell"]
                                                                * euro_kwh_to_sigma_wh],
-            self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN: [self.config["supplier"]["price_buy"]
+            self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN: [self.config["retailer"]["price_buy"]
                                                                  * euro_kwh_to_sigma_wh],
             self.db_conn_admin.db_param.PREFERENCE_QUALITY: ["na"],
             self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY: [0],
-            self.db_conn_admin.db_param.STRATEGY_MARKET_AGENT: ["supplier"],
-            self.db_conn_admin.db_param.ID_MARKET_AGENT: [self.config["supplier"]["id_user"]],
+            self.db_conn_admin.db_param.STRATEGY_MARKET_AGENT: ["retailer"],
+            self.db_conn_admin.db_param.ID_MARKET_AGENT: [self.config["retailer"]["id_user"]],
             self.db_conn_admin.db_param.HORIZON_TRADING: [1],
             self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
             self.db_conn_admin.db_param.TS_DELIVERY_LAST: [(2**31)-1]}
@@ -533,7 +533,7 @@ class ScenarioExecutor:
                 # do pre clearing things for prosumers and aggregators
                 self.__step_prosumers_pre()
                 self.__step_aggregator_pre()
-                self.__step_supplier_pre()
+                self.__step_retailer_pre()
 
                 self.__wait_for_time(target_time=ts_delivery_current + 10*60,
                                      progress_bar=pbar,
@@ -597,13 +597,13 @@ class ScenarioExecutor:
                         f"{pd.Timestamp(ts_delivery_current, unit='s', tz=self.config['simulation']['sim_start_tz'])}"
                     pbar.set_description(f"{str_time}: {'Forecasting and posting by market agents'.ljust(str_len)}")
 
-                    # perform pre-clearing activities for prosumers, aggregators, supplier
+                    # perform pre-clearing activities for prosumers, aggregators, retailer
                     # pre-clearing includes real-time controllers, logging of meter values, forecasting,
                     # model predictive control and posting bids to the market
                     pool.map(_par_step_prosumers_pre,
                              self.__gen_par_step_prosumers_pre_input())
                     self.__step_aggregator_pre()
-                    self.__step_supplier_pre()
+                    self.__step_retailer_pre()
 
                     self.t_now = ts_delivery_current + 900 - 5 * 60
                     # at five minutes before the end of the quarter hour:
@@ -627,19 +627,19 @@ class ScenarioExecutor:
 
     # agent pre-clearing activities
 
-    def __step_supplier_pre(self, clear_positions=False):
+    def __step_retailer_pre(self, clear_positions=False):
         """
-        Performs pre-clearing activities for all suppliers in the simulation.
-        New instances are instantiated and Supplier.pre_clearing_activity() is
+        Performs pre-clearing activities for all retailers in the simulation.
+        New instances are instantiated and retailer.pre_clearing_activity() is
         executed for each.
 
         :param: None
 
         :return: None
         """
-        list_active_suppliers = self.__get_active_suppliers()
-        for supplier in list_active_suppliers:
-            supplier.pre_clearing_activity(db_obj=self.db_conn_user,
+        list_active_retailers = self.__get_active_retailers()
+        for retailer in list_active_retailers:
+            retailer.pre_clearing_activity(db_obj=self.db_conn_user,
                                            clear_positions=clear_positions)
 
     def __step_aggregator_pre(self, clear_positions=False):
@@ -685,8 +685,8 @@ class ScenarioExecutor:
     def __gen_par_step_prosumers_pre_input(self):
         """
         Prepares a list of inputs for scenario_executor._par_step_prosumers_pre().
-        Performs pre-clearing activities for all suppliers in the simulation.
-        New instances are instantiated and Supplier.pre_clearing_activity() is
+        Performs pre-clearing activities for all prosumers in the simulation.
+        New instances are instantiated and prosumer.pre_clearing_activity() is
         executed for each.
 
         :param: None
@@ -792,10 +792,10 @@ class ScenarioExecutor:
                                                           list_ts_delivery=list_ts_delivery_ready,
                                                           lem_config=self.config["lem"],
                                                           t_now=self.t_now,
-                                                          id_supplier=self.config["supplier"]["id_user"])
+                                                          id_retailer=self.config["retailer"]["id_user"])
         else:
             lem_settlement.update_balance_ex_post(db_obj=self.db_conn_admin,
-                                                  id_supplier=self.config["supplier"]["id_user"],
+                                                  id_retailer=self.config["retailer"]["id_user"],
                                                   lem_config=self.config["lem"],
                                                   list_ts_delivery=list_ts_delivery_ready,
                                                   t_now=self.t_now)
@@ -805,7 +805,7 @@ class ScenarioExecutor:
                                              list_ts_delivery=list_ts_delivery_ready,
                                              lem_config=self.config["lem"],
                                              t_now=self.t_now,
-                                             id_supplier=self.config["supplier"]["id_user"])
+                                             id_retailer=self.config["retailer"]["id_user"])
 
         # initialize new settlement status for current ts_delivery
         for ts_d in list_ts_delivery_ready:
@@ -886,20 +886,20 @@ class ScenarioExecutor:
                                                   t_override=self.t_now))
         return list_aggregator_obj
 
-    def __get_active_suppliers(self) -> list:
+    def __get_active_retailers(self) -> list:
         """
-        Returns list of active suppliers in the simulation.
+        Returns list of active retailers in the simulation.
 
         :param: None
 
-        :return: list, instances of Supplier class
+        :return: list, instances of retailer class
         """
 
-        list_supplier_obj = []
+        list_retailer_obj = []
         if self.config["simulation"]["lem_active"] is True:
-            list_supplier_obj.append(Supplier(path=f"{self.path_results}/supplier/",
+            list_retailer_obj.append(Retailer(path=f"{self.path_results}/retailer/",
                                               t_override=self.t_now))
-        return list_supplier_obj
+        return list_retailer_obj
 
     def __create_target_grid_power(self, prosumer_config, plant_config, ts_delivery_first):
         """

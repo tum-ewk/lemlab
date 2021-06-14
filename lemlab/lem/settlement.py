@@ -186,7 +186,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
         db_obj.log_energy_balancing(pd.DataFrame().from_dict(dict_bal_ener))
 
 
-def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="retailer01"):
     """
     Determine balancing energy credits and debits and add transactions to database.
 
@@ -194,7 +194,7 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
 
@@ -227,8 +227,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
             if entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] * pos_bal_ener_price
 
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(pos_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
@@ -253,8 +253,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
 
             elif entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] * neg_bal_ener_price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(neg_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
@@ -330,7 +330,7 @@ def set_prices_settlement(db_obj, path_simulation, list_ts_delivery):
         db_obj.set_prices_settlement(pd.DataFrame().from_dict(dict_settlement_prices))
 
 
-def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="retailer01"):
     """
     Determine levy energy debit and credit and add transactions to database.
 
@@ -338,7 +338,7 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
     """
@@ -367,8 +367,8 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
         for _, entry in meter_readings_delta.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_OUT] != 0 and levies_pos != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_OUT] * levies_pos
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_pos)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
@@ -391,8 +391,8 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
 
             elif int(entry.loc[db_obj.db_param.ENERGY_IN]) != 0 and levies_neg != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_IN] * levies_neg
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_neg)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
@@ -547,7 +547,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         db_obj.log_results_market_ex_post(pd.DataFrame(dict_results_ex_post))
 
 
-def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_config):
+def update_balance_ex_post(db_obj, id_retailer, t_now, list_ts_delivery, lem_config):
     """
     Update balance based on energy flows and ex-post prices. Only executed if ex-post is the main market to be settled.
 
@@ -555,7 +555,7 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
     """
@@ -590,8 +590,8 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
         for _, entry in meter_readings_delta.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_OUT] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_OUT] * price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("market")
@@ -618,8 +618,8 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
 
             elif int(entry.loc[db_obj.db_param.ENERGY_IN]) != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_IN] * price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("market")
