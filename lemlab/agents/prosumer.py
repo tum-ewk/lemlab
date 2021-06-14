@@ -997,7 +997,7 @@ class Prosumer:
                               + 15*60*self.config_dict["ma_horizon"])]
             [f"power_{self.config_dict['id_meter_grid']}"]) / 4
 
-        df_potential_bids.rename(columns={f"power_{self.config_dict['R']}": "net_bids"}, inplace=True)
+        df_potential_bids.rename(columns={f"power_{self.config_dict['id_meter_grid']}": "net_bids"}, inplace=True)
 
         df_potential_bids["net_bids"] = df_potential_bids["net_bids"] - self.matched_bids_by_timestep["net_bids"]
 
