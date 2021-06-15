@@ -317,9 +317,9 @@ class ScenarioAnalyzer:
         df_results = df_results.fillna(0)
         df_results["balance_€"] = df_results["revenue_sold_€"] - df_results["cost_bought_€"]
 
-        # Get rid of supplier and aggregator
+        # Get rid of retailer and aggregator
         try:
-            df_results = df_results.drop([self.config["supplier"]["id_user"]])
+            df_results = df_results.drop([self.config["retailer"]["id_user"]])
         except:
             pass
         try:
@@ -351,8 +351,8 @@ class ScenarioAnalyzer:
             the_table = scplotter.ax.table(cellText=cell_text, rowLabels=rows, colLabels=columns,
                                            loc="bottom", cellLoc="center")
             self.change_table_height(the_table, 1.2)
-            # Display balance of supplier
-            text_str = f"Supplier: {round(df_results['balance_€'].tolist()[0], 2)} €"
+            # Display balance of retailer
+            text_str = f"retailer: {round(df_results['balance_€'].tolist()[0], 2)} €"
             bbox_style = {
                 "edgecolor": "k",
                 "facecolor": "w",
@@ -565,9 +565,9 @@ class ScenarioAnalyzer:
         df_users["main_id"] = df_users[db_p.ID_USER]
         df_users.set_index(db_p.ID_USER, inplace=True)
 
-        # Get rid of supplier and aggregator
+        # Get rid of retailer and aggregator
         try:
-            df_users = df_users.drop([self.config["supplier"]["id_user"]])
+            df_users = df_users.drop([self.config["retailer"]["id_user"]])
         except:
             pass
         try:

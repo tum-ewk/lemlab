@@ -17,7 +17,7 @@ import warnings
 class Prosumer:
     """Prosumer defines objects and methods used to simulate a single family home in a local energy market
 
-       This class is intended for use in conjunction with the Supplier and Simulation classes. In addition, the
+       This class is intended for use in conjunction with the Retailer and Simulation classes. In addition, the
        functionality of the Platform/clearing_ex_ante.py module is required in order for market clearing to be enacted.
 
        A single family home can simulate the following physical plants, depending on the selected configuration:
@@ -871,13 +871,9 @@ class Prosumer:
                 dict_price_history.update({"weighted_average_price": self.config_dict["max_bid"],
                                            "total_energy_traded": 0})
             else:
-                total_energy = 0
-                total_paid = 0
-                for index, contents in market_results.iterrows():
-                    total_energy += contents[db_obj.db_param.QTY_ENERGY_TRADED]
-                    total_paid += contents[db_obj.db_param.QTY_ENERGY_TRADED] \
-                        * contents[db_obj.db_param.PRICE_ENERGY_MARKET_
-                                   + db_obj.lem_config["types_pricing_ex_ante"][0]]
+                total_energy = market_results[db_obj.db_param.QTY_ENERGY_TRADED].sum()
+                total_paid = (market_results[db_obj.db_param.QTY_ENERGY_TRADED] * market_results[db_obj.db_param.PRICE_ENERGY_MARKET_
+                              + db_obj.lem_config["types_pricing_ex_ante"][0]]).sum()
                 if total_energy != 0:
                     dict_price_history.update({"weighted_average_price": total_paid/total_energy/euro_kwh_to_sigma_wh,
                                                "total_energy_traded": total_energy})
@@ -959,8 +955,7 @@ class Prosumer:
 
         :return: None
         """
-        df_target_grid_power = ft.read_dataframe(f"{self.path}/controller_mpc.ft")
-        df_target_grid_power.set_index("timestamp", inplace=True)
+        df_target_grid_power = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index("timestamp")
 
         if market_type == "ex_post":
             '''When operating in a Strommunity market design, the target grid power is
@@ -970,12 +965,8 @@ class Prosumer:
             '''When operating in a double-sided electricity market,
                the target grid power is set based on the market results.
                '''
-            # target should be the EV targets with some priority according to urgency
-            list_ts_d = list(range(self.ts_delivery_current,
-                                   self.ts_delivery_current + 15*60*self.config_dict["ma_horizon"], 15*60))
-
-            df_target_grid_power.loc[list_ts_d, f"power_{self.config_dict['id_meter_grid']}"] =\
-                [self.matched_bids_by_timestep.loc[t, "net_bids"] * 4 for t in list_ts_d]
+            df_target_grid_power[f"power_{self.config_dict['id_meter_grid']}"] =\
+                self.matched_bids_by_timestep["net_bids"] * 4
 
         ft.write_dataframe(df_target_grid_power.reset_index(),
                            f"{self.path}/target_grid_power.ft")
@@ -1026,7 +1017,6 @@ class Prosumer:
             if t_s > self.ts_delivery_current:
                 # determine energy to be traded
                 energy_position = round(dict_pot_bids["net_bids"][t_s])
-
                 if abs(energy_position) >= 10:
                     post_position = True
                 else:
