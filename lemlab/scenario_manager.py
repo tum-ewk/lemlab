@@ -231,7 +231,8 @@ class Scenario:
         ft.write_dataframe(df_weather.reset_index(), f"{self.path_scenario}/weather/weather.ft")
         for file in os.listdir(f"{self.path_input_data}/weather/forecast"):
             df_forecast = pd.read_csv(f"{self.path_input_data}/weather/forecast/{file}").set_index("timestamp")
-            ft.write_dataframe(df_forecast.reset_index(), f"{self.path_scenario}/weather/forecast/{file.split('.')[0]}")
+            ft.write_dataframe(df_forecast.reset_index(),
+                               f"{self.path_scenario}/weather/forecast/{file.split('.')[0]}.ft")
 
     def __create_folders(self, list_paths: list) -> None:
         """creates new or replaces existing folders specified in the list of paths

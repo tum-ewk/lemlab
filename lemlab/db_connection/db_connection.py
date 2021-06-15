@@ -324,12 +324,16 @@ class DatabaseConnection:
                 [[ts_d, 0] for ts_d in range(ts_delivery_first, ts_delivery_last + 1, 900)],
                 columns=[self.db_param.TS_DELIVERY, "net_bids"]).set_index(self.db_param.TS_DELIVERY)
 
-            # summate query results
-            for index, row in matched_bids.iterrows():
-                if row[self.db_param.ID_USER_OFFER] == str(id_user):
-                    matched_bids_by_timestep.loc[row[self.db_param.TS_DELIVERY]] += row[self.db_param.QTY_ENERGY_TRADED]
-                if row[self.db_param.ID_USER_BID] == str(id_user):
-                    matched_bids_by_timestep.loc[row[self.db_param.TS_DELIVERY]] -= row[self.db_param.QTY_ENERGY_TRADED]
+            temp_matched_bids_by_timestep = matched_bids
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep[
+                temp_matched_bids_by_timestep[self.db_param.ID_USER_BID] == id_user][self.db_param.QTY_ENERGY_TRADED]
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep["qty_energy_bid"].fillna(0)
+            temp_matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep[self.db_param.QTY_ENERGY_TRADED] \
+                - 2 * temp_matched_bids_by_timestep["qty_energy_bid"]
+            matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep.groupby(self.db_param.TS_DELIVERY).sum()["net_bids"]
+            matched_bids_by_timestep = matched_bids_by_timestep.fillna(0)
         return matched_bids, matched_bids_by_timestep
 
     # Admins only

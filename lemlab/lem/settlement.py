@@ -153,27 +153,32 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
         db_obj.db_param.ENERGY_BALANCING_POSITIVE: [],
         db_obj.db_param.ENERGY_BALANCING_NEGATIVE: []
     }
-
+    list_ts_delivery = sorted(list_ts_delivery)
+    ts_d_first = list_ts_delivery[0] if len(list_ts_delivery) else 0
+    ts_d_last = list_ts_delivery[-1] if len(list_ts_delivery) else 0
+    market_results_all, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d_first,
+                                                               ts_delivery_last=ts_d_last)
     for ts_d in list_ts_delivery:
         # return MAIN meter reading deltas and ex-ante market results
         main_meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
-        market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
+        main_meter_readings_delta["energy_net"] = main_meter_readings_delta[db_obj.db_param.ENERGY_OUT] \
+                                                  - main_meter_readings_delta[db_obj.db_param.ENERGY_IN]
 
+        market_results = market_results_all[market_results_all[db_obj.db_param.TS_DELIVERY] == ts_d]
         # relabel market results by main meters, so comparison to energy flows can be made
         market_results = market_results.replace({db_obj.db_param.ID_USER_BID: map_id_ma_to_main_meter,
                                                  db_obj.db_param.ID_USER_OFFER: map_id_ma_to_main_meter})
         # determine balancing energy per meter
         for _, entry in main_meter_readings_delta.iterrows():
-            current_actual_energy = entry.loc[db_obj.db_param.ENERGY_OUT] - entry.loc[db_obj.db_param.ENERGY_IN]
             current_market_energy = 0
+            current_market_energy -= \
+                market_results[market_results[db_obj.db_param.ID_USER_BID] == entry.loc[db_obj.db_param.ID_METER]
+                               ][db_obj.db_param.QTY_ENERGY_TRADED].sum()
+            current_market_energy += \
+                market_results[market_results[db_obj.db_param.ID_USER_OFFER] == entry.loc[db_obj.db_param.ID_METER]
+                               ][db_obj.db_param.QTY_ENERGY_TRADED].sum()
 
-            for _, result in market_results.iterrows():
-                if result.loc[db_obj.db_param.ID_USER_BID] == entry.loc[db_obj.db_param.ID_METER]:
-                    current_market_energy -= result.loc[db_obj.db_param.QTY_ENERGY_TRADED]
-                elif result.loc[db_obj.db_param.ID_USER_OFFER] == entry.loc[db_obj.db_param.ID_METER]:
-                    current_market_energy += result.loc[db_obj.db_param.QTY_ENERGY_TRADED]
-
-            current_balancing_energy = current_market_energy - current_actual_energy
+            current_balancing_energy = current_market_energy - entry.loc["energy_net"]
             # append result to dict
             dict_bal_ener[db_obj.db_param.ID_METER].append(entry.loc[db_obj.db_param.ID_METER])
             dict_bal_ener[db_obj.db_param.TS_DELIVERY].append(ts_d)

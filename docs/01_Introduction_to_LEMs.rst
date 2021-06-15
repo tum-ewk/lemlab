@@ -19,7 +19,7 @@ markets, either by generating, consuming, sharing or selling  electricity, or by
 demand-response and storage.  The directive aims to improve the uptake of energy communities and make it easier for
 citizens to integrate efficiently in the electricity system, as active participants."
 
-Specifically, the aim of these energy communities it to enable decentralized producers and consumers (prosumers) to
+Specifically, the aim of these energy communities is to enable decentralized producers and consumers (prosumers) to
 participate "on equal footing with large participants".
 
 There is no doubt that developing local energy markets and effectively integrating these into existing structures
@@ -48,7 +48,7 @@ We begin by explaining the basic structure of a LEM according to *lemlab*:
 At the heart of the *lemlab* is the **prosumer**. In modern power systems, the end user is no longer just a consumer.
 The prosumer is the generalized market participant, combining production, consumption, and flexibility with a
 preference for local and sustainable energy. Of course a prosumer could be a pure consumer, a simple producer, they
-might be entirely inflexible or they might prefer his electrical energy sources to produce as much carbon dioxide as
+might be entirely inflexible or they might prefer their electrical energy sources to produce as much carbon dioxide as
 possible. In any case, we will still refer to them as a prosumer.
 
 Prosumers place bids on a **LEM platform**. This platform combines all market functionality, beginning with user
@@ -67,9 +67,9 @@ opinion, sensible timeline for a local energy market, based loosely on the gener
 electricity markets.
 
 .. image:: images/lem_timeline_basic.png
-    :width: 450px
+    :width: 600px
     :align: center
-    :height: 150px
+    :height: 200px
     :alt: Basic timeline for a generalized LEM
 
 We divide our market timeline into four fundamental time periods. The first is **registration**, which takes place
@@ -78,14 +78,14 @@ Each day is divided into an arbitrary number of periods of energy exchange, refe
 (ts_delivery) labelled as the period between td and td + T. We usually use 15 minute windows (T=900s), as the German
 electricity market is divided into 15 minute periods. During this time, the physical flow of energy takes place. All
 other activities either take place between market opening, td - tO, and the beginning of the ts_delivery in question,
-td, and are known as **pre-exchange-activities**, or they take place after delivery, which case they are known as
+td, and are known as **pre-exchange-activities**, or they take place after delivery, in which case they are known as
 **settlement** activities. Examples of pre-exchange activities are forecasting of demand and energy trading, while
 settlement activites include meter value logging, market settlement and balancing energy settlement.
 
 .. image:: images/lem_timeline_detailed.png
-    :width: 450px
+    :width: 600px
     :align: center
-    :height: 204px
+    :height: 268px
     :alt: Detailed timeline for a generalized LEM
 
 The above figure shows a slightly more detailed timeline. We see pre-clearing activities taking place during each of *n*
