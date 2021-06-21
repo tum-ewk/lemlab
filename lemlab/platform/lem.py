@@ -1405,8 +1405,8 @@ if __name__ == '__main__':
     # Initialize database
     db_obj_example.init_db(clear_tables=True, reformat_tables=True)
     # Create list of random user ids and meter ids
-    ids_users_random = create_user_ids(num=config_example['prosumer']['number_of'])
-    ids_meter_random = create_user_ids(num=config_example['prosumer']['number_of'])
+    ids_users_random = create_user_ids(num=config_example['prosumer']['general_number_of'])
+    ids_meter_random = create_user_ids(num=config_example['prosumer']['general_number_of'])
     # Register meters and users on database
     for z in range(len(ids_users_random)):
         df_insert = pd.DataFrame(data=[[ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, 0, 0]],

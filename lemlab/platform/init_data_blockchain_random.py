@@ -35,8 +35,9 @@ def init_random_data():
     db_obj_example.init_db(clear_tables=True, reformat_tables=True)
 
     # Create list of random user ids and meter ids
-    ids_users_random = lem.create_user_ids(num=config['prosumer']['number_of'])
-    ids_meter_random = lem.create_user_ids(num=config['prosumer']['number_of'])
+    ids_users_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
+    ids_meter_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
+    ids_market_agents = lem.create_user_ids(num=config['prosumer']['general_number_of'])
 
     blockchain_utils.setUpBlockchain(project_dir=project_dir)
     blockchain_utils.clearTempData()
@@ -46,7 +47,8 @@ def init_random_data():
     for z in range(len(ids_users_random)):
         # all the users are initialized with the same balance, when de market clearing happens, their balances
         # are updated
-        df_insert = pd.DataFrame(data=[[ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, 0, 0]],
+        # added "str" id_market_agent in position [-3]
+        df_insert = pd.DataFrame(data=[[ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]],
                                  columns=db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_USER))
         db_obj_example.register_user(df_in=df_insert)
 
