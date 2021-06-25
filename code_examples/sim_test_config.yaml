@@ -132,7 +132,7 @@ lem:
 ########################################### retailer configuration #####################################################
 ########################################################################################################################
 
-retailer:
+retailer:   # previously known as supplier
   # for the retailer's role in the market, please see the docs
 
   "price_sell": 0.08                        # retailer market ceiling offer one step before delivery

@@ -55,8 +55,9 @@ def init_random_data():
         blockchain_utils.functions.push_user_info(tuple(df_insert.values.tolist()[0])).transact(
             {'from': blockchain_utils.coinbase})
 
+        # changed order of parameters, now first id_meter_super, then type meter, which is now str type
         df_insert = pd.DataFrame(
-            data=[[ids_meter_random[z], ids_users_random[z], 1, "0", 'aggregator', 'green', 0, 0, 'test']],
+            data=[[ids_meter_random[z], ids_users_random[z], "0", 1, 'aggregator', 'green', 0, 0, 'test']],
             columns=db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_METER))
         db_obj_example.register_meter(df_in=df_insert)
         blockchain_utils.functions.push_id_meters(tuple(df_insert.values.tolist()[0])).transact(

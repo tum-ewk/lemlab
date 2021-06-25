@@ -1337,13 +1337,13 @@ def calc_random_position(db_obj, config, t_d, user_id):
     _, quality_type = random.choice(list(config['lem']['types_quality'].items()))
     position.at[0, db_obj.db_param.QUALITY_ENERGY] = quality_type
     if position_type == 'offer':
-        position.at[0, db_obj.db_param.PRICE_ENERGY] = int(random.uniform(config['supplier']['price_buy'],
-                                                                          config['supplier']['price_sell'])
+        position.at[0, db_obj.db_param.PRICE_ENERGY] = int(random.uniform(config['retailer']['price_buy'],
+                                                                          config['retailer']['price_sell'])
                                                            * db_obj.db_param.EURO_TO_SIGMA / 1000)
         position.at[0, db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = 0
     elif position_type == 'bid':
-        position.at[0, db_obj.db_param.PRICE_ENERGY] = int(random.uniform(config['supplier']['price_buy'],
-                                                                          config['supplier']['price_sell'])
+        position.at[0, db_obj.db_param.PRICE_ENERGY] = int(random.uniform(config['retailer']['price_buy'],
+                                                                          config['retailer']['price_sell'])
                                                            * db_obj.db_param.EURO_TO_SIGMA / 1000)
         position.at[0, db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = random.randint(0, 50)
     position.at[0, db_obj.db_param.NUMBER_POSITION] = int(0)

@@ -55,6 +55,7 @@ def test_clearings():
     else:
         iterations = range(1, n_clearings + 1)
 
+    pos_c = 0
     for i in iterations:
         print("i: " + str(i))
         t_clearing_current = t_clearing_first + config['lem']['interval_clearing'] * i
@@ -71,7 +72,10 @@ def test_clearings():
         blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash, timeout=600)
         # time.sleep(3)
         temp_market_results_blockchain = blockchain_utils.functions.getTempMarketResults().call()
+
         if positions_cleared is None:
+            print("No positions cleared")
+            pos_c+=1
             assert len(temp_market_results_blockchain) == 0
         else:
             assert len(positions_cleared) == len(temp_market_results_blockchain)
@@ -85,6 +89,7 @@ def test_clearings():
                     assert False
 
     # assert False
+    print(pos_c)
 
 
 # got the results from the blockchain, I reformat the data to get a dataframe with the same shape as the one given in
