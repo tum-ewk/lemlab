@@ -48,17 +48,26 @@ def init_random_data():
         # all the users are initialized with the same balance, when de market clearing happens, their balances
         # are updated
         # added "str" id_market_agent in position [-3]
-        df_insert = pd.DataFrame(data=[[ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]],
-                                 columns=db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_USER))
+        cols, types = db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_USER, dtype=True)
+        col_data = [ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]
+        if any([type(data) != typ for data, typ in zip(col_data, types)]):
+            raise TypeError("The types of the data and the columns do not match for the info_user")
+        df_insert = pd.DataFrame(
+            data=[col_data],
+            columns=cols)
         db_obj_example.register_user(df_in=df_insert)
 
         blockchain_utils.functions.push_user_info(tuple(df_insert.values.tolist()[0])).transact(
             {'from': blockchain_utils.coinbase})
 
         # changed order of parameters, now first id_meter_super, then type meter, which is now str type
+        cols, types = db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_METER, dtype=True)
+        col_data = [ids_meter_random[z], ids_users_random[z], "0", "virtual grid meter", 'aggregator', 'green', 0, 0, 'test']
+        if any([type(data) != typ for data, typ in zip(col_data, types)]):
+            raise TypeError("The types of data and columns do not match for the id_meter")
         df_insert = pd.DataFrame(
-            data=[[ids_meter_random[z], ids_users_random[z], "0", 1, 'aggregator', 'green', 0, 0, 'test']],
-            columns=db_obj_example.get_table_columns(db_obj_example.db_param.NAME_TABLE_INFO_METER))
+            data=[col_data],
+            columns=cols)
         db_obj_example.register_meter(df_in=df_insert)
         blockchain_utils.functions.push_id_meters(tuple(df_insert.values.tolist()[0])).transact(
             {'from': blockchain_utils.coinbase})

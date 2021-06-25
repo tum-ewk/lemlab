@@ -146,7 +146,7 @@ class DatabaseConnection:
         # select main meters
         # if t_d is used, only meters active at the selected t_d are returned
         sql = f"SELECT {self.db_param.ID_METER} FROM {self.db_param.NAME_TABLE_INFO_METER}" \
-              f" WHERE ({self.db_param.TYPE_METER} = 1 OR {self.db_param.TYPE_METER} = 2)"
+              f" WHERE {self.db_param.TYPE_METER} LIKE '%%grid%%' "
 
         if ts_delivery_active is not None:
             sql += f" AND {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery_active}" \

@@ -151,11 +151,10 @@ table_info_user.list_rights = ["SELECT"]
 
 table_info_meter = LemlabTable()
 table_info_meter.name = NAME_TABLE_INFO_METER
-# changed type meter to bigInt
 table_info_meter.list_columns = [LemlabColumn(ID_METER, Text(), True),
                                  LemlabColumn(ID_USER, Text()),
                                  LemlabColumn(ID_METER_SUPER, Text()),
-                                 LemlabColumn(TYPE_METER, BigInteger()),
+                                 LemlabColumn(TYPE_METER, Text()),
                                  LemlabColumn(ID_AGGREGATOR, Text()),
                                  LemlabColumn(QUALITY_ENERGY, Text()),
                                  LemlabColumn(TS_DELIVERY_FIRST, BigInteger()),

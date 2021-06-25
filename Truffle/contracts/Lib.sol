@@ -77,7 +77,7 @@ contract Lib {
         string id_meter;
         string id_user;
         string id_meter_main;       //aka id_meter_super, (order changed)
-        uint type_meter;
+        string type_meter;
         string id_aggregator;
         string quality_energy;
         uint ts_delivery_first;
