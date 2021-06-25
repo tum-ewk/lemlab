@@ -75,7 +75,7 @@ def test_clearings():
 
         if positions_cleared is None:
             print("No positions cleared")
-            pos_c+=1
+            pos_c += 1
             assert len(temp_market_results_blockchain) == 0
         else:
             assert len(positions_cleared) == len(temp_market_results_blockchain)

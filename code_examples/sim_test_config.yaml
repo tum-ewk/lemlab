@@ -62,7 +62,8 @@ lem:
 
   "types_quality": {0: "na",                # energy quality types used for trading and labelling
                     1: "local",
-                    2: "green_local"}
+                    2: "green",             # does not work without it, hard coded in the contracts
+                    3: "green_local"}
 
   "types_position": {0: 'offer',
                      1: 'bid'}
