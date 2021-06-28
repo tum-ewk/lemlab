@@ -4,7 +4,8 @@ import pandas as pd
 from lemlab.db_connection import db_param
 from lemlab.platform import blockchain_utils
 from lemlab.platform.blockchain_tests import test_utils
-from lemlab.platform.blockchain_tests.lem_blockchain_test_market_clearing_full import get_market_results_blockchain
+#from lemlab.platform.blockchain_tests.lem_blockchain_test_market_clearing_full import get_market_results_blockchain
+from lemlab.platform.lem import get_market_results_blockchain
 from lemlab.platform.blockchain_utils import convertListToPdDataFrame
 
 generate_bids_offer = False

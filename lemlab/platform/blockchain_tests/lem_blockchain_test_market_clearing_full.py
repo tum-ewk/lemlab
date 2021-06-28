@@ -105,77 +105,7 @@ def test_clearings():
     assert True
 
 
-# this method, find the maximum number of clearings that the blockchain manages to perform at once, according to the gas limit
-def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricing, discriminative_pricing,
-              t_clearing_start,
-              gasThreshold, interval_clearing, simulation_test):
-    n_clearings_current = n_clearings_max
-    estimate = 10 * gasThreshold
-    while estimate > gasThreshold:
-        try:
-            estimate = blockchain_utils.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
-                                                                  supplier_bids, uniform_pricing,
-                                                                  discriminative_pricing,
-                                                                  int(interval_clearing),
-                                                                  int(t_clearing_start), False, verbose_blockchain,
-                                                                  False, simulation_test).estimateGas()
-            n_clearings_current = int(n_clearings_current / (estimate / gasThreshold))
-        except Exception as e:
-            print(e)
-            n_clearings_current = int(n_clearings_current / 2)
-
-    return n_clearings_current
 
 
-# this method, perform the market clearing and gets the results from the blockchain
-def get_market_results_blockchain(t_override, n_clearings, supplier_bids, uniform_pricing, discriminative_pricing,
-                                  t_clearing_start, interval_clearing, simulation_test, shuffle=False):
-    t_now = t_override
-    t_clearing_first = t_now - (t_now % interval_clearing) + interval_clearing
-
-    t_clearing_current = t_clearing_first
-    n_clearings_done = 0
-
-    # max doable clearings
-    limit_clearings = findLimit(n_clearings, t_clearing_first, supplier_bids, uniform_pricing, discriminative_pricing,
-                                t_clearing_start,
-                                gasThreshold=40000000, interval_clearing=interval_clearing,
-                                simulation_test=simulation_test)
-
-    n_clearings_current = limit_clearings
-    update_balances = False
-    while n_clearings_done < n_clearings:
-        if n_clearings - n_clearings_done <= n_clearings_current:  # last step
-            n_clearings_current = n_clearings - n_clearings_done
-            update_balances = False
-        try:
-            # Performing the market clearing for a number of clearings
-            tx_hash = blockchain_utils.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
-                                                                 supplier_bids,
-                                                                 uniform_pricing,
-                                                                 discriminative_pricing,
-                                                                 int(interval_clearing),
-                                                                 int(t_clearing_start), shuffle, verbose_blockchain,
-                                                                 update_balances, simulation_test).transact(
-                {'from': blockchain_utils.coinbase})
-            blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash, timeout=600)  # 600 seconds wait
-            if verbose_blockchain:
-                log = blockchain_utils.getLog(tx_hash=tx_hash)
-                print(log)
-            n_clearings_done += n_clearings_current
-            t_clearing_current = t_clearing_first + interval_clearing * n_clearings_done
-            n_clearings_current = limit_clearings
-        except ValueError as e:
-            print(e)
-            n_clearings_current = int(n_clearings_current * 0.75)
-            update_balances = False
-
-    market_results_blockchain = blockchain_utils.functions.getMarketResultsTotal().call()
-    return market_results_blockchain
 
 
-# Convert results on the blockchain to a pandas dataframe
-def convertToPdFinalMarketResults(market_results_blockchain, market_results_python):
-    market_results_blockchain = blockchain_utils.convertListToPdDataFrame(market_results_blockchain,
-                                                                          market_results_python.columns.to_list())
-    return market_results_blockchain

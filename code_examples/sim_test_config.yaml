@@ -77,6 +77,7 @@ lem:
 
   "positions_archive": true                 # true -> all submitted positions are archived before
                                             # deletion
+  "clearing_blockchain": true               # true-> the positions are also deleted from the blockchain
 
   "horizon_clearing": 86400                 # seconds, how far into the future is the market cleared?
 
