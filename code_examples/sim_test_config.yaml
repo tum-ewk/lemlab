@@ -52,7 +52,7 @@ lem:
                                             # for currently implemented choices, see the
                                             # documentation
 
-  share_quality_logging_extended: true      # in ex-ante trading, market results can be labelled in
+  share_quality_logging_extended: false      # in ex-ante trading, market results can be labelled in
                                             # simply (quality of cleared generation) or more
                                             # extensively (quality of cleared generation, consumption
                                             # as well as offered generation and consumption bids)

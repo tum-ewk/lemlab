@@ -69,10 +69,11 @@ def init_random_data():
             data=[col_data],
             columns=cols)
         db_obj_example.register_meter(df_in=df_insert)
-        blockchain_utils.functions.push_id_meters(tuple(df_insert.values.tolist()[0])).transact(
+        tx_hash = blockchain_utils.functions.push_id_meters(tuple(df_insert.values.tolist()[0])).transact(
             {'from': blockchain_utils.coinbase})
 
-    time.sleep(20)
+    blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash)
+
     if len(blockchain_utils.functions.get_user_infos().call()) == len(db_obj_example.get_list_all_users()) and len(
             blockchain_utils.functions.get_id_meters().call()) == len(db_obj_example.get_list_main_meters()):
         print("successfully stored " + str(len(db_obj_example.get_list_all_users())) + " user_infos and " + str(
@@ -102,16 +103,14 @@ def init_random_data():
     temp = True  # if we wanna save the offers and bids as temporal data
     permt = False  # if we wanna save the offers and bids as permanent data
     for position in tqdm(positions.iterrows(), total=positions.shape[0]):
-        # off_bid = _convert_qualities_to_int(db_obj_example, ob[1], config['lem']['types_quality'])
-
-        # blockchain_utils.functions.pushOfferOrBid(tuple(off_bid.values), off_bid[list(ob[1].keys()).index(db_param.TYPE_POSITION)] == 'offer', True).transact({'from': blockchain_utils.coinbase})
         # pushes offers and bids, last bool arguments are for temp and permanent data respectively
 
-        blockchain_utils.functions.pushOfferOrBid(tuple(position[1]),
-                                                  position[1][db_param.TYPE_POSITION] == 'offer',
-                                                  temp, permt).transact({'from': blockchain_utils.coinbase})
+        tx_hash = blockchain_utils.functions.pushOfferOrBid(tuple(position[1]),
+                                                            position[1][db_param.TYPE_POSITION] == 'offer',
+                                                            temp, permt).transact({'from': blockchain_utils.coinbase})
 
-    time.sleep(20)
+    blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash)
+
     if len(blockchain_utils.getOffers_or_Bids()) == len(odb) and len(blockchain_utils.getOffers_or_Bids(False)) == len(
             bdb):
         print("successfully stored " + str(len(odb)) + " offers and " + str(len(bdb)) + " bids")
