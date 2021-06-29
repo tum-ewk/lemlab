@@ -101,7 +101,6 @@ def test_clearings():
             pd.testing.assert_frame_equal(market_results_blockchain, market_results_python, check_dtype=False)
             assert True
 
-        # test = determine_balancing_energy(db_obj,[])
     assert True
 
 

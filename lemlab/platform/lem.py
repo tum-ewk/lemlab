@@ -25,10 +25,9 @@ import string
 
 from lemlab.platform import blockchain_utils
 
-# from lemlab.platform.blockchain_tests.lem_blockchain_test_market_clearing_full import get_market_results_blockchain, \
-#    convertToPdFinalMarketResults
-
 from current_scenario_file import scenario_file_path
+
+# variable for the blockchain function calls
 verbose_blockchain = False
 
 def market_clearing(db_obj,
