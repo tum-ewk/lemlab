@@ -90,7 +90,7 @@ def init_random_data():
     positions = lem.create_random_positions(db_obj=db_obj_example,
                                             config=config,
                                             ids_user=ids_users_random,
-                                            n_positions=200,
+                                            n_positions=500,
                                             verbose=False)
     # Post positions to market
     db_obj_example.post_positions(positions)
