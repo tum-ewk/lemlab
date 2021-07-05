@@ -6,6 +6,7 @@ import re
 from web3 import Web3, HTTPProvider
 import pandas as pd
 from pathlib import Path
+from tqdm import tqdm
 
 
 class BlockchainConnection:
@@ -29,7 +30,7 @@ class BlockchainConnection:
             self.platform = web3_instance.eth.contract(address=contract_address,
                                                        abi=contract_abi,
                                                        bytecode=contract_bytecode)
-            self.web3_eth=web3_instance.eth
+            self.web3_eth = web3_instance.eth
             self.coinbase = web3_instance.eth.coinbase
             self.functions = self.platform.functions
         except Exception as e:
@@ -81,7 +82,7 @@ class BlockchainConnection:
         tx_hash = self.functions.push_user_info(tuple(df_user.values.tolist()[0])).transact({'from': self.coinbase})
         return tx_hash
 
-    # TODO: implement these functions ?? Does it makes sense ?
+    # TODO: implement these functions ?? Write functions that delete individual data
     # def edit_user(self, df_user):
     # def delete_user(self, df_user):
 
@@ -164,7 +165,7 @@ class BlockchainConnection:
         returns a mapping from id_meter and id_market_agent to each user
     """
 
-    def get_map_to_main_meter(self):
+    """def get_map_to_main_meter(self):
 
         info_meter = self.get_list_all_meters(returnList=True)
         info_users = self.get_list_all_users(returnList=True)
@@ -182,19 +183,39 @@ class BlockchainConnection:
         for id_ma in map_ma_to_user:
             map_everything_to_main_meter[id_ma] = map_user_to_meter.get(map_ma_to_user[id_ma], "0000000000")
         map_everything_to_main_meter = {**map_everything_to_main_meter, **map_grid_meter_to_self, **map_user_to_meter}
-        return map_everything_to_main_meter
+        return map_everything_to_main_meter"""
 
     ###################################################
     # Functions for the market bid submission table
     # Market participants only
 
-    def get_open_positions(self, bids_or_offers="bids", temp=True, user_id=""):
-        if bids_or_offers == "bids":
-            position_list = self.functions.getBids(temp)
-        elif bids_or_offers == "offers":
-            position_list = self.functions.getOffers(temp)
+    def get_open_positions(self, isOffer=True, returnBoth=False, temp=True, user_id="", returnList=False):
+        """
+
+        Parameters
+        ----------
+        isOffer:bool: wether to return an offer or a Bid
+        returnBoth:bool: to return both the offers and the bids
+        temp: if the temporal data or the permanent data are to be retrieved
+        user_id: if an specific user_id positions are to be retrieved
+        returnList: if the positions are to be retrieved as a List or Dataframe(default)
+
+        Returns
+        -------
+        A list or Dataframe containing all the offers/bids
+        """
+
+        if isOffer:
+            position_list = self.functions.getOffers(temp).call()
         else:
-            position_list = self.functions.getBids(temp) + self.functions.getOffers(temp)
+            position_list = self.functions.getBids(temp).call()
+
+        if returnBoth:
+            position_list = self.functions.getOffers(temp).call() + \
+                            self.functions.getBids(temp).call()
+
+        if returnList:
+            return position_list
         position_df = pd.DataFrame(position_list, columns=bc_param.positions_market_ex_ante_column_names)
         if user_id != "":
             position_df = position_df[position_df["id_user"] == user_id]
@@ -203,41 +224,91 @@ class BlockchainConnection:
         return position_df
 
     def push_position(self, df_position, temp=True, permament=False):
-        if df_position["type_position"].values == "offer":
+        """
+        Function that gets a pd.Series and registers it in the blockchain
+        Parameters
+        ----------
+        df_position: pd.Series with all the info to register a postition
+        temp: bool: wether is a temporal position or not
+        permament: bool: wether is a permanent position or not
+
+        Returns
+        -------
+        tx_hash: the transaction hash of the operation
+        """
+        if df_position["type_position"] == "offer":
             tx_hash = self.functions.pushOfferOrBid(tuple(df_position.values),
                                                     True, temp, permament).transact({'from': self.coinbase})
-        elif df_position["type_position"].values == "bid":
-            tx_hash = self.functions.pushOfferOrBid(tuple(df_position.values)[0],
+        elif df_position["type_position"] == "bid":
+            tx_hash = self.functions.pushOfferOrBid(tuple(df_position.values),
                                                     False, temp, permament).transact({'from': self.coinbase})
         else:
             print("Position type is not valid")
             return
         return tx_hash
 
+    def push_all_positions(self, df_positions, temp=True, permanent=False):
+        for _, row in tqdm(df_positions.iterrows(), total=df_positions.shape[0]):
+            tx_hash = self.push_position(row, temp=temp, permament=permanent)
+
+        return tx_hash
+
     ###################################################
     # Functions for the market clearing of data
     # Market participants only
-    def clearTempData(self):
+    # clears temporal data from the blockchain
+    def clear_temp_data(self):
         try:
             tx_hash = self.functions.clearTempData().transact({'from': self.coinbase})
             self.wait_for_transact(tx_hash)
         except:
             # exceptions happens when the cost of deletion is too big. then we have to delete chunk by chunk
             limit_to_remove = 500
-            while len(getOffers_or_Bids(isOffer=True, temp=True)) > 0 or len(
-                    getOffers_or_Bids(isOffer=False, temp=True)) > 0 or len(
-                functions.getTempMarketResults().call()) > 0 or len(functions.getMarketResultsTotal().call()) > 0:
+            while len(self.get_open_positions(isOffer=True, temp=True, returnList=True)) > 0 or \
+                    len(self.get_open_positions(isOffer=False, temp=True, returnList=True)) > 0 or \
+                    len(self.functions.getTempMarketResults().call()) > 0 or \
+                    len(self.functions.getMarketResultsTotal().call()) > 0:
                 try:
-                    tx_hash = functions.clearTempData_gas_limit(limit_to_remove).transact({'from': coinbase})
-                    web3_instance.eth.waitForTransactionReceipt(tx_hash)
+                    tx_hash = self.functions.clearTempData_gas_limit(limit_to_remove).transact({'from': self.coinbase})
+                    self.wait_for_transact(tx_hash)
+                except:
+                    limit_to_remove -= 50
+
+    # clears permanent data from the blockchain
+    def clear_permanent_data(self):
+        try:
+            tx_hash = self.functions.clearPermanentData().transact({'from': self.coinbase})
+            self.wait_for_transact(tx_hash)
+        except:
+            # exceptions happens when the cost of deletion is too big. then we have to delete chunk by chunk
+            # 500 entries are to be removed, in the future, to be replaced by some gas estimation function
+            limit_to_remove = 500
+            while len(self.get_open_positions(isOffer=True, temp=False, returnList=True)) > 0 or \
+                    len(self.get_open_positions(isOffer=False, temp=False, returnList=True)) > 0 or \
+                    len(self.functions.get_user_infos().call()) or \
+                    len(self.functions.get_id_meters().call()):
+                try:
+                    tx_hash = self.functions.clearPermanentData_gas_limit(limit_to_remove).transact(
+                        {'from': self.coinbase})
+                    self.wait_for_transact(tx_hash)
                 except:
                     limit_to_remove -= 50
 
     ###################################################
     # Utility functions
-    # Internal use only
     def wait_for_transact(self, tx_hash):
-        self.web3_eth.waitForTransactionReceipt(tx_hash)
+        tx_receipt = self.web3_eth.waitForTransactionReceipt(tx_hash)
+        return tx_receipt
+
+    # function that gets temporary/permanent offers or bids from the blockchain.
+
+    # given the transaction hash, return the log of the function
+    def get_log(self, tx_hash):
+        tx_receipt = self.wait_for_transact(tx_hash)
+        log_to_process = tx_receipt['logs'][0]
+        processed_log = self.platform.events.logString().processLog(log_to_process)
+        log = processed_log['args']['arg']
+        return log
 
 
 if __name__ == "__main__":
@@ -246,34 +317,49 @@ if __name__ == "__main__":
                   "timeout": 600,
                   "network_id": 8995,
                   "contract_name": "Platform"}
+    from lemlab.platform import lem
 
     bc_lem_conn = BlockchainConnection(block_dict)
 
+    bc_lem_conn.clear_temp_data()
+    bc_lem_conn.clear_permanent_data()
+    assert bc_lem_conn.get_open_positions().empty and \
+           bc_lem_conn.get_list_all_meters().empty and \
+           bc_lem_conn.get_list_all_users().empty
+
+    print("All the info is empty afer clearing")
+
     print(bc_lem_conn.get_info_user(user_id="9022DLBF"))
 
-    new_user = pd.DataFrame(data=[["7961MZAC", 1000, 0, 10000, 100, 'green', 10, 'zi', 0, "3991MRTC", 0, 0]],
-                            columns=bc_param.info_user_column_names)
-    bc_lem_conn.register_user(df_user=new_user)
+    N = 10
+    info_users = lem.create_user_ids(N)
+    info_meters = lem.create_user_ids(N)
+    info_market_agents = lem.create_user_ids(N)
+    for i in range(N):
+        new_user = pd.DataFrame(
+            data=[[info_users[i], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, info_market_agents[i], 0, 0]],
+            columns=bc_param.info_user_column_names)
+        tx0 = bc_lem_conn.register_user(df_user=new_user)
+        # bc_lem_conn.wait_for_transact(tx)
 
-    all_users_df = bc_lem_conn.get_list_all_users()
+        new_meter_df = pd.DataFrame(
+            data=[[info_meters[i], "3214KOPL", "0", "virtual grid meter", 'aggregator', 'green', 0, 0, 'test']],
+            columns=bc_param.info_meter_column_names)
+        tx = bc_lem_conn.register_meter(df_meter=new_meter_df)
+        # bc_lem_conn.wait_for_transact(tx)
 
-    print(all_users_df.head(n=8))
-
-    print(bc_lem_conn.get_info_user(user_id="7961MZAC"))
-
-    new_meter_df = pd.DataFrame(
-        data=[["6543MZUG", "3214KOPL", "0", "virtual grid meter", 'aggregator', 'green', 0, 0, 'test']],
-        columns=bc_param.info_meter_column_names)
-    bc_lem_conn.register_meter(df_meter=new_meter_df)
-
-    print("Meter:", bc_lem_conn.get_info_meter(meter_id="6543MHUJ"))
+    bc_lem_conn.wait_for_transact(tx)
+    # print("Meter:", bc_lem_conn.get_info_meter(meter_id="6543MZUG"))
 
     all_meters_df = bc_lem_conn.get_list_main_meters()
+    all_users_df = bc_lem_conn.get_list_all_users()
 
-    print("All meters", all_meters_df.head(n=8))
+    print("All users", all_users_df.head(n=8))
+    print("Main meters", all_meters_df.head(n=8))
 
-    # new_position = pd.DataFrame(data=[["TESTUSER", 100, 10, 1, 10, "bid", 0, 0, round(time.time()), 123412]],
-    #                            columns=bc_param.positions_market_ex_ante_column_names)
-    # bc_lem_conn.push_position(df_position=new_position)
+    new_position = pd.Series(data=["6533MZUG", 100, 10, 1, 10, "bid", 0, 0, round(time.time()), 123412],
+                             index=bc_param.positions_market_ex_ante_column_names)
+    tx = bc_lem_conn.push_position(df_position=new_position)
+    bc_lem_conn.wait_for_transact(tx)
 
-    # print(bc_lem_conn.get_open_positions())
+    print("Open positions", bc_lem_conn.get_open_positions())

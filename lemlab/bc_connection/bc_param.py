@@ -91,10 +91,12 @@ info_meter_column_names = [ID_METER, ID_USER, ID_METER_SUPER, TYPE_METER, ID_AGG
 
 info_meter_column_dtypes = [Text(), Text(), Text(), Text(), Text(), Text(), BigInteger(), BigInteger(), Text()]
 
+# in the blockchain, but not in the DataBase, QUALITY_ENERGY is an int
+# representing the quality for faster and easier computation
 positions_market_ex_ante_column_names = [ID_USER, QTY_ENERGY, PRICE_ENERGY, QUALITY_ENERGY, PREMIUM_PREFERENCE_QUALITY,
                                          TYPE_POSITION, NUMBER_POSITION, STATUS_POSITION, T_SUBMISSION, TS_DELIVERY]
-positions_market_ex_ante_column_dtypes = [Text(), BigInteger(), BigInteger(), Text(), BigInteger(), Text(),
-                                          BigInteger(), BigInteger, BigInteger(), BigInteger()]
+positions_market_ex_ante_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(), BigInteger(),
+                                          Text(), BigInteger(), BigInteger, BigInteger(), BigInteger()]
 
 
 def map_name_to_dtype(names_column, dtypes_column):
