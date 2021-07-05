@@ -4,6 +4,7 @@ from lemlab.platform import blockchain_utils
 from lemlab.platform.blockchain_tests import test_utils
 from lemlab.platform.lem import _aggregate_identical_positions, _convert_qualities_to_int
 
+
 offers_blockchain_archive, bids_blockchain_archive = None, None
 open_offers_blockchain, open_bids_blockchain = None, None
 offers_db_archive, bids_db_archive = None, None
@@ -17,13 +18,17 @@ config = None
 quality_index = None
 price_index = None
 db_obj = None
+bc_obj = None
 
 #this method is executed before all the others, to get useful global variables, needed for the tests
 @pytest.fixture(scope="session", autouse=True)
 def setUp():
-    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_index, price_index, db_obj
-    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_index, price_index, db_obj = test_utils.setUp_test(
-        generate_bids_offer)
+    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
+        offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
+        id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj, bc_obj
+    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, \
+    bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, \
+    id_meters_db, config, quality_energy, price_index, db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
 
 #this test, tests that for every ts_delivery, the corresponding positions are the same, in the same order.
 #One has to apply also aggregation and sort
@@ -75,7 +80,7 @@ def test_filtering_on_ts_delivery():
 
         print("len curr_clearing_offers_db: " + str(len(curr_clearing_offers_db)))
         print("len curr_clearing_bids_db: " + str(len(curr_clearing_bids_db)))
-        curr_clearing_offers_blockchain, curr_clearing_bids_blockchain = blockchain_utils.functions.filter_sort_aggregate_OffersBids_memory(
+        curr_clearing_offers_blockchain, curr_clearing_bids_blockchain = bc_obj.functions.filter_sort_aggregate_OffersBids_memory(
             t_clearing_current, True).call()
 
         assert curr_clearing_offers_blockchain == curr_clearing_offers_db

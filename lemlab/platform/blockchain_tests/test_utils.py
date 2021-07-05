@@ -8,6 +8,8 @@ import pandas as pd
 from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import blockchain_utils
 from lemlab.platform.init_data_blockchain_random import init_random_data
+from lemlab.bc_connection.bc_connection import BlockchainConnection
+from lemlab.bc_connection.bc_param import Platform_dict
 
 from current_scenario_file import scenario_file_path
 
@@ -33,18 +35,22 @@ def setUp_test(generate_bids_offer, timeout=600):
     db_obj.end_connection()
     # print('Market archive contains', str(len(offers_db_archive)), 'valid offers and',
     #       str(len(bids_db_archive)), 'valid bids.')
-    blockchain_utils.setUpBlockchain(timeout=timeout)
-    offers_blockchain_archive, bids_blockchain_archive = blockchain_utils.getOffers_or_Bids(
-        isOffer=True, temp=False), blockchain_utils.getOffers_or_Bids(isOffer=False, temp=False)
-    open_offers_blockchain, open_bids_blockchain = blockchain_utils.getOffers_or_Bids(
-        isOffer=True, temp=True), blockchain_utils.getOffers_or_Bids(isOffer=False, temp=True)
-    user_infos_blockchain, id_meters_blockchain = blockchain_utils.functions.get_user_infos().call(), \
-                                                  blockchain_utils.functions.get_id_meters().call()
+
+    bc_obj = BlockchainConnection(Platform_dict)
+    # blockchain_utils.setUpBlockchain(timeout=timeout)
+
+    offers_blockchain_archive = bc_obj.get_open_positions(isOffer=True, temp=False, returnList=True)
+    bids_blockchain_archive = bc_obj.get_open_positions(isOffer=False, temp=False, returnList=True)
+    open_offers_blockchain = bc_obj.get_open_positions(isOffer=True, temp=True, returnList=True)
+    open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, returnList=True)
+
+    user_infos_blockchain = bc_obj.get_list_all_users(returnList=True)
+    id_meters_blockchain = bc_obj.get_list_all_meters(returnList=True)
 
     return offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
            offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
            id_meters_blockchain, id_meters_db, config, list(open_offers_db.keys()).index(db_param.QUALITY_ENERGY), \
-           list(open_offers_db.keys()).index(db_param.PRICE_ENERGY), db_obj
+           list(open_offers_db.keys()).index(db_param.PRICE_ENERGY), db_obj, bc_obj
 
 
 def result_test(testname, passed):

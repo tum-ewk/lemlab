@@ -8,6 +8,7 @@ import time
 import yaml
 # from tqdm import tqdm
 from lemlab.bc_connection.bc_connection import BlockchainConnection
+from lemlab.bc_connection.bc_param import Platform_dict
 
 from current_scenario_file import scenario_file_path
 
@@ -40,23 +41,13 @@ def init_random_data():
     ids_meter_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
     ids_market_agents = lem.create_user_ids(num=config['prosumer']['general_number_of'])
 
-    block_dict = {"host": "localhost",
-                  "port": "8540",
-                  "timeout": 600,
-                  "network_id": 8995,
-                  "contract_name": "Platform"}
-    bc_obj = BlockchainConnection(block_dict)
+    bc_obj = BlockchainConnection(Platform_dict)        # connect to the platform contract
     bc_obj.clear_temp_data()
     bc_obj.clear_permanent_data()
-    # blockchain_utils.setUpBlockchain(project_dir=project_dir)
-    # blockchain_utils.clearTempData()
-    # blockchain_utils.clearPermanentData()
 
     # Register meters and users on database
     for z in range(len(ids_users_random)):
-        # all the users are initialized with the same balance, when de market clearing happens, their balances
-        # are updated
-        # added "str" id_market_agent in position [-3]
+
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_USER, dtype=True)
         col_data = [ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]
         if any([type(data) != typ for data, typ in zip(col_data, types)]):
@@ -66,11 +57,9 @@ def init_random_data():
             columns=cols)
         db_obj.register_user(df_in=df_insert)
 
-        # blockchain_utils.functions.push_user_info(tuple(df_insert.values.tolist()[0])).transact(
-        #    {'from': blockchain_utils.coinbase})
         bc_obj.register_user(df_insert)
 
-        # changed order of parameters, now first id_meter_super, then type meter, which is now str type
+
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_METER, dtype=True)
         col_data = [ids_meter_random[z], ids_users_random[z], "0", "virtual grid meter", 'aggregator', 'green', 0, 0,
                     'test']
@@ -80,11 +69,9 @@ def init_random_data():
             data=[col_data],
             columns=cols)
         db_obj.register_meter(df_in=df_insert)
-        # tx_hash = blockchain_utils.functions.push_id_meters(tuple(df_insert.values.tolist()[0])).transact(
-        #    {'from': blockchain_utils.coinbase})
+
         tx_hash = bc_obj.register_meter(df_insert)
 
-    # blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash)
     bc_obj.wait_for_transact(tx_hash)
 
     if len(bc_obj.get_list_all_users()) == len(db_obj.get_list_all_users()) and len(
@@ -117,10 +104,7 @@ def init_random_data():
 
     temp = True  # if we wanna save the offers and bids as temporal data
     permt = False  # if we wanna save the offers and bids as permanent data
-    # for position in tqdm(positions.iterrows(), total=positions.shape[0]):
-    #    # pushes offers and bids, last bool arguments are for temp and permanent data respectively
 
-    #    tx_hash = bc_obj.push_position(position, temp=temp, permament=permt)
     tx_hash = bc_obj.push_all_positions(positions, temp, permt)
     bc_obj.wait_for_transact(tx_hash)
 

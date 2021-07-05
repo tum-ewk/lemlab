@@ -98,6 +98,18 @@ positions_market_ex_ante_column_names = [ID_USER, QTY_ENERGY, PRICE_ENERGY, QUAL
 positions_market_ex_ante_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(), BigInteger(),
                                           Text(), BigInteger(), BigInteger, BigInteger(), BigInteger()]
 
+Platform_dict = {"host": "localhost",
+                 "port": "8540",
+                 "timeout": 600,
+                 "network_id": 8995,
+                 "contract_name": "Platform"}
+
+Lib_dict = {"host": "localhost",
+            "port": "8540",
+            "timeout": 600,
+            "network_id": 8995,
+            "contract_name": "Lib"}
+
 
 def map_name_to_dtype(names_column, dtypes_column):
     mapping = {}
