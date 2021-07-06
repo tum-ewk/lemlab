@@ -8,7 +8,6 @@ import time
 import yaml
 # from tqdm import tqdm
 from lemlab.bc_connection.bc_connection import BlockchainConnection
-from lemlab.bc_connection.bc_param import Platform_dict
 
 from current_scenario_file import scenario_file_path
 
@@ -41,7 +40,7 @@ def init_random_data():
     ids_meter_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
     ids_market_agents = lem.create_user_ids(num=config['prosumer']['general_number_of'])
 
-    bc_obj = BlockchainConnection(Platform_dict)        # connect to the platform contract
+    bc_obj = BlockchainConnection(bc_dict=config['db_connections']['bc_dict'])        # connect to the platform contract
     bc_obj.clear_temp_data()
     bc_obj.clear_permanent_data()
 
@@ -76,14 +75,14 @@ def init_random_data():
 
     if len(bc_obj.get_list_all_users()) == len(db_obj.get_list_all_users()) and len(
             bc_obj.get_list_main_meters()) == len(db_obj.get_list_main_meters()):
-        print("successfully stored " + str(len(db_obj.get_list_all_users())) + " user_infos and " + str(
-            len(db_obj.get_list_main_meters())) + " id_meters")
+        print("Pre-setting: successfully stored " + str(len(db_obj.get_list_all_users())) + " users and " + str(
+            len(db_obj.get_list_main_meters())) + " meters")
     else:
-        print("different number of user_infos and id_meters on blockchain and db")
-        print("user_infos on db: " + str(len(db_obj.get_list_all_users())))
-        print("user_infos on blockchain: " + str(len(bc_obj.get_list_all_users())))
-        print("id_meters on db: " + str(len(db_obj.get_list_main_meters())))
-        print("id_meters on blockchain: " + str(len(bc_obj.get_list_main_meters())))
+        print("Pre-setting: different number of user_infos and id_meters on blockchain and db")
+        print("Pre-setting: user_infos on db: " + str(len(db_obj.get_list_all_users())))
+        print("Pre-setting: user_infos on blockchain: " + str(len(bc_obj.get_list_all_users())))
+        print("Pre-setting: id_meters on db: " + str(len(db_obj.get_list_main_meters())))
+        print("Pre-setting: id_meters on blockchain: " + str(len(bc_obj.get_list_main_meters())))
         raise Exception("Error in inserting user_infos and id_meters")
 
     # Compute random market positions
@@ -96,7 +95,7 @@ def init_random_data():
     db_obj.post_positions(positions)
 
     bids_db, offers_db = db_obj.get_open_positions()  # returns bids and offers from the database
-    print("to push " + str(len(bids_db) + len(offers_db)) + " offers/bids")
+    print(f"Pre-setting: a total of {len(bids_db) + len(offers_db)} market positions are pushed.")
 
     # for the blockchain, the quality of energy needs to be converted to int before storing it
     # however, before, in the DB the quality is stored as a string
@@ -110,13 +109,13 @@ def init_random_data():
 
     if len(bc_obj.get_open_positions(isOffer=True, returnList=True)) == len(offers_db) and \
             len(bc_obj.get_open_positions(isOffer=False, returnList=True)) == len(bids_db):
-        print("successfully stored " + str(len(offers_db)) + " offers and " + str(len(bids_db)) + " bids")
+        print(f"Pre-setting: stored {len(offers_db)} offers and {len(bids_db)} bids successfully.")
     else:
-        print("different number of offers and bids on blockchain and db")
-        print("offers on db: " + str(len(offers_db)))
-        print("offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, returnList=True))))
-        print("bids on db: " + str(len(bids_db)))
-        print("bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, returnList=True))))
+        print("Pre-setting: different number of offers and bids on blockchain and db")
+        print("Pre-setting: offers on db: " + str(len(offers_db)))
+        print("Pre-setting: offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, returnList=True))))
+        print("Pre-setting: bids on db: " + str(len(bids_db)))
+        print("Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, returnList=True))))
 
 
 if __name__ == '__main__':

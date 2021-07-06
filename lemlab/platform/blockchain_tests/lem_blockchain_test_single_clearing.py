@@ -4,7 +4,7 @@ import time
 
 from tqdm import tqdm
 
-from lemlab.platform import blockchain_utils, lem
+from lemlab.platform import lem
 from lemlab.platform.blockchain_tests import test_utils
 from lemlab.platform.lem import _add_supplier_bids, clearing_da
 
@@ -21,15 +21,20 @@ config = None
 quality_index = None
 price_index = None
 db_obj = None
-verbose = False
+bc_obj = None
+verbose = True
 
 
 # this method is executed before all the others, to get useful global variables, needed for the tests
 @pytest.fixture(scope="session", autouse=True)
 def setUp():
-    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj
-    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj = test_utils.setUp_test(
-        generate_bids_offer)
+    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
+        offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
+        id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj, bc_obj
+    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
+    offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
+    id_meters_blockchain, id_meters_db, config, quality_energy, price_index, \
+    db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
 
 
 # this test, tests that for every ts_delivery, a single clearing produces the same results on python and blockchain
@@ -40,7 +45,9 @@ def test_clearings():
     interval_clearing = config['lem']['interval_clearing']
     # Calculate number of market clearings
     n_clearings = int(market_horizon / interval_clearing)
-    print("n_clearings: " + str(n_clearings))
+    print(f"Number of clearings: {n_clearings}")
+
+    print(bc_obj)
 
     supplier_bids = False
     uniform_pricing = True
@@ -57,24 +64,40 @@ def test_clearings():
 
     pos_c = 0
     for i in iterations:
-        print("i: " + str(i))
+        if verbose:
+            print(f"Clearing step number: {i}/{n_clearings}")
+        # current time for clearing
         t_clearing_current = t_clearing_first + config['lem']['interval_clearing'] * i
-        positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = single_clearing_db_standard(
-            t_clearing_current, open_offers_db, open_bids_db, verbose)
 
+        t_central_clearing_start = round(time.time())
+        # triggering centralized clearing
+        positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = single_clearing_db_standard(
+            t_clearing_current, open_offers_db, open_bids_db, verbose=False)
+
+        t_central_clearing_end = round(time.time())
+        t_central_clearing_total = t_central_clearing_end - t_central_clearing_start
+        if verbose:
+            print(f"Time, centralized clearing, total time: {t_central_clearing_total}")
         # added one bool at the end for simulation_test to perform additional sort over quantity( given equal price
         # and quality)
-        tx_hash = blockchain_utils.functions.single_clearing(t_clearing_current, supplier_bids, uniform_pricing,
-                                                             discriminative_pricing, t_clearing_first, True, False,
-                                                             verbose, False, True).transact(
-            {'from': blockchain_utils.coinbase})
+
+        t_decentral_clearing_start = round(time.time())
+        tx_hash = bc_obj.functions.single_clearing(t_clearing_current, supplier_bids, uniform_pricing,
+                                                   discriminative_pricing, t_clearing_first, True, False,
+                                                   verbose, False, True).transact({'from': bc_obj.coinbase})
         # added extra timeout to wait for 10 mins
-        blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash, timeout=600)
+        bc_obj.wait_for_transact(tx_hash)
+
+        t_decentral_clearing_end = round(time.time())
+        t_decentral_clearing_total = t_decentral_clearing_end - t_decentral_clearing_start
+        if verbose:
+            print(f"Time, decentralized clearing, total time: {t_decentral_clearing_total}")
         # time.sleep(3)
-        temp_market_results_blockchain = blockchain_utils.functions.getTempMarketResults().call()
+        temp_market_results_blockchain = bc_obj.functions.getTempMarketResults().call()
 
         if positions_cleared is None:
-            print("No positions cleared")
+            if verbose:
+                print("No positions cleared")
             pos_c += 1
             assert len(temp_market_results_blockchain) == 0
         else:
@@ -95,8 +118,8 @@ def test_clearings():
 # got the results from the blockchain, I reformat the data to get a dataframe with the same shape as the one given in
 # input
 def prepare_df_single_clearing(temp_market_results_blockchain, bids_offers_cleared_python):
-    df_results_blockchain = blockchain_utils.convertListToPdDataFrame(temp_market_results_blockchain,
-                                                                      bids_offers_cleared_python.columns.to_list())
+    df_results_blockchain = pd.DataFrame(temp_market_results_blockchain,
+                                         columns=bids_offers_cleared_python.columns.to_list())
 
     if len(df_results_blockchain) > 0:
         df_results_blockchain.set_index(df_results_blockchain[db_obj.db_param.QTY_ENERGY_TRADED].cumsum(),

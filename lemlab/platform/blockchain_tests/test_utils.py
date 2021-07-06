@@ -6,10 +6,8 @@ import yaml
 import pandas as pd
 
 from lemlab.db_connection import db_connection, db_param
-from lemlab.platform import blockchain_utils
 from lemlab.platform.init_data_blockchain_random import init_random_data
 from lemlab.bc_connection.bc_connection import BlockchainConnection
-from lemlab.bc_connection.bc_param import Platform_dict
 
 from current_scenario_file import scenario_file_path
 
@@ -36,7 +34,7 @@ def setUp_test(generate_bids_offer, timeout=600):
     # print('Market archive contains', str(len(offers_db_archive)), 'valid offers and',
     #       str(len(bids_db_archive)), 'valid bids.')
 
-    bc_obj = BlockchainConnection(Platform_dict)
+    bc_obj = BlockchainConnection(bc_dict=config['db_connections']['bc_dict'])
     # blockchain_utils.setUpBlockchain(timeout=timeout)
 
     offers_blockchain_archive = bc_obj.get_open_positions(isOffer=True, temp=False, returnList=True)
