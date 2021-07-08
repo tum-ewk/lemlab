@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 from lemlab.db_connection import db_param
-from lemlab.platform import blockchain_utils, lem
+from lemlab.platform import lem
 from lemlab.platform.blockchain_tests import test_utils
 
 verbose_blockchain = False
@@ -23,14 +23,19 @@ config = None
 quality_index = None
 price_index = None
 db_obj = None
+bc_obj = None
 
 
 # this method is executed before all the others, to get useful global variables, needed for the tests
 @pytest.fixture(scope="session", autouse=True)
 def setUp():
-    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj
-    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj = test_utils.setUp_test(
-        generate_bids_offer)
+    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
+        offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
+        id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj, bc_obj
+    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
+    offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
+    id_meters_blockchain, id_meters_db, config, quality_energy, price_index, \
+    db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
 
 
 # in this test, the results of the full market clearing, the updated balances, on the blockchain and on python are compared
@@ -48,13 +53,11 @@ def test_clearings():
     uniform_pricing = True
     discriminative_pricing = True
     supplier_bids = False
-    tx_hash = blockchain_utils.functions.updateBalances().transact({'from': blockchain_utils.coinbase})
-    blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash)
-    user_infos_blockchain = blockchain_utils.functions.get_user_infos().call()
+    tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
+    bc_obj.wait_for_transact(tx_hash)
+    user_infos_blockchain_dataframe = bc_obj.get_list_all_users()
     user_infos_db = pd.concat([db_obj.get_info_user(user_id) for user_id in
                                db_obj.get_list_all_users()])
-    user_infos_blockchain_dataframe = blockchain_utils.convertListToPdDataFrame(user_infos_blockchain,
-                                                                                user_infos_db.columns.to_list())
 
     user_infos_db = user_infos_db.sort_values(by=[db_param.ID_USER], ascending=[True])
     user_infos_blockchain_dataframe = user_infos_blockchain_dataframe.sort_values(by=[db_param.ID_USER],
@@ -64,27 +67,18 @@ def test_clearings():
     assert len(user_infos_db) == len(user_infos_blockchain_dataframe)
     pd.testing.assert_frame_equal(user_infos_db, user_infos_blockchain_dataframe)
     # testing of market results
+    print("Users asserted and correctly stored")
     start = time.time()
     market_results_python, _, _, _, market_results_blockchain = lem.market_clearing(db_obj=db_obj,
+                                                                                    bc_obj=bc_obj,
                                                                                     config_lem=config['lem'],
                                                                                     t_override=t_clearing_start,
-                                                                                    shuffle=shuffle, verbose=verbose_db)
+                                                                                    shuffle=shuffle,
+                                                                                    verbose=verbose_db,
+                                                                                    verbose_blockchain=verbose_blockchain)
 
     market_results_python = market_results_python['da']
-    # end = time.time()
-    # start = time.time()
-    # added one bool at the end for simulation_test to perform additional sort over quantity( given equal price
-    # and quality)
-    # market_results_blockchain = get_market_results_blockchain(t_clearing_start, n_clearings,
-    #                                                           supplier_bids=supplier_bids,
-    #                                                           uniform_pricing=uniform_pricing,
-    #                                                           discriminative_pricing=discriminative_pricing,
-    #                                                           t_clearing_start=t_clearing_start,
-    #                                                           # market_results_python=market_results_python,
-    #                                                           simulation_test=True,
-    #                                                           interval_clearing=interval_clearing,
-    #                                                           shuffle=shuffle)
-    # market_results_blockchain = convertToPdFinalMarketResults(market_results_blockchain, market_results_python)
+
     end = time.time()
     print("market clearing on both blockchain and simulation done in " + str(end - start) + " seconds")
     if shuffle:

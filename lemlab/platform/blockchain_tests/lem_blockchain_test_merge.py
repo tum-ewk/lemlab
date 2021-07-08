@@ -3,7 +3,6 @@ import numpy as np
 from tqdm import tqdm
 
 from lemlab.db_connection import db_param
-from lemlab.platform import blockchain_utils
 from lemlab.platform.blockchain_tests import test_utils
 from lemlab.platform.lem import _aggregate_identical_positions, \
     _convert_qualities_to_int
@@ -12,7 +11,7 @@ offers_blockchain_archive, bids_blockchain_archive = None, None
 open_offers_blockchain, open_bids_blockchain = None, None
 offers_db_archive, bids_db_archive = None, None
 open_offers_db, open_bids_db = None, None
-generate_bids_offer = False
+generate_bids_offer = True
 user_infos_blockchain = None
 user_infos_db = None
 id_meters_blockchain = None

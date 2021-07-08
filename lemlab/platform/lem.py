@@ -23,28 +23,33 @@ import yaml
 import random
 import string
 
-from lemlab.platform import blockchain_utils
-
 from current_scenario_file import scenario_file_path
 
-# variable for the blockchain function calls
-verbose_blockchain = False
 
 def market_clearing(db_obj,
+                    bc_obj,
                     config_lem,
                     config_supplier=None,
                     t_override=None,
                     shuffle=False,
                     plotting=False,
-                    verbose=False):
+                    verbose=True,
+                    verbose_blockchain=False):
     """
     Function clears all offers and bids from database and writes stores unmatched and matched bids back in database.
+    Parameters
+    ----------
     @param db_obj: database connection object
+    @param bc_obj: blockchain connection object
     @param config_lem: configuration dictionary of local energy market
     @param config_supplier: configuration dictionary of supplier
     @param t_override: defines the current time, mostly used for simulation purpose [unix time]
+    @param shuffle: wether to shuffle or not the data before appending it, does not have any impact on the results
     @param plotting: boolean value to visualize clearing results
     @param verbose: boolean value to print updates to console
+    @param verbose_blockchain: boolean value to print blockchain updates to console
+
+
     """
     # If t_now is not set, then current time
     if t_override is None:
@@ -75,38 +80,32 @@ def market_clearing(db_obj,
     bids = _convert_qualities_to_int(db_obj, bids, config_lem['types_quality'])
     offers = _convert_qualities_to_int(db_obj, offers, config_lem['types_quality'])
     # if we want to perform the market clearing on the blockchain too
+    tx_hash = None
     if config_lem["clearing_blockchain"]:
         simulation_test = False  # if true, we sort the positions by price, quality, and quantity too, in order to test the results with python
-        blockchain_utils.clearTempData()  # clear temporary positions and temporary market results
+        bc_obj.clear_temp_data()  # clear temporary positions and temporary market results
         i = 1
-        for ob in pd.concat([offers,
-                             bids]).iterrows():  # I take positions(offers, bids) from db and push them on the blockchain one by one
-            blockchain_utils.functions.pushOfferOrBid(tuple(ob[1].values),
-                                                      ob[1][
-                                                          list(ob[1].keys()).index(db_param.TYPE_POSITION)] == 'offer',
-                                                      True, config_lem['positions_archive']).transact(
-                {'from': blockchain_utils.coinbase})
-            if verbose:
-                if i % 10 == 0:
-                    print("pushed " + str(i) + " offers/bids")
-            i += 1
-        time.sleep(20)
+        # I take positions(offers, bids) from db and push them on the blockchain one by one
+        tx_hash = bc_obj.push_all_positions(pd.concat([offers, bids]), temp=True,
+                                            permanent=config_lem['positions_archive'])
+        bc_obj.wait_for_transact(tx_hash)
         if verbose:
             print("same len positions on db and on blockchain: " + str(
-                len(blockchain_utils.getOffers_or_Bids(isOffer=True)) + len(
-                    blockchain_utils.getOffers_or_Bids(isOffer=False)) == len(bids) + len(offers)))
+                len(bc_obj.get_open_positions(returnBoth=True, returnList=True)) == len(bids) + len(offers)))
         # I perform the market clearing on the blockchain and get the results
         market_results_blockchain = get_market_results_blockchain(t_now, n_clearings,
+                                                                  bc_obj=bc_obj,
                                                                   supplier_bids=config_supplier is not None,
                                                                   uniform_pricing=True,
                                                                   discriminative_pricing=True,
                                                                   t_clearing_start=t_now,
                                                                   interval_clearing=config_lem['interval_clearing'],
-                                                                  simulation_test=simulation_test, shuffle=shuffle)
+                                                                  simulation_test=simulation_test, shuffle=shuffle,
+                                                                  verbose_blockchain=verbose_blockchain)
         # I update the user balances
-        tx_hash = blockchain_utils.functions.updateBalances().transact({'from': blockchain_utils.coinbase})
+        tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
         # added extra timeout up to 5 mins in case the connection fails or there is a block error
-        blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash, timeout=300)
+        bc_obj.wait_for_transact(tx_hash)
     results_clearing_all = {}
     time_clearing_execution = {}
 
@@ -1396,17 +1395,17 @@ def create_user_ids(num=30):
 # this method, find the maximum number of clearings that the blockchain manages to perform at once, according to the gas limit
 def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricing, discriminative_pricing,
               t_clearing_start,
-              gasThreshold, interval_clearing, simulation_test):
+              gasThreshold, interval_clearing, simulation_test, bc_obj, verbose_blockchain=False):
     n_clearings_current = n_clearings_max
     estimate = 10 * gasThreshold
     while estimate > gasThreshold:
         try:
-            estimate = blockchain_utils.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
-                                                                  supplier_bids, uniform_pricing,
-                                                                  discriminative_pricing,
-                                                                  int(interval_clearing),
-                                                                  int(t_clearing_start), False, verbose_blockchain,
-                                                                  False, simulation_test).estimateGas()
+            estimate = bc_obj.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
+                                                        supplier_bids, uniform_pricing,
+                                                        discriminative_pricing,
+                                                        int(interval_clearing),
+                                                        int(t_clearing_start), False, verbose_blockchain,
+                                                        False, simulation_test).estimateGas()
             n_clearings_current = int(n_clearings_current / (estimate / gasThreshold))
         except Exception as e:
             print(e)
@@ -1417,7 +1416,8 @@ def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricin
 
 # this method, perform the market clearing and gets the results from the blockchain
 def get_market_results_blockchain(t_override, n_clearings, supplier_bids, uniform_pricing, discriminative_pricing,
-                                  t_clearing_start, interval_clearing, simulation_test, shuffle=False):
+                                  t_clearing_start, interval_clearing, simulation_test, bc_obj, shuffle=False,
+                                  verbose_blockchain=False):
     t_now = t_override
     t_clearing_first = t_now - (t_now % interval_clearing) + interval_clearing
 
@@ -1428,27 +1428,28 @@ def get_market_results_blockchain(t_override, n_clearings, supplier_bids, unifor
     limit_clearings = findLimit(n_clearings, t_clearing_first, supplier_bids, uniform_pricing, discriminative_pricing,
                                 t_clearing_start,
                                 gasThreshold=40000000, interval_clearing=interval_clearing,
-                                simulation_test=simulation_test)
+                                simulation_test=simulation_test, bc_obj=bc_obj, verbose_blockchain=verbose_blockchain)
 
     n_clearings_current = limit_clearings
     update_balances = False
+
     while n_clearings_done < n_clearings:
         if n_clearings - n_clearings_done <= n_clearings_current:  # last step
             n_clearings_current = n_clearings - n_clearings_done
             update_balances = False
         try:
             # Performing the market clearing for a number of clearings
-            tx_hash = blockchain_utils.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
-                                                                 supplier_bids,
-                                                                 uniform_pricing,
-                                                                 discriminative_pricing,
-                                                                 int(interval_clearing),
-                                                                 int(t_clearing_start), shuffle, verbose_blockchain,
-                                                                 update_balances, simulation_test).transact(
-                {'from': blockchain_utils.coinbase})
-            blockchain_utils.web3_instance.eth.waitForTransactionReceipt(tx_hash, timeout=600)  # 600 seconds wait
+            tx_hash = bc_obj.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
+                                                       supplier_bids,
+                                                       uniform_pricing,
+                                                       discriminative_pricing,
+                                                       int(interval_clearing),
+                                                       int(t_clearing_start), shuffle, verbose_blockchain,
+                                                       update_balances, simulation_test).transact(
+                {'from': bc_obj.coinbase})
+            bc_obj.wait_for_transact(tx_hash)  # 600 seconds wait
             if verbose_blockchain:
-                log = blockchain_utils.getLog(tx_hash=tx_hash)
+                log = bc_obj.get_log(tx_hash=tx_hash)
                 print(log)
             n_clearings_done += n_clearings_current
             t_clearing_current = t_clearing_first + interval_clearing * n_clearings_done
@@ -1458,14 +1459,13 @@ def get_market_results_blockchain(t_override, n_clearings, supplier_bids, unifor
             n_clearings_current = int(n_clearings_current * 0.75)
             update_balances = False
 
-    market_results_blockchain = blockchain_utils.functions.getMarketResultsTotal().call()
+    market_results_blockchain = bc_obj.functions.getMarketResultsTotal().call()
     return market_results_blockchain
 
 
 # Convert results on the blockchain to a pandas dataframe
 def convertToPdFinalMarketResults(market_results_blockchain, market_results_python):
-    market_results_blockchain = blockchain_utils.convertListToPdDataFrame(market_results_blockchain,
-                                                                          market_results_python.columns.to_list())
+    market_results_blockchain = pd.DataFrame(market_results_blockchain, columns=market_results_python.columns.to_list())
     return market_results_blockchain
 
 
