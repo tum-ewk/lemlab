@@ -34,6 +34,16 @@ contract Platform {
 		Platform.clearTempData();//constructor where all the data is cleared.
 		}
 
+	function edit_user(string user_id,Lb.Lib.UserInfo memory user) public {
+		for(uint i=0; i<Platform.user_infos.length; i++){
+			if(Platform.user_infos[i].id_user==user_id){
+				delete Platform.user_infos[i];
+				push_user_info(user);
+				break;
+			}
+		}
+	}
+
 	function clearTempData() public {//function that deletes objects from the contract storage
 	    delete Platform.tempOffers;
 		delete Platform.tempBids;

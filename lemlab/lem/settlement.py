@@ -521,7 +521,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         final_qualities["temp"] = 1
         final_qualities = final_qualities.groupby("temp").sum()
         if len(final_qualities):
-            final_qualities.loc[1, "share_quality_na"] += outside_flow
+            final_qualities.loc[1, db_obj.db_param.SHARE_QUALITY_+"na"] += outside_flow
             final_qualities.loc[1, "energy_out_main_meter"] += outside_flow
 
         for quality in lem_config["types_quality"]:
@@ -543,7 +543,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             lookup_price = \
                 dict_lookup_tables[lem_config['types_pricing_ex_post'][type_pricing]]["price"]
 
-            local_share = 1 - dict_results_ex_post["share_quality_na"][-1]/100    # share of all non-local ("NA")
+            local_share = 1 - dict_results_ex_post[db_obj.db_param.SHARE_QUALITY_+"na"][-1]/100    # share of all non-local ("NA")
             price = _lookup(local_share, lookup_supply_ratio, lookup_price) * euro_kwh_to_sigma_wh
             dict_results_ex_post[db_obj.db_param.PRICE_ENERGY_MARKET_
                                  + lem_config['types_pricing_ex_post'][type_pricing]].append(price)

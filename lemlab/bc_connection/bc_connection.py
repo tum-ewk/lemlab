@@ -257,6 +257,7 @@ class BlockchainConnection:
     # Functions for the market clearing of data
     # Market participants only
     # clears temporal data from the blockchain
+    # temporal data are temp bids and offers and market results
     def clear_temp_data(self):
         try:
             tx_hash = self.functions.clearTempData().transact({'from': self.coinbase})
@@ -275,6 +276,7 @@ class BlockchainConnection:
                     limit_to_remove -= 50
 
     # clears permanent data from the blockchain
+    # permanent data are permanent bids and offers and all the info from the users and meters
     def clear_permanent_data(self):
         try:
             tx_hash = self.functions.clearPermanentData().transact({'from': self.coinbase})
