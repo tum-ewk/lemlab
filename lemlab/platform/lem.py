@@ -34,7 +34,8 @@ def market_clearing(db_obj,
                     shuffle=False,
                     plotting=False,
                     verbose=True,
-                    verbose_blockchain=False):
+                    verbose_bc=False,
+                    bc_test=False):
     """
     Function clears all offers and bids from database and writes stores unmatched and matched bids back in database.
     Parameters
@@ -47,8 +48,8 @@ def market_clearing(db_obj,
     @param shuffle: wether to shuffle or not the data before appending it, does not have any impact on the results
     @param plotting: boolean value to visualize clearing results
     @param verbose: boolean value to print updates to console
-    @param verbose_blockchain: boolean value to print blockchain updates to console
-
+    @param verbose_bc: boolean value to print blockchain updates to console
+    @param bc_test: boolean value to indicate a blockchain test
 
     """
     # If t_now is not set, then current time
@@ -82,33 +83,39 @@ def market_clearing(db_obj,
     # if we want to perform the market clearing on the blockchain too
     tx_hash = None
     if config_lem["clearing_blockchain"]:
-        simulation_test = False  # if true, we sort the positions by price, quality, and quantity too, in order to test the results with python
-        bc_obj.clear_temp_data()  # clear temporary positions and temporary market results
-        i = 1
-        # I take positions(offers, bids) from db and push them on the blockchain one by one
-        tx_hash = bc_obj.push_all_positions(pd.concat([offers, bids]), temp=True,
-                                            permanent=config_lem['positions_archive'])
-        bc_obj.wait_for_transact(tx_hash)
-        if verbose:
-            print("same len positions on db and on blockchain: " + str(
-                len(bc_obj.get_open_positions(returnBoth=True, returnList=True)) == len(bids) + len(offers)))
+        if not bc_test:
+            # Clear temporary data on bc and push bids and offers from db
+            bc_obj.clear_temp_data()  # clear temporary positions and temporary market results
+            tx_hash = bc_obj.push_all_positions(pd.concat([offers, bids]), temp=True,
+                                                permanent=config_lem['positions_archive'])
+            bc_obj.wait_for_transact(tx_hash)
+        if verbose_bc:
+            if len(bc_obj.get_open_positions(returnBoth=True, returnList=True)) == len(bids) + len(offers):
+                print("Check: number of positions on bc and db are equal.")
+            else:
+                print("Check: number of positions on bc and db are NOT equal.")
+        t_start_bc_clearing = time.time()
         # I perform the market clearing on the blockchain and get the results
-        market_results_blockchain = get_market_results_blockchain(t_now, n_clearings,
-                                                                  bc_obj=bc_obj,
-                                                                  supplier_bids=config_supplier is not None,
-                                                                  uniform_pricing=True,
-                                                                  discriminative_pricing=True,
-                                                                  t_clearing_start=t_now,
-                                                                  interval_clearing=config_lem['interval_clearing'],
-                                                                  simulation_test=simulation_test, shuffle=shuffle,
-                                                                  verbose_blockchain=verbose_blockchain)
+        market_results_bc = get_market_results_blockchain(t_now, n_clearings,
+                                                          bc_obj=bc_obj,
+                                                          supplier_bids=config_supplier is not None,
+                                                          uniform_pricing=True,
+                                                          discriminative_pricing=True,
+                                                          t_clearing_start=t_now,
+                                                          interval_clearing=config_lem['interval_clearing'],
+                                                          simulation_test=bc_test,
+                                                          shuffle=shuffle,
+                                                          verbose_bc=verbose_bc)
         # I update the user balances
         tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
         # added extra timeout up to 5 mins in case the connection fails or there is a block error
         bc_obj.wait_for_transact(tx_hash)
+        t_end_bc_clearing = time.time()
+        t_bc_clearing = t_end_bc_clearing - t_start_bc_clearing
+
     results_clearing_all = {}
     time_clearing_execution = {}
-
+    t_start_db_clearing = time.time()
     # for-loop for all specified clearing types
     for j in range(len(config_lem['types_clearing_ex_ante'])):
         type_clearing = config_lem['types_clearing_ex_ante'][j]
@@ -116,7 +123,7 @@ def market_clearing(db_obj,
         # t_clearing_start = round(time.time())
         t_clearing_start = t_now
         if verbose:
-            print('\n\n### MARKET CLEARING STARTED ###', pd.Timestamp(t_clearing_start, unit="s", tz="Europe/Berlin"))
+            print('\n### MARKET CLEARING STARTED ###', pd.Timestamp(t_clearing_start, unit="s", tz="Europe/Berlin"))
             print(f'Market type: {type_clearing}')
             print('Market contains', str(len(offers)), 'valid offers and', str(len(bids)), 'valid bids.')
         # Create empty results df
@@ -539,6 +546,7 @@ def market_clearing(db_obj,
                     results_clearing = results_clearing.append(positions_cleared, ignore_index=True)
 
         t_clearing_end = round(time.time())
+        t_end_db_clearing = time.time()
         if verbose:
             iterations.set_description('Post-processing: ', pd.Timestamp(t_clearing_end, unit="s",
                                                                          tz="Europe/Berlin"))
@@ -570,18 +578,23 @@ def market_clearing(db_obj,
 
         # General Information
         t_post_processing_end = round(time.time())
+        t_end_db_post_processing = time.time()
         if verbose:
-            print('\nTiming')
-            print('Internal clearing time:', str(t_clearing_end - t_clearing_start))
-            print('Post-processing time:', str(t_post_processing_end - t_clearing_end))
-            print('Market clearing ended, total time:', str(t_post_processing_end - t_clearing_start), 'seconds')
+            print('\n### Timing ###')
+            print(f"Time: decentralized blockchain clearing took {t_bc_clearing} seconds")
+            print(f"Time: centralized database clearing took "
+                  f"{t_end_db_post_processing - t_start_db_clearing} seconds.")
+            print(f"Time: pure centralized database clearing took "
+                  f"{t_end_db_clearing - t_start_db_clearing} seconds.")
+            print(f"Time: centralized database post-processing took "
+                  f"{t_end_db_post_processing - t_end_db_clearing} seconds.")
 
         time_clearing_execution[type_clearing] = t_clearing_end - t_clearing_start
 
     if config_lem["clearing_blockchain"]:
         # here I compare the results from the blockchain with the results got using python
-        market_results_blockchain = convertToPdFinalMarketResults(market_results_blockchain, results_clearing_all['da'])
-        market_results_blockchain = market_results_blockchain.sort_values(
+        market_results_bc = convertToPdFinalMarketResults(market_results_bc, results_clearing_all['da'])
+        market_results_bc = market_results_bc.sort_values(
             by=[db_param.TS_DELIVERY, db_param.QTY_ENERGY_TRADED, db_param.PRICE_ENERGY_OFFER],
             ascending=[True, True, True])
         results_clearing_all['da'] = results_clearing_all['da'].sort_values(
@@ -589,16 +602,17 @@ def market_clearing(db_obj,
             ascending=[True, True, True])
         # results_clearing = results_clearing_all['da']
         # b = market_results_blockchain[market_results_blockchain['id_user_offer']!='06m8761z85']
-        market_results_blockchain = market_results_blockchain.reset_index(drop=True)
+        market_results_bc = market_results_bc.reset_index(drop=True)
         # results_clearing.reset_index(drop=True)
         results_clearing_all['da'] = results_clearing_all['da'].reset_index(drop=True)
-        if verbose:
-            if len(market_results_blockchain) == len(results_clearing_all['da']):
-                pd.testing.assert_frame_equal(results_clearing_all['da'], market_results_blockchain, check_dtype=False)
-                print("successful comparison")
+        if verbose_bc:
+            print('\n### Blockchain-Check ###')
+            if len(market_results_bc) == len(results_clearing_all['da']):
+                pd.testing.assert_frame_equal(results_clearing_all['da'], market_results_bc, check_dtype=False)
+                print("Check: market clearing results are equal on bc and on db.")
             else:
-                print("error in comparison")
-        return results_clearing_all, offers, bids, time_clearing_execution, market_results_blockchain
+                print("Check: market clearing results are NOT equal on bc and on db!!!")
+        return results_clearing_all, offers, bids, time_clearing_execution, market_results_bc
     return results_clearing_all, offers, bids, time_clearing_execution
 
 
@@ -1395,7 +1409,7 @@ def create_user_ids(num=30):
 # this method, find the maximum number of clearings that the blockchain manages to perform at once, according to the gas limit
 def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricing, discriminative_pricing,
               t_clearing_start,
-              gasThreshold, interval_clearing, simulation_test, bc_obj, verbose_blockchain=False):
+              gasThreshold, interval_clearing, simulation_test, bc_obj, verbose_bc=False):
     n_clearings_current = n_clearings_max
     estimate = 10 * gasThreshold
     while estimate > gasThreshold:
@@ -1404,7 +1418,7 @@ def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricin
                                                         supplier_bids, uniform_pricing,
                                                         discriminative_pricing,
                                                         int(interval_clearing),
-                                                        int(t_clearing_start), False, verbose_blockchain,
+                                                        int(t_clearing_start), False, verbose_bc,
                                                         False, simulation_test).estimateGas()
             n_clearings_current = int(n_clearings_current / (estimate / gasThreshold))
         except Exception as e:
@@ -1417,7 +1431,7 @@ def findLimit(n_clearings_max, t_clearing_current, supplier_bids, uniform_pricin
 # this method, perform the market clearing and gets the results from the blockchain
 def get_market_results_blockchain(t_override, n_clearings, supplier_bids, uniform_pricing, discriminative_pricing,
                                   t_clearing_start, interval_clearing, simulation_test, bc_obj, shuffle=False,
-                                  verbose_blockchain=False):
+                                  verbose_bc=False):
     t_now = t_override
     t_clearing_first = t_now - (t_now % interval_clearing) + interval_clearing
 
@@ -1428,7 +1442,7 @@ def get_market_results_blockchain(t_override, n_clearings, supplier_bids, unifor
     limit_clearings = findLimit(n_clearings, t_clearing_first, supplier_bids, uniform_pricing, discriminative_pricing,
                                 t_clearing_start,
                                 gasThreshold=40000000, interval_clearing=interval_clearing,
-                                simulation_test=simulation_test, bc_obj=bc_obj, verbose_blockchain=verbose_blockchain)
+                                simulation_test=simulation_test, bc_obj=bc_obj, verbose_bc=verbose_bc)
 
     n_clearings_current = limit_clearings
     update_balances = False
@@ -1444,11 +1458,11 @@ def get_market_results_blockchain(t_override, n_clearings, supplier_bids, unifor
                                                        uniform_pricing,
                                                        discriminative_pricing,
                                                        int(interval_clearing),
-                                                       int(t_clearing_start), shuffle, verbose_blockchain,
+                                                       int(t_clearing_start), shuffle, verbose_bc,
                                                        update_balances, simulation_test).transact(
                 {'from': bc_obj.coinbase})
             bc_obj.wait_for_transact(tx_hash)  # 600 seconds wait
-            if verbose_blockchain:
+            if verbose_bc:
                 log = bc_obj.get_log(tx_hash=tx_hash)
                 print(log)
             n_clearings_done += n_clearings_current
@@ -1459,14 +1473,14 @@ def get_market_results_blockchain(t_override, n_clearings, supplier_bids, unifor
             n_clearings_current = int(n_clearings_current * 0.75)
             update_balances = False
 
-    market_results_blockchain = bc_obj.functions.getMarketResultsTotal().call()
-    return market_results_blockchain
+    market_results_bc = bc_obj.functions.getMarketResultsTotal().call()
+    return market_results_bc
 
 
 # Convert results on the blockchain to a pandas dataframe
-def convertToPdFinalMarketResults(market_results_blockchain, market_results_python):
-    market_results_blockchain = pd.DataFrame(market_results_blockchain, columns=market_results_python.columns.to_list())
-    return market_results_blockchain
+def convertToPdFinalMarketResults(market_results_bc, market_results_python):
+    market_results_bc = pd.DataFrame(market_results_bc, columns=market_results_python.columns.to_list())
+    return market_results_bc
 
 
 if __name__ == '__main__':

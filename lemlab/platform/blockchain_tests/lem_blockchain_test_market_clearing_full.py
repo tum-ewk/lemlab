@@ -6,7 +6,7 @@ from lemlab.db_connection import db_param
 from lemlab.platform import lem
 from lemlab.platform.blockchain_tests import test_utils
 
-verbose_blockchain = False
+verbose_bc = True
 verbose_db = True
 shuffle = False
 
@@ -38,36 +38,19 @@ def setUp():
     db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
 
 
-# in this test, the results of the full market clearing, the updated balances, on the blockchain and on python are compared
+# results of the full market clearing, the updated balances, on the blockchain and on python are compared
 def test_clearings():
     # Set clearing time
     t_clearing_start = round(time.time())
-    print('######################## Market clearing started #############################')
-    print('Market clearing started:', pd.Timestamp(t_clearing_start, unit="s", tz="Europe/Berlin"))
 
-    # t_now = round(time.time())
-    market_horizon = config['lem']['horizon_clearing']
-    interval_clearing = config['lem']['interval_clearing']
-    # Calculate number of market clearings
-    n_clearings = int(market_horizon / interval_clearing)
-    uniform_pricing = True
-    discriminative_pricing = True
-    supplier_bids = False
     tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
     bc_obj.wait_for_transact(tx_hash)
-    user_infos_blockchain_dataframe = bc_obj.get_list_all_users()
-    user_infos_db = pd.concat([db_obj.get_info_user(user_id) for user_id in
-                               db_obj.get_list_all_users()])
-
+    user_infos_bc_df = bc_obj.get_list_all_users()
+    user_infos_db = pd.concat([db_obj.get_info_user(user_id) for user_id in db_obj.get_list_all_users()])
     user_infos_db = user_infos_db.sort_values(by=[db_param.ID_USER], ascending=[True])
-    user_infos_blockchain_dataframe = user_infos_blockchain_dataframe.sort_values(by=[db_param.ID_USER],
-                                                                                  ascending=[True])
-    user_infos_db = user_infos_db.set_index(user_infos_blockchain_dataframe.index)
+    user_infos_bc_df = user_infos_bc_df.sort_values(by=[db_param.ID_USER], ascending=[True])
+    user_infos_db = user_infos_db.set_index(user_infos_bc_df.index)
 
-    assert len(user_infos_db) == len(user_infos_blockchain_dataframe)
-    pd.testing.assert_frame_equal(user_infos_db, user_infos_blockchain_dataframe)
-    # testing of market results
-    print("Users asserted and correctly stored")
     start = time.time()
     market_results_python, _, _, _, market_results_blockchain = lem.market_clearing(db_obj=db_obj,
                                                                                     bc_obj=bc_obj,
@@ -75,12 +58,13 @@ def test_clearings():
                                                                                     t_override=t_clearing_start,
                                                                                     shuffle=shuffle,
                                                                                     verbose=verbose_db,
-                                                                                    verbose_blockchain=verbose_blockchain)
+                                                                                    verbose_bc=verbose_bc,
+                                                                                    bc_test=True)
 
     market_results_python = market_results_python['da']
 
     end = time.time()
-    print("market clearing on both blockchain and simulation done in " + str(end - start) + " seconds")
+
     if shuffle:
         assert len(market_results_python) >= 0.1 * len(market_results_blockchain) or len(
             market_results_blockchain) >= 0.1 * len(market_results_python)
@@ -97,8 +81,5 @@ def test_clearings():
 
     assert True
 
-
-
-
-
-
+    # Check market position equality
+    pd.testing.assert_frame_equal(user_infos_db, user_infos_bc_df)
