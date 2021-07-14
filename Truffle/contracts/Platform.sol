@@ -30,6 +30,10 @@ contract Platform {
 	Lb.Lib lib= new Lb.Lib();//instance of the contract Lib(general library with useful functionalities)
 	Sorting srt = new Sorting();//instance of the contract Sorting(useful sorting functionalities)
 
+	//mapping(uint => Lb.Lib.energy_balancing) public energy_balances;
+	Lb.Lib.meter_reading_delta[] meter_reading_deltas;
+	Lb.Lib.energy_balancing[] energy_balances;
+
 	constructor() public{
 		Platform.clearTempData();//constructor where all the data is cleared.
 		}
@@ -389,7 +393,7 @@ contract Platform {
             	for(uint i = 0; i<tmp_market_results.length; i++) {
             	    temp_market_result_total = Lb.Lib.market_result_total(
             	        {
-                        user_id_offer:tmp_market_results[i].id_user_offer,
+                        id_user_offer:tmp_market_results[i].id_user_offer,
                         price_energy_offer:tmp_market_results[i].price_energy_offer,
                         number_position_offer:tmp_market_results[i].number_position_offer,
                         ts_delivery:tmp_market_results[i].ts_delivery,
@@ -600,8 +604,8 @@ contract Platform {
 			for(uint j = 0; j < temp_balance_update.length; j++) {
 				if(delta < 0) delta = (-1) * delta;
 				string memory id_user = temp_balance_update[j].id_user;
-				if(lib.compareStrings(Platform.market_results_total[i].user_id_offer, id_user) || lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
-					if(!(lib.compareStrings(Platform.market_results_total[i].user_id_offer,Platform.market_results_total[i].id_user_bid))) {
+				if(lib.compareStrings(Platform.market_results_total[i].id_user_offer, id_user) || lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
+					if(!(lib.compareStrings(Platform.market_results_total[i].id_user_offer,Platform.market_results_total[i].id_user_bid))) {
 						if(lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
 							delta = (-1) * delta;
 						}
@@ -620,8 +624,8 @@ contract Platform {
 			for(uint j = 0; j < Platform.user_infos.length; j++) {
 				if(delta < 0) delta = (-1) * delta;
 				string memory id_user =Platform.user_infos[j].id_user;
-				if(lib.compareStrings(Platform.market_results_total[i].user_id_offer, id_user) || lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
-					if(!(lib.compareStrings(Platform.market_results_total[i].user_id_offer,Platform.market_results_total[i].id_user_bid))) {
+				if(lib.compareStrings(Platform.market_results_total[i].id_user_offer, id_user) || lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
+					if(!(lib.compareStrings(Platform.market_results_total[i].id_user_offer,Platform.market_results_total[i].id_user_bid))) {
 						if(lib.compareStrings(Platform.market_results_total[i].id_user_bid, id_user)) {
 							delta = (-1) * delta;
 						}
@@ -657,5 +661,39 @@ contract Platform {
     		string_to_log = lib.concatenateStrings(string_to_log, "Updated balances of users");
     		emit logString(string_to_log);
     	}
+	}
+	function determine_balancing_energy(uint[] list_ts_delivery){
+		Lb.Lib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(Platform.temp_market_results, true);
+		for(uint i=0; i<list_ts_delivery.length-1; i++){
+			Lb.Lib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(Platform.meter_reading_deltas, list_ts_delivery[i]);
+			Lb.Lib.market_result[] memory results=lib.market_results_inside_ts_delivery(sorted_results, list_ts_delivery[i]);
+			for(uint j=0; j<meters.length-1;j++){
+				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
+				uint current_market_energy=0;
+				for(k=0; k<results.length-1;k++){
+					if(lib.compareStrings(meters[j].id_meter, results[k].id_user_bid)){
+						current_market_energy -=  results[k].qty_energy_traded;
+					}
+					else if(lib.compareStrings(meters[j].id_meter, results[k].id_user_offer)){
+						current_market_energy += results[k].qty_energy_traded;
+					}
+				}
+				current_actual_energy -= current_market_energy;
+				Lb.Lib.energy_balancing result_energy;
+				result_energy.id_meter=meters[j].id_meter;
+				result_energy.ts_delivery=list_ts_delivery[i];
+				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
+				if(current_actual_energy>=0){
+					result_energy.energy_balancing_positive=current_actual_energy;
+					result_energy.energy_balancing_negative=0;
+				}
+				else{
+					result_energy.energy_balancing_positive=0;
+					result_energy.energy_balancing_negative=current_actual_energy;
+				}
+				Platform.energy_balances.push(result_energy);
+			}
+
+		}
 	}
 }

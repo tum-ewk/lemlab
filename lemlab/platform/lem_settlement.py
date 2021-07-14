@@ -56,7 +56,6 @@ def settle_lem(db_obj_admin,
                           t_now=t_now,
                           id_supplier=config["supplier"]["id_user"])
 
-
     # initialize new settlement status for current ts_delivery
     for ts_d in list_ts_delivery_ready:
         dict_status = {
@@ -84,7 +83,7 @@ def update_complete_meter_readings(db_obj):
             list_meter_reading_delta = []
             df_metering_logs_cumulative = db_obj.get_meter_readings_cumulative(
                 t_reading_first=ts_delivery,
-                t_reading_last=ts_delivery+900)
+                t_reading_last=ts_delivery + 900)
             df_metering_logs_cumulative_prev = \
                 df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery]
             df_metering_logs_cumulative_now = \
@@ -119,7 +118,6 @@ def update_complete_meter_readings(db_obj):
 
 
 def determine_balancing_energy(db_obj, list_ts_delivery):
-
     for ts_d in list_ts_delivery:
         meter_readings_delta = db_obj.get_main_meter_net_flow(ts_delivery=ts_d)
         market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
@@ -179,7 +177,6 @@ def set_prices_settlement(db_obj, path_simulation, list_ts_delivery):
 
 
 def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
-
     dict_map_to_user = db_obj.get_mapping_to_user()
 
     for ts_d in list_ts_delivery:
@@ -212,7 +209,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(pos_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
-                dict_transactions[db_obj.db_param.QTY_ENERGY].append(entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
+                dict_transactions[db_obj.db_param.QTY_ENERGY].append(
+                    entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
                 dict_transactions[db_obj.db_param.DELTA_BALANCE].append(transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
@@ -223,7 +221,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(pos_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
-                dict_transactions[db_obj.db_param.QTY_ENERGY].append(entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
+                dict_transactions[db_obj.db_param.QTY_ENERGY].append(
+                    entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
                 dict_transactions[db_obj.db_param.DELTA_BALANCE].append(-1 * transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
@@ -376,7 +375,8 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             total_consumption += entry.energy_in
 
         for type_pricing in lem_config["types_pricing_ex_post"]:
-            lookup_supply_ratio = dict_lookup_tables[lem_config['types_pricing_ex_post'][type_pricing]]["supply_demand_ratio"]
+            lookup_supply_ratio = dict_lookup_tables[lem_config['types_pricing_ex_post'][type_pricing]][
+                "supply_demand_ratio"]
             lookup_price = dict_lookup_tables[lem_config['types_pricing_ex_post'][type_pricing]]["price"]
 
             local_share = total_feed_in / float(total_consumption)
@@ -386,7 +386,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             dict_results_ex_post[db_obj.db_param.PRICE_ENERGY_MARKET_
                                  + lem_config['types_pricing_ex_post'][type_pricing]].append(price)
 
-        local_share = round(local_share*100)
+        local_share = round(local_share * 100)
         local_share = 100 if local_share > 100 else local_share
         local_share = 0 if local_share < 0 else local_share
         for quality in lem_config["types_quality"]:
@@ -405,7 +405,6 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
 
 
 def _update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_config):
-
     dict_map_to_user = db_obj.get_mapping_to_user()
 
     for ts_d in list_ts_delivery:
@@ -413,7 +412,7 @@ def _update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_co
 
         ex_post_prices = db_obj.get_results_market_ex_post(ts_delivery_first=ts_d)
         price = int(ex_post_prices[db_obj.db_param.PRICE_ENERGY_MARKET_
-                                 + lem_config['types_pricing_ex_post'][0]])
+                                   + lem_config['types_pricing_ex_post'][0]])
 
         # set transaction form
         dict_transactions = {
@@ -479,7 +478,6 @@ def _update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_co
         if len(list_ts_delivery) and len(dict_transactions[db_obj.db_param.ID_USER]):
             db_obj.log_transactions(pd.DataFrame.from_dict(dict_transactions))
             db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
-
 
 
 ########################################################################################################################

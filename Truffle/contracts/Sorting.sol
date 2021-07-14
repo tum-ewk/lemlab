@@ -247,6 +247,7 @@ contract Sorting {
 	    }
 	    return sorted;
 	}
+
 	//using quicksort, sorts a list of offer_bid by ts_delivery
 	function quickSortOffersBidsTsDelivery(Lb.Lib.offer_bid[] memory arr, bool ascending) public view returns(Lb.Lib.offer_bid[] memory) {
 		if(arr.length == 0) return arr;
@@ -435,5 +436,27 @@ contract Sorting {
             return aggregated_offers_bids;
         }
         return offers_bids;
-    }
+	}
+	// similar function to the get_indices_and_sort_quicksort but instead taking temp_market results as arrays
+	function get_market_results_and_sort_quicksort(uint[] memory values, Lb.Lib.market_result[] memory results, bool ascending) private view returns(Lb.Lib.market_result[] memory) {
+	    uint[] memory indices = new uint[](values.length);
+	    for (uint z = 0; z < indices.length; z++) {
+            indices[z] = z;
+	    }
+		Sorting.quickSort_indices(values, 0, int(values.length-1), indices);
+		if(!ascending){
+		    indices = lib.reverseArray(indices, 0, indices.length - 1);
+		}
+		Lb.Lib.market_result[] memory sorted = new Lb.Lib.market_result[](values.length);
+		for (uint z = 0; z < indices.length; z++) {
+            sorted[z] = results[indices[z]];
+	    }
+	    return sorted;
+	}
+	function quick_sort_market_result_ts_delivery(Lb.Lib.market_result[] memory arr, bool ascending) public returns(Lb.Lib.market_result[] memory){
+		if(arr.length == 0) return arr;
+		uint[] memory ts_deliveries = lib.arr_of_ts_deliveries_market_result(arr);
+		Lb.Lib.market_result[] memory sorted = get_market_results_and_sort_quicksort(ts_deliveries,arr,ascending);
+		return sorted;
+	}
 }

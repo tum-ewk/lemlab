@@ -18,6 +18,7 @@ verbose = False
 def run_all_tests():
     parent_path = Path(__file__).parent
     list_tests = os.listdir(parent_path)
+    # we first filter out non test files (like test utils)
     for test_file in list_tests:
         if str(test_file).find("lem_blockchain_") == -1:
             list_tests.remove(test_file)

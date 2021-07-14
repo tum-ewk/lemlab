@@ -43,7 +43,7 @@ contract Lib {
         uint share_quality_green_local;
     }
     struct market_result_total {
-        string user_id_offer;
+        string id_user_offer;
         uint price_energy_offer;
         uint number_position_offer;
         uint ts_delivery;
@@ -279,6 +279,7 @@ contract Lib {
 
         return differences;
     }
+    //FUNCTIONS FOR OFFER OR BIDS
     //gets the array of ts_deliveries from an array of offer_bid
     function arr_of_ts_deliveries_offerbids(offer_bid[] memory offerbid) public pure returns(uint[] memory) {
         uint[] memory arr_ts_deliveries = new uint[](offerbid.length);
@@ -338,6 +339,48 @@ contract Lib {
             }
         }
         return true;
+    }
+    //FUNCTIONS FOR MARKET RESULTS
+    //returns the ts_deliveries of an array
+    function arr_of_ts_deliveries_market_result(market_result[] memory results) public pure returns(uint[] memory) {
+        uint[] memory arr_ts_deliveries = new uint[](results.length);
+        for (uint i=0; i<arr_ts_deliveries.length;i++) {
+            arr_ts_deliveries[i]=results[i].ts_delivery;
+        }
+        return arr_ts_deliveries;
+    }
+    //function to get the market results inside a ts_delivery, it first copies the results, then deletes the rest of
+    //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
+    function market_results_inside_ts_delivery(market_result[] memory results, uint ts_delivery) public returns(market_result[] memory){
+        market_result[] memory filtered_results= new market_result[](results.length);
+        index=0;
+        for(uint i=0; i<results.length-1; i++){
+            if(results[i].ts_delivery==ts_delivery){
+                filtered_results[index]=results[i];
+                index++;
+            }
+        }
+        for(uint j=index; j<results.length-1;j++){
+            filtered_results.length--;
+        }
+        return filtered_results;
+    }
+    //FUNCTIONS FOR DELTA METERS
+    //function to get the meter readings inside a ts_delivery, it first copies the results, then deletes the rest of
+    //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
+    function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public returns(meter_reading_delta[] memory){
+        meter_reading_delta[] memory filtered_results= new meter_reading_delta[](meters.length);
+        index=0;
+        for(uint i=0; i<meters.length-1; i++){
+            if(meters[i].ts_delivery==ts_delivery){
+                filtered_results[index]=meters[i];
+                index++;
+            }
+        }
+        for(uint j=index; j<meters.length-1;j++){
+            filtered_results.length--;
+        }
+        return filtered_results;
     }
     //returns the max element of an array
     function maxArray(uint[] memory arr) public pure returns(uint) {
