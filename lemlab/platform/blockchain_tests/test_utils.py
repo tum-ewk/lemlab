@@ -135,8 +135,8 @@ def setUp_test(generate_bids_offer, timeout=600):
     open_offers_blockchain = bc_obj.get_open_positions(isOffer=True, temp=True, returnList=True)
     open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, returnList=True)
 
-    user_infos_blockchain = bc_obj.get_list_all_users(returnList=True)
-    id_meters_blockchain = bc_obj.get_list_all_meters(returnList=True)
+    user_infos_blockchain = bc_obj.get_list_all_users(return_list=True)
+    id_meters_blockchain = bc_obj.get_list_all_meters(return_list=True)
 
     return offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
            offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \

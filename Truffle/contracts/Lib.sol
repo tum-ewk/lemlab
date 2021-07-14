@@ -2,7 +2,7 @@ pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
 contract Lib {
     
-    struct OfferBid {
+    struct offer_bid {
             string id_user;
             uint qty_energy;
             uint price_energy;
@@ -14,7 +14,7 @@ contract Lib {
             uint t_submission;
             uint ts_delivery;
        }
-    struct MarketResult {
+    struct market_result {
         string id_user_offer;
         uint qty_energy_offer;
         uint price_energy_offer;
@@ -42,7 +42,7 @@ contract Lib {
         uint share_quality_green;
         uint share_quality_green_local;
     }
-    struct MarketResultTotal {
+    struct market_result_total {
         string user_id_offer;
         uint price_energy_offer;
         uint number_position_offer;
@@ -59,7 +59,7 @@ contract Lib {
         uint share_quality_green_local;
         uint t_cleared;
     }
-    struct UserInfo {
+    struct user_info {
             string id_user;
             int balance_account;
             uint t_update_balance;
@@ -73,10 +73,10 @@ contract Lib {
             uint ts_delivery_first;
             uint ts_delivery_last;
     }
-    struct IdMeter {
+    struct id_meter {
         string id_meter;
         string id_user;
-        string id_meter_main;       //aka id_meter_super, (order changed)
+        string id_meter_super;       // (order changed)
         string type_meter;
         string id_aggregator;
         string quality_energy;
@@ -84,15 +84,27 @@ contract Lib {
         uint ts_delivery_last;
         string info_additional;
     }
+    struct meter_reading_cum {
+        uint t_reading;
+        string id_meter;
+        uint energy_in_cum;
+        uint energy_out_cum;
+    }
+    struct meter_reading_delta {
+        uint ts_delivery;
+        string id_meter;
+        uint energy_in;
+        uint energy_out;
+    }
     //return true if a list of user infos has at least one user with id_user as the argument given in input
-    function check_user_id_in_user_infos(string memory id_user, UserInfo[] memory user_infos) public pure returns(bool) {
+    function check_user_id_in_user_infos(string memory id_user, user_info[] memory user_infos) public pure returns(bool) {
         for(uint i = 0; i < user_infos.length; i++) {
             if(compareStrings(user_infos[i].id_user, id_user)) return true;
         }
         return false;
     }
     //same as check_user_id_in_user_infos. it also checks if ts_delivery is between ts_delivery_first and ts_delivery_last of the user
-    function check_user_id_in_user_infos_interval(string memory id_user, uint ts_delivery, UserInfo[] memory user_infos) public pure returns(bool) {
+    function check_user_id_in_user_infos_interval(string memory id_user, uint ts_delivery, user_info[] memory user_infos) public pure returns(bool) {
         for(uint i = 0; i < user_infos.length; i++) {
             if(compareStrings(user_infos[i].id_user, id_user)) {
                 return (user_infos[i].ts_delivery_first <= ts_delivery && ts_delivery <= user_infos[i].ts_delivery_last);
@@ -102,7 +114,7 @@ contract Lib {
     }
     //return true if the two strings given in input have the same value
     function compareStrings(string memory a, string memory b) public pure returns (bool) {
-        return (keccak256(abi.encodePacked((a))) == keccak256(abi.encodePacked((b))));
+        return (keccak256(abi.encode((a))) == keccak256(abi.encode((b))));
     }
     //converts a string to bytes32
     function stringToBytes32(string memory source) public pure returns (bytes32 result) {
@@ -151,9 +163,9 @@ contract Lib {
         }
         return copy;
     }
-    //copies an array of UserInfo and its values from index start to index end
-    function copyArray_UserInfo(UserInfo[] memory arr, uint start, uint end) public pure returns(UserInfo[] memory) {
-        UserInfo[] memory copy = new UserInfo[](arr.length);
+    //copies an array of user_info and its values from index start to index end
+    function copyArray_UserInfo(user_info[] memory arr, uint start, uint end) public pure returns(user_info[] memory) {
+        user_info[] memory copy = new user_info[](arr.length);
         for(uint i = start; i <= end; i++) {
             copy[i] = arr[i];
         }
@@ -181,10 +193,10 @@ contract Lib {
         return s;
     }
     /*
-    takes a list of OfferBid as an input.
+    takes a list of offer_bid as an input.
     starting from position 0, to the end of the list, the energy cumulated array is calculated as a sum of the quantity of energy and then returned
     */
-    function getEnergyCumulated(OfferBid[] memory offers_bids) public pure returns (uint[] memory) {
+    function getEnergyCumulated(offer_bid[] memory offers_bids) public pure returns (uint[] memory) {
         uint[] memory energy_cumulated = new uint[](offers_bids.length);
         
         for (uint i = 0; i < energy_cumulated.length; i++) {
@@ -261,33 +273,33 @@ contract Lib {
 
         return differences;
     }
-    //gets the array of ts_deliveries from an array of OfferBid
-    function arr_of_ts_deliveries_offerbids(OfferBid[] memory offerbid) public pure returns(uint[] memory) {
+    //gets the array of ts_deliveries from an array of offer_bid
+    function arr_of_ts_deliveries_offerbids(offer_bid[] memory offerbid) public pure returns(uint[] memory) {
         uint[] memory arr_ts_deliveries = new uint[](offerbid.length);
         for (uint i=0; i<arr_ts_deliveries.length;i++) {
             arr_ts_deliveries[i]=offerbid[i].ts_delivery;
         }
         return arr_ts_deliveries;
     }
-    //gets the array of quantities from an array of OfferBid
-    function arr_of_quantities_offerbids(OfferBid[] memory offerbid) public pure returns(uint[] memory) {
+    //gets the array of quantities from an array of offer_bid
+    function arr_of_quantities_offerbids(offer_bid[] memory offerbid) public pure returns(uint[] memory) {
         uint[] memory arr_quantities = new uint[](offerbid.length);
         for (uint i = 0; i < arr_quantities.length;i++) {
             arr_quantities[i] = offerbid[i].qty_energy;
         }
         return arr_quantities;
     }
-    //gets the array of qualities from an array of OfferBid
-    function arr_of_qualities_offerbids(OfferBid[] memory offerbid) public pure returns(uint[] memory) {
+    //gets the array of qualities from an array of offer_bid
+    function arr_of_qualities_offerbids(offer_bid[] memory offerbid) public pure returns(uint[] memory) {
         uint[] memory arr_qualities = new uint[](offerbid.length);
         for (uint i = 0; i < arr_qualities.length;i++) {
             arr_qualities[i] = offerbid[i].quality_energy;
         }
         return arr_qualities;
     }
-    //concatenates two arrays of OfferBid into a new array and return it
-    function concatenateOffersBids(OfferBid[] memory one, OfferBid[] memory two) public pure returns (OfferBid[] memory) {
-        OfferBid[] memory concat = new OfferBid[](one.length + two.length);
+    //concatenates two arrays of offer_bid into a new array and return it
+    function concatenateOffersBids(offer_bid[] memory one, offer_bid[] memory two) public pure returns (offer_bid[] memory) {
+        offer_bid[] memory concat = new offer_bid[](one.length + two.length);
         for(uint i = 0; i < one.length; i++) {
             concat[i] = one[i];
         }
@@ -296,24 +308,24 @@ contract Lib {
         }
         return concat;
     }
-    //gets the array of qty_energy_traded from an array of MarketResult
-    function arr_of_energy_cumulated_merged_offers_bids(MarketResult[] memory mr) public pure returns(uint[] memory) {
+    //gets the array of qty_energy_traded from an array of market_result
+    function arr_of_energy_cumulated_merged_offers_bids(market_result[] memory mr) public pure returns(uint[] memory) {
         uint[] memory arr_energies = new uint[](mr.length);
         for (uint i = 0; i < arr_energies.length; i++) {
             arr_energies[i] = mr[i].qty_energy_traded;
         }
         return arr_energies;
     }
-    //gets the array of prices from an array of OfferBid
-    function arr_of_prices_offerbids(OfferBid[] memory offerbid) public pure returns(uint[] memory) {
+    //gets the array of prices from an array of offer_bid
+    function arr_of_prices_offerbids(offer_bid[] memory offerbid) public pure returns(uint[] memory) {
         uint[] memory arr_prices = new uint[](offerbid.length);
         for (uint i = 0; i < arr_prices.length;i++) {
             arr_prices[i] = offerbid[i].price_energy;
         }
         return arr_prices;
     }
-    //check if an array of OfferBid is sorted
-    function checkSortedTsDelivery(OfferBid[] memory offerbid) public pure returns(bool) {
+    //check if an array of offer_bid is sorted
+    function checkSortedTsDelivery(offer_bid[] memory offerbid) public pure returns(bool) {
         for(uint i = 0; i < offerbid.length-1; i++) {
             if(offerbid[i].ts_delivery>offerbid[i+1].ts_delivery) {
                 return false;
@@ -362,9 +374,9 @@ contract Lib {
         }
         return cropped;
     }
-    //returns a OfferBid array of length = end - start + 1, with the elements of the given array from start to end(included)
-    function cropOfferBids(OfferBid[] memory data, uint start, uint end) public pure returns(OfferBid[] memory){
-        OfferBid[] memory cropped = new OfferBid[](end -  start +1);
+    //returns a offer_bid array of length = end - start + 1, with the elements of the given array from start to end(included)
+    function cropOfferBids(offer_bid[] memory data, uint start, uint end) public pure returns(offer_bid[] memory){
+        offer_bid[] memory cropped = new offer_bid[](end -  start +1);
         uint z = 0;
         for(uint i = start; i <= end; i++) {
             cropped[z] = data[i];
@@ -488,16 +500,16 @@ contract Lib {
         }
         return arr;
     }
-    //shuffles an array of OfferBid
-    function shuffle_OfferBids(OfferBid[] memory offers_bids) public view returns(OfferBid[] memory) {
+    //shuffles an array of offer_bid
+    function shuffle_OfferBids(offer_bid[] memory offers_bids) public view returns(offer_bid[] memory) {
         uint[] memory indices_offerbisd = getIndices(offers_bids.length);
         uint[] memory shuffled_indices = shuffle_arr(indices_offerbisd);
-        OfferBid[] memory shuffled_offers_bids = reorderArr_OfferBid(shuffled_indices, offers_bids);
+        offer_bid[] memory shuffled_offers_bids = reorderArr_OfferBid(shuffled_indices, offers_bids);
         return shuffled_offers_bids;
     }
-    //reorders an array of OfferBid from start to end index, accoording to new indices
-    function reorderArr_OfferBid(uint[] memory new_indices, OfferBid[] memory arr) public pure returns(OfferBid[] memory) {
-        OfferBid[] memory reordered = new OfferBid[](arr.length);
+    //reorders an array of offer_bid from start to end index, accoording to new indices
+    function reorderArr_OfferBid(uint[] memory new_indices, offer_bid[] memory arr) public pure returns(offer_bid[] memory) {
+        offer_bid[] memory reordered = new offer_bid[](arr.length);
         for (uint i = 0; i < new_indices.length; i++) {
             reordered[i] = arr[new_indices[i]];
         }

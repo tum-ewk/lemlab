@@ -100,9 +100,6 @@ positions_market_ex_ante_column_dtypes = [Text(), BigInteger(), BigInteger(), Bi
 
 
 def map_name_to_dtype(names_column, dtypes_column):
-    mapping = {}
     assert len(names_column) == len(dtypes_column)
-    for name, dtype in zip(names_column, dtypes_column):
-        mapping[name] = dtype
-
+    mapping = dict([(name, dtype) for name, dtype in zip(names_column, dtypes_column)])
     return mapping

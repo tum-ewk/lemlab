@@ -50,13 +50,13 @@ class BlockchainConnection:
                 print("User is not stored.")
         return user_info_df
 
-    def get_list_all_users(self, ts_delivery_active=None, returnList=False):
+    def get_list_all_users(self, ts_delivery_active=None, return_list=False):
         """
         Returns a list of all the users, either in list format or in dataframe format
         Parameters
         ----------
         ts_delivery_active: optional argument to filter out users by the time they delivered energy
-        returnList: bool: if the returned value is a list of lists or a dataframe
+        return_list: bool: if the returned value is a list of lists or a dataframe
 
         Returns: Either list of lists or dataframe of all the users registered in the blockchain
         --------
@@ -71,7 +71,7 @@ class BlockchainConnection:
                     final_list.append(dict(user))
             user_info_list = final_list
             user_info_df = pd.DataFrame(final_list, columns=bc_param.info_user_column_names)
-        if returnList:
+        if return_list:
             return user_info_list
         else:
             return user_info_df
@@ -82,9 +82,28 @@ class BlockchainConnection:
         tx_hash = self.functions.push_user_info(tuple(df_user.values.tolist()[0])).transact({'from': self.coinbase})
         return tx_hash
 
-    # TODO: implement these functions ?? Write functions that delete individual data
-    # def edit_user(self, df_user):
-    # def delete_user(self, df_user):
+    def delete_user(self, df_user, del_meters=True):
+        # deletes a user, additionally, it also deletes all the meters corresponding to that user
+        tx_hash = self.functions.delete_user(tuple(df_user.values.tolist()[0]), del_meters).transact(
+            {'from': self.coinbase})
+        return tx_hash
+
+    def edit_user(self, df_user):
+        """
+        Function to edit the info of a user. For that, we assume that the user_id stays the same, in which case
+        we delete it from the blockchain and then re_uploaded it to the last position of the array of users.
+        Parameters
+        ----------
+        df_user: single dataframe with the info of a user
+
+        Returns
+        -------
+        The tx_hash of the user registered
+
+        """
+        tx_hash = self.delete_user(df_user, del_meters=False)
+        self.wait_for_transact(tx_hash)
+        return self.register_user(df_user)
 
     ###################################################
     # Functions for the meter registration table
@@ -99,39 +118,39 @@ class BlockchainConnection:
                 print("User is not stored.")
         return meter_info_df
 
-    def get_list_main_meters(self, ts_delivery_active=None, returnList=False):
+    def get_list_main_meters(self, ts_delivery_active=None, return_list=False):
         """
         Function to get the list of the main meters only. It first retrieves all the meters already filtered by time
         and then uses regex to filter out the main meters, which are the ones with grid in the name
         Parameters
         ----------
         ts_delivery_active: to get only the meters that are at an exact time active
-        returnList: if the return parameter is a list or a dataframe
+        return_list: if the return parameter is a list or a dataframe
 
         Returns
         -------
         A list or dataframe of all the main meters
         """
 
-        all_meters_df = self.get_list_all_meters(ts_delivery_active, returnList=False)
+        all_meters_df = self.get_list_all_meters(ts_delivery_active, return_list=False)
         search_pattern = re.compile(r'grid')  # we use regex to search for the meters with grid in their type
         main_meters_list = []
         for _, meter in all_meters_df.iterrows():
             if search_pattern.search(str(meter[bc_param.TYPE_METER]).lower()) is not None:
                 main_meters_list.append(dict(meter))
 
-        if returnList:
+        if return_list:
             return main_meters_list
         else:
             return pd.DataFrame(main_meters_list, columns=bc_param.info_meter_column_names)
 
-    def get_list_all_meters(self, ts_delivery_active=None, returnList=False):
+    def get_list_all_meters(self, ts_delivery_active=None, return_list=False):
         """
         Function to retrieve all the main meters, and filter them out by time if needed
         Parameters
         ----------
         ts_delivery_active: int: if the meter was active at that time, optional parameter to filter out
-        returnList: if the data to be returned is a dataframe (default) or a list
+        return_list: if the data to be returned is a dataframe (default) or a list
 
         Returns
         -------
@@ -147,7 +166,7 @@ class BlockchainConnection:
 
             meter_info_list = final_meter_list
             meter_info_df = pd.DataFrame(final_meter_list, columns=bc_param.info_meter_column_names)
-        if returnList:
+        if return_list:
             return meter_info_list
         else:
             return meter_info_df
@@ -158,6 +177,30 @@ class BlockchainConnection:
         tx_hash = self.functions.push_id_meters(tuple(df_meter.values.tolist()[0])).transact({'from': self.coinbase})
         return tx_hash
 
+    def delete_meter(self, df_meter):
+        tx_hash = self.functions.delete_meter(tuple(df_meter.values.tolist()[0])).transact({'from': self.coinbase})
+        return tx_hash
+
+    def edit_meter(self, df_meter):
+        """
+        Function to edit a meter, for that, we assume that the id_meter will stay the same, and that only the other
+        information was changed. The meter will be deleted and then added as the last one of the qeue
+        Parameters
+        ----------
+        df_meter: dataframe of the new meter to push
+
+        Returns
+        -------
+
+        """
+        tx_hash = self.delete_meter(df_meter)
+        self.wait_for_transact(tx_hash)
+        return self.register_meter(df_meter)
+
+    ### Meter readings functions
+    def log_meter_readings_cumulative(self, df_readings_meter):
+
+        return df_readings_meter
     #################################################
     # Functions for mapping the meters to the users and so
     # not possible yet, needs the id market agent
@@ -296,6 +339,8 @@ class BlockchainConnection:
                 except:
                     limit_to_remove -= 50
 
+
+
     ###################################################
     # Utility functions
     def wait_for_transact(self, tx_hash):
@@ -352,12 +397,31 @@ if __name__ == "__main__":
 
     bc_lem_conn.wait_for_transact(tx)
     # print("Meter:", bc_lem_conn.get_info_meter(meter_id="6543MZUG"))
+    print("Users now:", len(bc_lem_conn.get_list_all_users(return_list=True)))
+    tx_hash = bc_lem_conn.delete_user(new_user)
+    bc_lem_conn.wait_for_transact(tx_hash)
+    print("Users after", len(bc_lem_conn.get_list_all_users(return_list=True)))
+
+    edited_user = pd.DataFrame(
+        data=[[info_users[3], 30, 0, 1, 100, 'local', 10, 'zi', 0, info_market_agents[3], 2, 5]],
+        columns=bc_param.info_user_column_names)
+    tx_hash = bc_lem_conn.edit_user(edited_user)
+    bc_lem_conn.wait_for_transact(tx_hash)
 
     all_meters_df = bc_lem_conn.get_list_main_meters()
     all_users_df = bc_lem_conn.get_list_all_users()
 
-    print("All users", all_users_df.head(n=8))
-    print("Main meters", all_meters_df.head(n=8))
+    print("All users", all_users_df.head(n=10))
+
+    print("Main meters", all_meters_df.head(n=10))
+
+    edited_meter = pd.DataFrame(
+        data=[[info_meters[2], "3134ASDE", "0", "virtual grid meter", 'aggregator', 'local', 0, 0, 'no_test']],
+        columns=bc_param.info_meter_column_names)
+    tx_hash = bc_lem_conn.edit_meter(edited_meter)
+    bc_lem_conn.wait_for_transact(tx_hash)
+
+    print("Meters edited", bc_lem_conn.get_list_main_meters())
 
     new_position = pd.Series(data=["6533MZUG", 100, 10, 1, 10, "bid", 0, 0, round(time.time()), 123412],
                              index=bc_param.positions_market_ex_ante_column_names)
