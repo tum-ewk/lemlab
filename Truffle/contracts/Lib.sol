@@ -96,6 +96,12 @@ contract Lib {
         uint energy_in;
         uint energy_out;
     }
+    struct energy_balancing {
+        string id_meter;
+        uint ts_delivery;
+        uint energy_balancing_positive;
+        uint energy_balancing_negative;
+    }
     //return true if a list of user infos has at least one user with id_user as the argument given in input
     function check_user_id_in_user_infos(string memory id_user, user_info[] memory user_infos) public pure returns(bool) {
         for(uint i = 0; i < user_infos.length; i++) {
