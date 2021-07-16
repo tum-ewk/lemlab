@@ -353,7 +353,7 @@ contract Lib {
     //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
     function market_results_inside_ts_delivery(market_result[] memory results, uint ts_delivery) public returns(market_result[] memory){
         market_result[] memory filtered_results= new market_result[](results.length);
-        index=0;
+        uint index=0;
         for(uint i=0; i<results.length-1; i++){
             if(results[i].ts_delivery==ts_delivery){
                 filtered_results[index]=results[i];
@@ -361,7 +361,7 @@ contract Lib {
             }
         }
         for(uint j=index; j<results.length-1;j++){
-            filtered_results.length--;
+            delete filtered_results[j];
         }
         return filtered_results;
     }
@@ -370,7 +370,7 @@ contract Lib {
     //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
     function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public returns(meter_reading_delta[] memory){
         meter_reading_delta[] memory filtered_results= new meter_reading_delta[](meters.length);
-        index=0;
+        uint index=0;
         for(uint i=0; i<meters.length-1; i++){
             if(meters[i].ts_delivery==ts_delivery){
                 filtered_results[index]=meters[i];
@@ -378,7 +378,7 @@ contract Lib {
             }
         }
         for(uint j=index; j<meters.length-1;j++){
-            filtered_results.length--;
+            delete filtered_results[j];
         }
         return filtered_results;
     }

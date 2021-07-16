@@ -69,13 +69,13 @@ contract Platform {
 		}
 	}
 
-	function clearTempData() public {//function that deletes objects from the contract storage
+	function clearTempData() public pure {//function that deletes objects from the contract storage
 	    delete Platform.temp_offers;
 		delete Platform.temp_bids;
 		delete Platform.temp_market_results;
 		delete Platform.market_results_total;
 	}
-	function clearPermanentData() public {//function that deletes objects from the contract storage
+	function clearPermanentData() public pure {//function that deletes objects from the contract storage
 		delete Platform.user_infos;
 		delete Platform.id_meters;
 		delete Platform.offers;
@@ -662,7 +662,7 @@ contract Platform {
     		emit logString(string_to_log);
     	}
 	}
-	function determine_balancing_energy(uint[] list_ts_delivery){
+	function determine_balancing_energy(uint[] memory list_ts_delivery) public{
 		Lb.Lib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(Platform.temp_market_results, true);
 		for(uint i=0; i<list_ts_delivery.length-1; i++){
 			Lb.Lib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(Platform.meter_reading_deltas, list_ts_delivery[i]);
@@ -670,7 +670,7 @@ contract Platform {
 			for(uint j=0; j<meters.length-1;j++){
 				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
 				uint current_market_energy=0;
-				for(k=0; k<results.length-1;k++){
+				for(uint k=0; k<results.length-1;k++){
 					if(lib.compareStrings(meters[j].id_meter, results[k].id_user_bid)){
 						current_market_energy -=  results[k].qty_energy_traded;
 					}
@@ -679,7 +679,7 @@ contract Platform {
 					}
 				}
 				current_actual_energy -= current_market_energy;
-				Lb.Lib.energy_balancing result_energy;
+				Lb.Lib.energy_balancing memory result_energy;
 				result_energy.id_meter=meters[j].id_meter;
 				result_energy.ts_delivery=list_ts_delivery[i];
 				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
