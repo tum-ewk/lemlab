@@ -1,8 +1,8 @@
 pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
 
-import "./Param.sol";
-import "./Sorting.sol";
+import "./param.sol";
+import "./sorting.sol";
 //import "@nomiclabs/buidler/console.sol";
 
 contract Platform {
@@ -38,36 +38,7 @@ contract Platform {
 		Platform.clearTempData();//constructor where all the data is cleared.
 		}
 
-	//function to delete a single user from the chain, for that, we push the last one into
-	// that position and delete the last (decreasing the length auto deletes the last element at a cheaper gas cost), to not leave any empty spot
-	// the function can additionally delete all the meters pointing to that user
-	function delete_user(Lb.Lib.user_info memory user, bool del_meters) public {
-		for(uint i=0; i<Platform.user_infos.length; i++){
-			if(keccak256(abi.encode(Platform.user_infos[i].id_user))==keccak256(abi.encode(user.id_user))){
-				Platform.user_infos[i]=Platform.user_infos[Platform.user_infos.length-1];
-				Platform.user_infos.length--;
-				break;
-			}
-		}
-		if (del_meters){
-			for(uint j=0; j<Platform.id_meters.length; j++){
-				if(keccak256(abi.encode(Platform.id_meters[j].id_user))==keccak256(abi.encode(user.id_user))){
-					Platform.id_meters[j]=Platform.id_meters[Platform.id_meters.length-1];
-					Platform.id_meters.length--;
-				}
-			}
-		}
-	}
-	//function to delete a single meter from the chain
-	function delete_meter(Lb.Lib.id_meter memory meter) public{
-		for(uint i=0; i<Platform.id_meters.length; i++){
-			if(keccak256(abi.encode(Platform.id_meters[i].id_meter))==keccak256(abi.encode(meter.id_meter))){
-				Platform.id_meters[i]=Platform.id_meters[Platform.id_meters.length-1];
-				Platform.id_meters.length--;
-				break;
-			}
-		}
-	}
+
 
 	function clearTempData() public pure {//function that deletes objects from the contract storage
 	    delete Platform.temp_offers;
@@ -172,6 +143,38 @@ contract Platform {
 	function get_id_meters() public view returns (Lb.Lib.id_meter[] memory) {
 		return Platform.id_meters;
 	}
+	//function to delete a single user from the chain, for that, we push the last one into
+	// that position and delete the last (decreasing the length auto deletes the last element at a cheaper gas cost), to not leave any empty spot
+	// the function can additionally delete all the meters pointing to that user
+	function delete_user(Lb.Lib.user_info memory user, bool del_meters) public {
+		for(uint i=0; i<Platform.user_infos.length; i++){
+			if(keccak256(abi.encode(Platform.user_infos[i].id_user))==keccak256(abi.encode(user.id_user))){
+				Platform.user_infos[i]=Platform.user_infos[Platform.user_infos.length-1];
+				Platform.user_infos.length--;
+				break;
+			}
+		}
+		if (del_meters){
+			// same as delete_meter, but in this case we do not break, as there may be many meters for one user
+			for(uint j=0; j<Platform.id_meters.length; j++){
+				if(keccak256(abi.encode(Platform.id_meters[j].id_user))==keccak256(abi.encode(user.id_user))){
+					Platform.id_meters[j]=Platform.id_meters[Platform.id_meters.length-1];
+					Platform.id_meters.length--;
+				}
+			}
+		}
+	}
+	//function to delete a single meter from the chain
+	function delete_meter(Lb.Lib.id_meter memory meter) public{
+		for(uint i=0; i<Platform.id_meters.length; i++){
+			if(keccak256(abi.encode(Platform.id_meters[i].id_meter))==keccak256(abi.encode(meter.id_meter))){
+				Platform.id_meters[i]=Platform.id_meters[Platform.id_meters.length-1];
+				Platform.id_meters.length--;
+				break;
+			}
+		}
+	}
+
 	//gets the list of temporary or permanent offers
 	function getOffers(bool temp) public view returns(Lb.Lib.offer_bid[] memory) {
 	    if(temp) return Platform.temp_offers;
@@ -664,13 +667,13 @@ contract Platform {
 	}
 	function determine_balancing_energy(uint[] memory list_ts_delivery) public{
 		Lb.Lib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(Platform.temp_market_results, true);
-		for(uint i=0; i<list_ts_delivery.length-1; i++){
+		for(uint i=0; i<list_ts_delivery.length; i++){
 			Lb.Lib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(Platform.meter_reading_deltas, list_ts_delivery[i]);
 			Lb.Lib.market_result[] memory results=lib.market_results_inside_ts_delivery(sorted_results, list_ts_delivery[i]);
-			for(uint j=0; j<meters.length-1;j++){
+			for(uint j=0; j<meters.length;j++){
 				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
 				uint current_market_energy=0;
-				for(uint k=0; k<results.length-1;k++){
+				for(uint k=0; k<results.length;k++){
 					if(lib.compareStrings(meters[j].id_meter, results[k].id_user_bid)){
 						current_market_energy -=  results[k].qty_energy_traded;
 					}

@@ -1,8 +1,8 @@
 pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
 
-import "./Platform.sol" as Pl;
-import "./Lib.sol" as Lb;
+import "./clearing_ex_ante.sol" as Pl;
+import "./lem_lib.sol" as Lb;
 
 contract Sorting {
     Lb.Lib lib = new Lb.Lib();

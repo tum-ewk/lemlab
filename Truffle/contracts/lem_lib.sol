@@ -354,7 +354,7 @@ contract Lib {
     function market_results_inside_ts_delivery(market_result[] memory results, uint ts_delivery) public returns(market_result[] memory){
         market_result[] memory filtered_results= new market_result[](results.length);
         uint index=0;
-        for(uint i=0; i<results.length-1; i++){
+        for(uint i=0; i<results.length; i++){
             if(results[i].ts_delivery==ts_delivery){
                 filtered_results[index]=results[i];
                 index++;
@@ -371,7 +371,7 @@ contract Lib {
     function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public returns(meter_reading_delta[] memory){
         meter_reading_delta[] memory filtered_results= new meter_reading_delta[](meters.length);
         uint index=0;
-        for(uint i=0; i<meters.length-1; i++){
+        for(uint i=0; i<meters.length; i++){
             if(meters[i].ts_delivery==ts_delivery){
                 filtered_results[index]=meters[i];
                 index++;

@@ -155,7 +155,7 @@ prosumer:
 
   ################################ general settings ################################
 
-  "general_number_of": 20                   # number of prosumers (single family homes) to simulate
+  "general_number_of": 200                   # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
