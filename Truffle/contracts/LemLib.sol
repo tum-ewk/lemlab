@@ -1,6 +1,7 @@
 pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
-contract Lib {
+
+contract LemLib {
     
     struct offer_bid {
             string id_user;

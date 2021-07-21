@@ -41,10 +41,16 @@ def run_all_tests():
             failed = str(line).lower().find("failed")
             # the number of tests passed or failed is printed two spaces before the start of the word passed or failed
             if passed != -1:
-                tests_passed += int(str(line)[passed - 2])
+                try:
+                    tests_passed += int(str(line)[passed - 2])
+                except ValueError:
+                    tests_passed += 1
                 print("Tests passed so far", tests_passed)
             elif failed != -1:
-                tests_failed += int(str(line)[failed - 2])
+                try:
+                    tests_failed += int(str(line)[failed - 2])
+                except ValueError:
+                    tests_failed += 1
                 print("Tests failed so far", tests_failed)
 
     print("==================== TESTING FINISHED ======================")

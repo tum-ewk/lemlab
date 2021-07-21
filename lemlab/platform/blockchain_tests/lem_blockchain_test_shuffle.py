@@ -36,7 +36,7 @@ def test_shuffling():
     bids_blockchain = open_bids_blockchain
 
     lib_dict = config['db_connections']['bc_dict']
-    lib_dict["contract_name"] = "Lib"
+    lib_dict["contract_name"] = "LemLib"
     bc_obj_lib = BlockchainConnection(lib_dict)  # in this case we call the Lib contract for its shuffle functions
     offers_blockchain_shuffled = bc_obj_lib.functions.shuffle_OfferBids(offers_blockchain).call()
     bids_blockchain_shuffled = bc_obj_lib.functions.shuffle_OfferBids(bids_blockchain).call()

@@ -363,7 +363,7 @@ if __name__ == "__main__":
                   "port": "8540",
                   "timeout": 600,
                   "network_id": 8995,
-                  "contract_name": "Platform"}
+                  "contract_name": "ClearingExAnte"}
     from lemlab.platform import lem
 
     bc_lem_conn = BlockchainConnection(block_dict)

@@ -155,7 +155,7 @@ prosumer:
 
   ################################ general settings ################################
 
-  "general_number_of": 200                   # number of prosumers (single family homes) to simulate
+  "general_number_of": 20                   # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
@@ -484,5 +484,5 @@ db_connections:
                "port": "8540",
                "timeout": 600,
                "network_id": 8995,
-               "contract_name": "Platform"}
+               "contract_name": "ClearingExAnte"}
 

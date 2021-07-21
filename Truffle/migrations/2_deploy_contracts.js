@@ -1,7 +1,7 @@
-var Platform = artifacts.require("./clearing_ex_ante.sol");
-var Param = artifacts.require("./param.sol");
-var Sorting = artifacts.require("./sorting.sol");
-var Lib = artifacts.require("./lem_lib.sol");
+var Platform = artifacts.require("./ClearingExAnte.sol");
+var Param = artifacts.require("./Param.sol");
+var Sorting = artifacts.require("./Sorting.sol");
+var Lib = artifacts.require("./LemLib.sol");
 // JavaScript export
 module.exports = function(deployer) {
     // Deployer is the Truffle wrapper for deploying
