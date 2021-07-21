@@ -201,7 +201,15 @@ class BlockchainConnection:
     def log_meter_readings_cumulative(self, df_readings_meter):
 
         return df_readings_meter
+
     #################################################
+    # Functions the meter_delta_readings
+    #################################################
+    def push_meter_readings_delta(self, df_meter_delta):
+        tx_hash = self.functions.push_meter_reading_delta(tuple(df_meter_delta.values)).transact({'from': self.coinbase})
+        return tx_hash
+    def get_meter_readings_delta(self):
+        meter_readings=self.functions.get_meter_reading_delta.call()
     # Functions for mapping the meters to the users and so
     # not possible yet, needs the id market agent
     """def get_mapping_to_user(self):
@@ -338,8 +346,6 @@ class BlockchainConnection:
                     self.wait_for_transact(tx_hash)
                 except:
                     limit_to_remove -= 50
-
-
 
     ###################################################
     # Utility functions

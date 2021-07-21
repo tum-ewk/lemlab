@@ -11,33 +11,32 @@ contract ClearingExAnte {
 	every event produces a log at the end of a transaction. this event can be used for debugging(not live).
 	*/
 	event logString(string arg);
-	Lb.LemLib.offer_bid[] offers;//list of total offers stored. they don't get deleted unless one reset the contract
-	Lb.LemLib.offer_bid[] bids;//list of total bids stored. they don't get deleted unless one reset the contract
-	Lb.LemLib.user_info[] user_infos;
-	Lb.LemLib.id_meter[] id_meters;
+	Lb.LemLib.offer_bid[] public offers;//list of total offers stored. they don't get deleted unless one reset the contract
+	Lb.LemLib.offer_bid[] public bids;//list of total bids stored. they don't get deleted unless one reset the contract
+	Lb.LemLib.user_info[] public user_infos;
+	Lb.LemLib.id_meter[] public id_meters;
 	/*list of temporary offers stored. 
 	They are relative to each market clearing and for every market clearing they might be deleted. 
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
-	Lb.LemLib.offer_bid[] temp_offers;
+	Lb.LemLib.offer_bid[] public temp_offers;
 	/*list of temporary bids stored. 
 	They are relative to each market clearing and for every market clearing they might be deleted. 
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
-	Lb.LemLib.offer_bid[] temp_bids;
-	Lb.LemLib.market_result[] temp_market_results;//market results for each single clearing(for each specific t_clearing_current)
-	Lb.LemLib.market_result_total[] market_results_total;//whole market results relative to the whole market clearing(96 loops)
+	Lb.LemLib.offer_bid[] public temp_bids;
+	Lb.LemLib.market_result[] public temp_market_results;//market results for each single clearing(for each specific t_clearing_current)
+	Lb.LemLib.market_result_total[] public market_results_total;//whole market results relative to the whole market clearing(96 loops)
 	string public string_to_log = "";//string used for the event logString
 	Param p = new Param();//instance of the contract Param
 	Lb.LemLib lib= new Lb.LemLib();//instance of the contract LemLib(general library with useful functionalities)
 	Sorting srt = new Sorting();//instance of the contract Sorting(useful sorting functionalities)
 
-	//mapping(uint => Lb.LemLib.energy_balancing) public energy_balances;
-	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
-	Lb.LemLib.energy_balancing[] energy_balances;
+	mapping(uint => Lb.LemLib.energy_balancing[]) public energy_balances;
+	Lb.LemLib.meter_reading_delta[] public meter_reading_deltas;
+	//Lb.LemLib.energy_balancing[] public energy_balances;
 
 	constructor() public{
 		ClearingExAnte.clearTempData();//constructor where all the data is cleared.
 		}
-
 
 
 	function clearTempData() public pure {//function that deletes objects from the contract storage
@@ -135,6 +134,13 @@ contract ClearingExAnte {
 	function push_id_meters(Lb.LemLib.id_meter memory id_meter) public {
 		ClearingExAnte.id_meters.push(id_meter);
 	}
+
+	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public pure{
+		ClearingExAnte.meter_reading_deltas.push(meter_delta);
+	}
+	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance, uint ts) public pure{
+		ClearingExAnte.energy_balances[ts].push(e_balance);
+	}
 	//gets the list of user_infos in the storage of the contract
 	function get_user_infos() public view returns (Lb.LemLib.user_info[] memory) {
 		return ClearingExAnte.user_infos;
@@ -192,6 +198,13 @@ contract ClearingExAnte {
 	//gets the temporary market results
 	function getTempMarketResults() public view returns (Lb.LemLib.market_result[] memory) {
 	    return ClearingExAnte.temp_market_results;
+	}
+
+	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
+		return ClearingExAnte.meter_reading_deltas;
+	}
+	function get_energy_balances() public view returns (mapping(uint => Lb.LemLib.energy_balancing[]) memory){
+		return ClearingExAnte.energy_balances();
 	}
 	//returns a filtering of the temporary positions(offer/bids). The ones having the ts_delivery == t_clearing_current and t_clearing_current in the limits of the ts_delivery first and last of the user
 	function filteredOffersBids_ts_delivery_user(uint t_clearing_current) public view returns (Lb.LemLib.offer_bid[] memory, Lb.LemLib.offer_bid[] memory){
@@ -665,38 +678,5 @@ contract ClearingExAnte {
     		emit logString(string_to_log);
     	}
 	}
-	function determine_balancing_energy(uint[] memory list_ts_delivery) public{
-		Lb.LemLib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(ClearingExAnte.temp_market_results, true);
-		for(uint i=0; i<list_ts_delivery.length; i++){
-			Lb.LemLib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(ClearingExAnte.meter_reading_deltas, list_ts_delivery[i]);
-			Lb.LemLib.market_result[] memory results=lib.market_results_inside_ts_delivery(sorted_results, list_ts_delivery[i]);
-			for(uint j=0; j<meters.length;j++){
-				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
-				uint current_market_energy=0;
-				for(uint k=0; k<results.length;k++){
-					if(lib.compareStrings(meters[j].id_meter, results[k].id_user_bid)){
-						current_market_energy -=  results[k].qty_energy_traded;
-					}
-					else if(lib.compareStrings(meters[j].id_meter, results[k].id_user_offer)){
-						current_market_energy += results[k].qty_energy_traded;
-					}
-				}
-				current_actual_energy -= current_market_energy;
-				Lb.LemLib.energy_balancing memory result_energy;
-				result_energy.id_meter=meters[j].id_meter;
-				result_energy.ts_delivery=list_ts_delivery[i];
-				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
-				if(current_actual_energy>=0){
-					result_energy.energy_balancing_positive=current_actual_energy;
-					result_energy.energy_balancing_negative=0;
-				}
-				else{
-					result_energy.energy_balancing_positive=0;
-					result_energy.energy_balancing_negative=current_actual_energy;
-				}
-				ClearingExAnte.energy_balances.push(result_energy);
-			}
 
-		}
-	}
 }
