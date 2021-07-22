@@ -13,6 +13,9 @@ contract Settlement {
 
 	ClearingExAnte clearing;
 
+	// function to determine the changes in energy for a given list of time steps
+	// the function calculates the change of energy for every meter inside a specific timestep
+	// Finally, it pushes the results to a mapping according to the timestep
     function determine_balancing_energy(uint[] memory list_ts_delivery) public{
 		Lb.LemLib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(clearing.getTempMarketResults(), true);
 		for(uint i=0; i<list_ts_delivery.length; i++){

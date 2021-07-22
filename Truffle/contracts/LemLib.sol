@@ -100,9 +100,12 @@ contract LemLib {
     struct energy_balancing {
         string id_meter;
         uint ts_delivery;
+        bytes32 balance_address;
         uint energy_balancing_positive;
         uint energy_balancing_negative;
     }
+
+    uint16 public timestep_size = 15 * 60;       // we use a timestep of 15 minutes, converted to seconds
     //return true if a list of user infos has at least one user with id_user as the argument given in input
     function check_user_id_in_user_infos(string memory id_user, user_info[] memory user_infos) public pure returns(bool) {
         for(uint i = 0; i < user_infos.length; i++) {
@@ -353,7 +356,13 @@ contract LemLib {
     //function to get the market results inside a ts_delivery, it first copies the results, then deletes the rest of
     //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
     function market_results_inside_ts_delivery(market_result[] memory results, uint ts_delivery) public returns(market_result[] memory){
-        market_result[] memory filtered_results= new market_result[](results.length);
+        uint length_results=0;
+        for(uint i=0; i<results.length; i++){
+            if(results[i].ts_delivery==ts_delivery){
+                length_results++;
+            }
+        }
+        market_result[] memory filtered_results= new market_result[](length_results);
         uint index=0;
         for(uint i=0; i<results.length; i++){
             if(results[i].ts_delivery==ts_delivery){
@@ -361,16 +370,20 @@ contract LemLib {
                 index++;
             }
         }
-        for(uint j=index; j<results.length-1;j++){
-            delete filtered_results[j];
-        }
         return filtered_results;
     }
     //FUNCTIONS FOR DELTA METERS
-    //function to get the meter readings inside a ts_delivery, it first copies the results, then deletes the rest of
-    //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
+    //function to get the meter readings inside a ts_delivery, memory optimized. It needs to first read the amount of
+    // meters that there are to create the array, since memory arrays are not allowed to be dynamically changed once
+    // initialized
     function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public returns(meter_reading_delta[] memory){
-        meter_reading_delta[] memory filtered_results= new meter_reading_delta[](meters.length);
+        uint length_meters=0;
+        for(uint i=0; i<meters.length; i++){
+            if(meters[i].ts_delivery==ts_delivery){
+                length_meters++;
+            }
+        }
+        meter_reading_delta[] memory filtered_results= new meter_reading_delta[](length_meters);
         uint index=0;
         for(uint i=0; i<meters.length; i++){
             if(meters[i].ts_delivery==ts_delivery){
@@ -383,6 +396,13 @@ contract LemLib {
         }
         return filtered_results;
     }
+    function ts_delivery_to_index(uint ts_delivery) public view returns(uint){
+        uint monday_00 = 1626040800;    //reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone
+        uint rest = ts_delivery % monday_00;
+        uint index = rest / (15*60);
+        return index;
+    }
+    // MATH UTILITY FUNCTIONS
     //returns the max element of an array
     function maxArray(uint[] memory arr) public pure returns(uint) {
         uint highest = 0;
@@ -590,4 +610,5 @@ contract LemLib {
         }
         return count;
     }
+
 }

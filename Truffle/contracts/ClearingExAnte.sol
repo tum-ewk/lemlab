@@ -30,7 +30,13 @@ contract ClearingExAnte {
 	Lb.LemLib lib= new Lb.LemLib();//instance of the contract LemLib(general library with useful functionalities)
 	Sorting srt = new Sorting();//instance of the contract Sorting(useful sorting functionalities)
 
-	mapping(uint => Lb.LemLib.energy_balancing[]) public energy_balances;
+	mapping(bytes32 => Lb.LemLib.energy_balancing) public energy_balances;
+	string[] public energy_ids;
+	bytes32[] public energy_addresses;
+	//mapping(uint => address) ts_to_address;
+	//uint horizon = 7* 24*60*60 /lib.timestep_size; 	//we use a one week horizon with 15 minutes timesteps
+	//uint[horizon][] public energy_balances;
+
 	Lb.LemLib.meter_reading_delta[] public meter_reading_deltas;
 	//Lb.LemLib.energy_balancing[] public energy_balances;
 
@@ -135,11 +141,29 @@ contract ClearingExAnte {
 		ClearingExAnte.id_meters.push(id_meter);
 	}
 
-	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public pure{
+	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
 		ClearingExAnte.meter_reading_deltas.push(meter_delta);
 	}
-	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance, uint ts) public pure{
-		ClearingExAnte.energy_balances[ts].push(e_balance);
+	// function to push the energy balance to the mapping of addresses, the address is calculated with the sum of
+	// the index in that time and the id_meter of that energy balance
+	// then we append the address if it does not exists in the list of addresses, together with the list of
+	// id_meters. The two list then have always the same size, making iterating through them easier and faster
+	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance, uint ts) public {
+		uint index = lib.ts_delivery_to_index(ts);
+		uint id_meter=lib.stringToUint(e_balance.id_meter);
+		e_balance.balance_address = keccak256(abi.encode(index+id_meter));
+		bool element_no_exist=true;
+		//append the address to the list of energy id_meters
+        for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
+            if(energy_address==ClearingExAnte.energy_addresses[i]){
+                element_no_exist=false;
+                break;
+            }
+        }
+        if(element_no_exist){
+            ClearingExAnte.energy_ids.push(e_balance.id_meter);
+			ClearingExAnte.energy_addresses.push(energy_address);
+        }
 	}
 	//gets the list of user_infos in the storage of the contract
 	function get_user_infos() public view returns (Lb.LemLib.user_info[] memory) {
@@ -203,9 +227,31 @@ contract ClearingExAnte {
 	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
 		return ClearingExAnte.meter_reading_deltas;
 	}
-	function get_energy_balances() public view returns (mapping(uint => Lb.LemLib.energy_balancing[]) memory){
-		return ClearingExAnte.energy_balances();
+
+	//function to return the energy balance of an specific timestep
+	function get_energy_balance_by_ts(uint ts) public view returns (Lb.LemLib.energy_balancing[] memory){
+		uint index = lib.ts_delivery_to_index(ts);
+		uint count_energies=0;
+		// as the two list energy_ids and energy_addresses are the same length and ordered, each id in the list matches
+		// and address in that list
+		for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
+			uint id_meter=lib.stringToUint(ClearingExAnte.energy_ids[i]);
+			if(keccak256(abi.encode(index+id_meter))==ClearingExAnte.energy_addresses[i]){
+					count_energies++;
+			}
+		}
+		uint ind=0;
+		Lb.LemLib.energy_balancing[] memory energies = new Lb.LemLib.energy_balancing[](count_energies);
+		for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
+			bytes32 meter= keccak256(abi.encode(index+lib.stringToUint(ClearingExAnte.energy_ids[i])));
+			if(meter==ClearingExAnte.energy_addresses[i]){
+					energies[ind]=ClearingExAnte.energy_balances[meter];
+					ind++;
+			}
+		}
+		return energies;
 	}
+
 	//returns a filtering of the temporary positions(offer/bids). The ones having the ts_delivery == t_clearing_current and t_clearing_current in the limits of the ts_delivery first and last of the user
 	function filteredOffersBids_ts_delivery_user(uint t_clearing_current) public view returns (Lb.LemLib.offer_bid[] memory, Lb.LemLib.offer_bid[] memory){
 		uint len = 0;
