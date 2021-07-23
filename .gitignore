@@ -130,4 +130,4 @@ dmypy.json
 .pyre/
 lem_analysis/monte_carlo/simulations/
 
-lem_analysis/
+#lem_analysis/

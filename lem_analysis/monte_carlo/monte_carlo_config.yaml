@@ -1,0 +1,352 @@
+###########################################################################################
+# Simulation configuration
+
+simulation:
+  "real_time": False
+  # real-time only
+  "lem_active": True                  # should the LEM be simulated? ALWAYS True in non-real-time
+  "agents_active": True               # should the LEM be simulated? ALWAYS True in non-real-time
+  "real_time_start_steps": 6          # when beginning a real time simulation, this many steps will be
+                                      # simulated at an accelerated rate, before real-time commences
+
+  # non-real-time only
+  "start": "2020-07-01 00:00"         # simulation start as unix timestamp
+  "start_tz": "Europe/Berlin"         # timezone of simulation
+  "length": 1                         # length of the simulation in days
+
+  "path_input_data": "./input_data"   # path relative to the lemlab repository
+  "path_scenarios": "./scenarios"     # path relative to the lemlab repository
+
+###########################################################################################
+#lem platform configuration
+
+lem:
+
+  "types_clearing_ex_ante": {0: "pda",
+                             1: "sep",
+                             2: "h2l",
+                             3: "l2h",
+                             4: "cc",
+                             5: "cc_h2l",
+                             6: "cc_h2l_pda"}
+                                                              # market types to be calculated
+                                                              # settlement and prosumers observe the first
+                                                              # listed result, other choices are merely
+                                                              # calculated for comparison
+
+                                                              # currently implemented choices are:
+                                                              #   standard - ex-ante double auction
+
+                                                              # the ex_post_pricing ex-post solution is always
+                                                              # calculated in parallel. If no other clearing
+                                                              # type is listed, the ex_post_pricing will be
+                                                              # used for settlement and no active trading
+                                                              # takes place
+
+  "types_pricing_ex_ante": {0: "uniform", 1: "discriminatory"}# which clearing prices should be calculated?
+                                                              # settlement and prosumers observe the first
+                                                              # listed result, other choices are merely
+                                                              # calculated for comparison
+
+                                                              # currently implemented choices are:
+                                                              #    average - average double-auction price
+                                                              #    discriminative - see README
+
+
+  "types_clearing_ex_post": {0: "community"}
+
+  "types_pricing_ex_post": {0: "standard"}
+
+  share_quality_logging_extended: True                       # if true, quality shares before and after market clearing
+                                                             # logged, for bids and offers.
+                                                             # if false, only shares of energy actually
+                                                             # successfully cleared
+
+  ps_max_while_exec: 100                                     # Maximum number of while loop executions. After this
+                                                             # amount of executions the clearing will be aborted.
+
+  "types_quality": {0: "na",
+                    1: "local",
+                    2: "local_green"}
+
+  "types_position": {0: 'offer',                  # bid types; 0 = offer, 1 = bid, other = invalid
+                     1: 'bid'}
+
+  "types_transaction": {0: "market",
+                        1: "balancing",
+                        2: "levy_prices"}
+
+  "positions_delete": True
+  "positions_archive": True
+
+  "horizon_clearing": 900                       # how far into the future is the market cleared in seconds
+  "interval_clearing": 900                        # how long is one energy delivery period in seconds
+
+  "frequency_clearing": 900                       # how often is market clearing executed in seconds
+
+
+  # defining electricity levy_prices
+  "levy_pricing_mechanism": "fixed"                      # how should balancing energy prices be set?
+                                                  #      "fixed" - dual prices as defined below
+                                                  #      "file" - prices are given as time series in input file below
+
+  "path_levy_prices": "levy_prices_1.csv"
+
+  "price_energy_levies_negative": 0.18                  # electricity levy_prices in c/kWh
+  "price_energy_levies_positive": 0
+
+  # defining balancing energy pricing
+  "bal_energy_pricing_mechanism": "fixed"          # how should balancing energy prices be set?
+                                                  #      "fixed" - dual prices as defined below
+                                                  #      "file" - prices are given as time series in input file below
+
+  "path_bal_prices": "balancing_prices_1.csv"
+
+  "price_energy_balancing_positive": 0.10                    # fixed_gen balancing prices in c/kWh
+  "price_energy_balancing_negative": 0.10
+
+  # settlement prices logged in advance?
+
+  "prices_settlement_in_advance": 0             # how many steps in advance are settlement prices
+                                                 # posted to the platform; CURRENTLY ONLY 0 POSSIBLE
+
+###########################################################################################
+# Supplier settings
+
+supplier:
+  "price_sell": 0.08                  # supplier market ceiling offer one step before delivery
+  "price_buy": 0.02                   # supplier market floor offer one step before delivery
+
+  "qty_energy_bid": 1000000            # energy quantity supplier in Wh
+  "qty_energy_offer": 1000000          # energy quantity supplier in Wh
+
+  "id_user": "supplier01"             # supplier market id
+
+###########################################################################################
+# database connections settings
+
+db_connections:
+  "database_connection_admin": { "user": "admin_lem",
+                                 "pw": "admin",
+                                 "host": "127.0.0.1",
+                                 "port": "5432",
+                                 "db": "postgres" }
+
+  "database_connection_user": { "user": "market_participant",
+                                "pw": "user",
+                                "host": "127.0.0.1",
+                                "port": "5432",
+                                "db": "postgres" }
+
+###########################################################################################
+# monte carlo simulation settings
+monte_carlo:
+  "n_iterations": 100
+  "n_trials": 1
+  "n_positions_per_iteration": 200
+
+###########################################################################################
+# Prosumer configuration
+
+prosumer:
+
+# general settings
+
+  "general_number_of": 1000                       # number of single family homes to simulate
+
+  "general_solver": "gurobi"                    # installed pyomo compatible solver
+                                            # must be MIQP capable, "gurobi" and "cplex" recommended
+
+  "general_fcast_retraining_frequency": 96      # user forecast models retrained every n steps
+                                        #     recommended range: >= 96
+
+# hh load settings
+
+  "hh_sizing": "uniform"                    # type of household load
+                                              # "uniform" - all households have the same total power consumption
+                                              #     specified in hh_load_uniform the load curve still differs
+                                              # "distribution" - households have different total power consumption and
+                                              #     load curve. The distribution of the total power consumption is
+                                              #     specified in hh_distribution for the respective shares and
+                                              #     hh_intervals for the various ranges the shares represent
+
+  "hh_sizing_uniform": 3500                 # uniform power consumption for all households +-500 (hh_load_type = "uniform")
+
+  "hh_sizing_distribution": [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]   # distribution of the total power consumption of the households.
+                                                      #     If it doesn't add up to 1, the distribution will be
+                                                      #     adjusted accordingly
+
+  "hh_sizing_distribution_intervals": [1000, 2000, 3000, 4000, 5000]      # intervals that the distribution is applied to. All values
+                                                      #     represent the maximum value for that interval except for
+                                                      #     the last one which is used as both min and max value for
+                                                      #     the second to last and last value
+                                                      #     Example:
+                                                      #         hh_distribution:  [0.2, 0.6, 0.2]
+                                                      #         hh_intervals:     [2000, 4000]
+                                                      #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
+
+  "hh_fcast": "naive"                     # household load forecasting method
+                                             #     "perfect" - perfect knowledge of the future
+                                             #     "naive"   - today will be the same as yesterday
+                                             #     "naive_average" - today will be the same as
+                                             #        the average of yesterday and the day before
+                                             #     "smoothed" - prediction value is a moving mean
+                                             #        of the future values. Window width of
+                                             #        9 timesteps
+                                             #     "sarma"   - full SARMA model of order below
+
+  "hh_fcast_sarma_order": [2, 0, 2, 2, 0, 0, 96, 2, 0, 0, 672]  # order of double seasonal ARMA model
+                                                               # [ar,    0, ma,
+                                                               #  s1_ar, 0, s1_ma, s1,
+                                                               #  s2_ar, 0, s2_ma, s2]
+
+# pv settings
+  "pv_fraction": 0.7                  # fraction of prosumers with pv plants
+
+  "pv_sizing_power": 1.25                   # sizing of pv plant
+                                        # 1 = 1000 Wp of PV installed for every 1000 kWh/a of household consumption
+
+  "pv_sizing_power_deviation": 0.2          # random deviation from pv_size (pv_size +- deviation%)
+
+  "pv_controllable": True           # can the pv inverter be controlled? True or False
+
+  "pv_fcast": "smoothed"            # pv production forecasting method
+                                         #     "perfect" - perfect knowledge of the future
+
+                                         #     "smoothed" - prediction value is a moving mean
+                                         #                of the future values. Window width of
+                                         #                9 timesteps
+
+  "pv_quality": 3                      # integer that links to "types_quality" of "lem" to describe the type of energy
+
+
+# battery settings
+  "bat_fraction": 0.6                 # fraction of prosumers with batteries
+
+  "bat_fraction_dependent_on_pv": True       # if True bat_fraction is only applied to PV owners,
+                                    # if False prosumers that do not own a PV system can also have a battery
+
+  "bat_sizing_power": 1                    # battery power sizing (W)
+                                    #   if household has PV system:
+                                    #     battery power = bat_power * peak pv power
+                                    #   else:
+                                    #     battery power = bat_power * household consumption / 1000
+
+  "bat_sizing_capacity": 1                 # battery capacity sizing (Wh)
+                                    #   battery capacity = battery power * bat_capacity
+
+  "bat_efficiency": 0.95            # one way efficiency of the battery
+
+  "bat_soc_init": 0.1               # initial soc of the battery (0,1)
+
+  "bat_charge_from_grid": False     # can the battery charge off the grid?      --------->   # this function needs to be reactivated
+
+  "bat_quality": 1                  # integer that links to "types_quality" of "lem" to describe the type of energy
+
+# electric vehicle settings
+
+  "ev_fraction": 0.1                              # fraction of prosumers with EVs
+
+  "ev_efficiency": 0.9                            # one way charging efficiency
+
+  "ev_v2g": False                                   # ev v2g charging, "y" or "n"
+
+  "ev_charging_power": [3700, 7200, 11000]        # ev max charging power in W, random val selected from list
+
+  "ev_capacity": [40000, 60000, 80000]            # ev battery size in Wh, random val selected from list
+
+  "ev_consumption": [15000, 20000, 25000, 30000]  # ev consumption in Wh/100km , random val selected from list
+
+  "ev_soc_init": 0.8                              # initial SoC of the battery
+
+  "ev_fcast": "ev_close"                          # EV availability forecasting technique
+                                                    #   "ev_perfect" - perfect knowledge of the future
+                                                    #   "ev_close" - knowledge of the current
+                                                    #      availability cycle once the vehicle arrives
+
+  "ev_quality": 1                                 # integer that links to "types_quality" of "lem" to describe the type of energy
+
+# fixed_gen generator settings
+
+  "fixedgen_fraction": 0.1             # fraction of prosumers with constant power generators
+
+  "fixedgen_power": 3000                # power of run-of-river generation plants (W)
+
+  "fixedgen_controllable": False       # can the run of river plant be controlled (for rel-time balancing purposes)
+
+  "fixedgen_quality": 1                 # integer that links to "types_quality" of "lem" to describe the type of energy
+
+
+# model predictive control settings
+
+  "mpc_price_fcast": "naive"           # how should the local electricity price be forecast
+                                            #     "flat" - no meaningful forecasting, flat price of "n" cents
+                                            #     "naive" - expected price same as previous day
+
+  "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
+
+# market agent settings
+
+  "ma_strategy": ["linear"]     # prosumer market agent trading strategy, each prosumer selects randomly
+                                            # from list
+                                            # choices are:
+                                            #   linear - see README
+                                            #   zi - zero intelligence, random bid and offer prices
+                                            #                           in market price range
+                                            #   none -  called if only ex-post markets are being
+                                            #           simulated, as no active trading is possible
+
+  "ma_horizon": [12, 24, 36, 48, 60]     # market agent trading horizon,
+                                                #     selected randomly from list
+                                                #     possible range : 1 - (mpc_horizon - reopt_steps)
+  "ma_preference_quality": ["green"]
+
+  "ma_premium_preference_quality": [0, 0, 10, 20, 30]
+
+# metering settings
+
+  "meter_prob_late": 0            # probability that any meter reading will be communicated late
+
+  "meter_prob_late_95": 3600      # 95% of late meter readings will be communicated by this number of seconds
+                                  # 2 sigma value of normal distribution
+
+  "meter_prob_missing": 0         # probability that any given meter reading will fail to be communicated at all
+
+###########################################################################################
+# aggregator settings
+# can only be active during ex-ante trading. automatically deactivated for ex-post trading
+
+aggregator:
+  "active": True                           # aggregator active "y" or "n"
+                                            # if the aggregator is active, all prosumers ignore their own household load
+                                            # and predict/control only their other plants
+  "prosumers_wo_battery_only": True
+
+  "ma_strategy": "linear"               # prosumer market agent trading strategy
+                                            # linear -
+                                            # zi - zero intelligence
+
+  "ma_horizon": 32                     # market agent trading horizon,
+                                            #     selected randomly from list
+                                            #     possible range : 1 - (mpc_horizon - reopt_steps)
+
+
+  "fcast": "perfect"                # aggregator load forecasting method
+                                            #     "perfect" - perfect knowledge of the future
+                                            #     "naive"   - today will be the same as yesterday
+                                            #     "naive_average" - today will be the same as
+                                            #       the average of yesterday and the day before
+                                            #     "sarma"   - full SARMA model of order below
+
+  "fcast_sarma_order": [2, 0, 2, 2, 0, 0, 96, 2, 0, 0, 672]   # order of double seasonal ARMA model
+                                                                 # [ar,    0, ma,
+                                                                 #  s1_ar, 0, s1_ma, s1,
+                                                                 #  s2_ar, 0, s2_ma, s2]
+
+  "preference_quality": "green"
+
+  "premium_preference_quality": 10
+
+  "id_user": "aggreg0001"
+
+
