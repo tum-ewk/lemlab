@@ -25,7 +25,7 @@ simulation:
 
 lem:
   ################# market settings #####################
-  "types_clearing_ex_ante": {0: "da"}
+  "types_clearing_ex_ante": {0: "pda"}
   "types_clearing_ex_post": {0: "community"}
                                             # market types to be calculated
                                             # settlement and prosumers observe the first

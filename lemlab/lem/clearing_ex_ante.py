@@ -11,6 +11,7 @@ __email__ = "michel.zade@tum.de"
 from lemlab.db_connection import db_connection
 from collections import OrderedDict
 from tqdm import tqdm
+from ruamel.yaml import YAML
 import time
 import pandas as pd
 import numpy as np
@@ -47,7 +48,7 @@ def market_clearing(db_obj,
 
     # Check whether clearing types have been specified
     if config_lem['types_clearing_ex_ante'] is None:
-        config_lem['types_clearing_ex_ante'] = {0: "da"}
+        config_lem['types_clearing_ex_ante'] = {0: "pda"}
 
     # Calculate number of market clearings
     n_clearings = int(config_lem['horizon_clearing'] / config_lem['interval_clearing'])
@@ -118,157 +119,157 @@ def market_clearing(db_obj,
                 plotting_title = pd.Timestamp(t_clearing_current, unit="s", tz="Europe/Berlin")
 
                 # Combinations WITHOUT consideration of quality premium
-                if 'da' == type_clearing:
+                if 'pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_da(db_obj,
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
+
+                if 'h2l' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='h2l',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
+
+                if 'l2h' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='l2h',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
+
+                if 'sep' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='sep',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
+
+                if 'cc' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_cc(db_obj,
                                     config_lem,
                                     offers_ts_d,
                                     bids_ts_d,
                                     plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
+
+                if 'cc_h2l' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
+
+                    if not bids_uncleared.empty and not offers_uncleared.empty:
+                        # Clear in a preference prioritization for remaining positions
+                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        type_prioritization='h2l',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
+                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
+
+                if 'cc_l2h' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
+
+                    if not bids_uncleared.empty and not offers_uncleared.empty:
+                        # Clear in a preference prioritization for remaining positions
+                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        type_prioritization='l2h',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
+                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
+
+                if 'cc_sep' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
+
+                    if not bids_uncleared.empty and not offers_uncleared.empty:
+                        # Clear in a preference prioritization for remaining positions
+                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        type_prioritization='sep',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
+                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
+
+                if 'sep_cc' == type_clearing:
+                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='sep',
+                                    plotting=plotting,
                                     plotting_title=plotting_title)
-
-                if 'pref_prio_n_to_0' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='n_to_0',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                if 'pref_prio_0_to_n' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='0_to_n',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                if 'pref_prio_sep' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='sep',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                if 'pref_satis' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
-
-                if 'pref_satis_pref_prio_n_to_0' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
-
-                    if not bids_uncleared.empty and not offers_uncleared.empty:
-                        # Clear in a preference prioritization for remaining positions
-                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               type_prioritization='n_to_0',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
-                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
-
-                if 'pref_satis_pref_prio_0_to_n' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
-
-                    if not bids_uncleared.empty and not offers_uncleared.empty:
-                        # Clear in a preference prioritization for remaining positions
-                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               type_prioritization='0_to_n',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
-                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
-
-                if 'pref_satis_pref_prio_sep' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
-
-                    if not bids_uncleared.empty and not offers_uncleared.empty:
-                        # Clear in a preference prioritization for remaining positions
-                        results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               type_prioritization='sep',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
-                        positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
-
-                if 'pref_prio_sep_pref_satis' == type_clearing:
-                    positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='sep',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers_uncleared,
-                                                bids_uncleared,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers_uncleared,
+                                        bids_uncleared,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
-                if 'pref_prio_0_to_n_pref_satis' == type_clearing:
+                if 'l2h_cc' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='0_to_n',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='l2h',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
-                        results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = clearing_pref_satis(
+                        results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = clearing_cc(
                             db_obj,
                             config_lem,
                             offers_uncleared,
@@ -278,617 +279,617 @@ def market_clearing(db_obj,
                             verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
-                if 'pref_prio_n_to_0_pref_satis' == type_clearing:
+                if 'h2l_cc' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='n_to_0',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='h2l',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers_uncleared,
-                                                bids_uncleared,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers_uncleared,
+                                        bids_uncleared,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
                 # Combinations WITH consideration of quality premium ###
                 # Standard da AFTER advanced clearing
-                if 'pref_prio_n_to_0_da' == type_clearing:
+                if 'h2l_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='n_to_0',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
+                        clearing_pp(db_obj,
                                     config_lem,
-                                    offers_uncleared,
-                                    bids_uncleared,
-                                    add_premium=False,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='h2l',
+                                    add_premium=True,
                                     plotting=plotting,
                                     plotting_title=plotting_title)
 
+                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_uncleared,
+                                     bids_uncleared,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
+
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_prio_0_to_n_da' == type_clearing:
+                if 'l2h_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='0_to_n',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
+                        clearing_pp(db_obj,
                                     config_lem,
-                                    offers_uncleared,
-                                    bids_uncleared,
-                                    add_premium=False,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='l2h',
+                                    add_premium=True,
                                     plotting=plotting,
                                     plotting_title=plotting_title)
 
+                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_uncleared,
+                                     bids_uncleared,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
+
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_prio_sep_da' == type_clearing:
+                if 'sep_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='sep',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
-
-                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
+                        clearing_pp(db_obj,
                                     config_lem,
-                                    offers_uncleared,
-                                    bids_uncleared,
-                                    add_premium=False,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='sep',
+                                    add_premium=True,
                                     plotting=plotting,
                                     plotting_title=plotting_title)
 
+                    positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_uncleared,
+                                     bids_uncleared,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
+
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_satis_da' == type_clearing:
+                if 'cc_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            add_premium=True,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
 
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_uncleared,
-                                    bids_uncleared,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_uncleared,
+                                     bids_uncleared,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_satis_pref_prio_n_to_0_da' == type_clearing:
+                if 'cc_h2l_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            add_premium=True,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         # Clear in a preference prioritization for remaining positions
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='n_to_0',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='h2l',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_pp,
-                                        bids_uncleared_pp,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_pp,
+                                         bids_uncleared_pp,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_satis_pref_prio_0_to_n_da' == type_clearing:
+                if 'cc_l2h_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            add_premium=True,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         # Clear in a preference prioritization for remaining positions
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='0_to_n',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='l2h',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_pp,
-                                        bids_uncleared_pp,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_pp,
+                                         bids_uncleared_pp,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_satis_pref_prio_sep_da' == type_clearing:
+                if 'cc_sep_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers_ts_d,
-                                            bids_ts_d,
-                                            add_premium=True,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         # Clear in a preference prioritization for remaining positions
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared,
-                                               bids=bids_uncleared,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='sep',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared,
+                                        bids=bids_uncleared,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='sep',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_pp,
-                                        bids_uncleared_pp,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_pp,
+                                         bids_uncleared_pp,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_prio_sep_pref_satis_da' == type_clearing:
+                if 'sep_cc_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='sep',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='sep',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers_uncleared,
-                                                bids_uncleared,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers_uncleared,
+                                        bids_uncleared,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_ps,
-                                        bids_uncleared_ps,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_ps,
+                                         bids_uncleared_ps,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_prio_0_to_n_pref_satis_da' == type_clearing:
+                if 'l2h_cc_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='0_to_n',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='l2h',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers_uncleared,
-                                                bids_uncleared,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers_uncleared,
+                                        bids_uncleared,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_ps,
-                                        bids_uncleared_ps,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_ps,
+                                         bids_uncleared_ps,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'pref_prio_n_to_0_pref_satis_da' == type_clearing:
+                if 'h2l_cc_pda' == type_clearing:
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_ts_d,
-                                           bids_ts_d,
-                                           type_prioritization='n_to_0',
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_ts_d,
+                                    bids_ts_d,
+                                    type_prioritization='h2l',
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     if not bids_uncleared.empty and not offers_uncleared.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers_uncleared,
-                                                bids_uncleared,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers_uncleared,
+                                        bids_uncleared,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
                         positions_cleared = positions_cleared.append(results_ps).reset_index(drop=True)
 
                         positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                            clearing_da(db_obj,
-                                        config_lem,
-                                        offers_uncleared_ps,
-                                        bids_uncleared_ps,
-                                        add_premium=False,
-                                        plotting=plotting,
-                                        plotting_title=plotting_title)
+                            clearing_pda(db_obj,
+                                         config_lem,
+                                         offers_uncleared_ps,
+                                         bids_uncleared_ps,
+                                         add_premium=False,
+                                         plotting=plotting,
+                                         plotting_title=plotting_title)
 
                         positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                # Standard da BEFORE advanced clearing
-                if 'da_pref_prio_n_to_0' == type_clearing:
+                # Standard pda BEFORE advanced clearing
+                if 'pda_h2l' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_uncleared_da,
-                                           bids_uncleared_da,
-                                           type_prioritization='pref_n_to_0',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_uncleared_da,
+                                    bids_uncleared_da,
+                                    type_prioritization='pref_h2l',
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'da_pref_prio_0_to_n' == type_clearing:
+                if 'pda_l2h' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_uncleared_da,
-                                           bids_uncleared_da,
-                                           type_prioritization='0_to_n',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_uncleared_da,
+                                    bids_uncleared_da,
+                                    type_prioritization='l2h',
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'da_pref_prio_sep' == type_clearing:
+                if 'pda_sep' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_prio(db_obj,
-                                           config_lem,
-                                           offers_uncleared_da,
-                                           bids_uncleared_da,
-                                           type_prioritization='sep',
-                                           add_premium=True,
-                                           plotting=plotting,
-                                           plotting_title=plotting_title)
+                        clearing_pp(db_obj,
+                                    config_lem,
+                                    offers_uncleared_da,
+                                    bids_uncleared_da,
+                                    type_prioritization='sep',
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title)
 
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'da_pref_satis' == type_clearing:
+                if 'pda_cc' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                        clearing_pref_satis(db_obj,
-                                            config_lem,
-                                            offers=offers_uncleared_da,
-                                            bids=bids_uncleared_da,
-                                            add_premium=True,
-                                            plotting=plotting,
-                                            plotting_title=plotting_title,
-                                            verbose=verbose)
+                        clearing_cc(db_obj,
+                                    config_lem,
+                                    offers=offers_uncleared_da,
+                                    bids=bids_uncleared_da,
+                                    add_premium=True,
+                                    plotting=plotting,
+                                    plotting_title=plotting_title,
+                                    verbose=verbose)
 
                     positions_cleared = positions_cleared.append(positions_cleared_da, ignore_index=True)
 
-                if 'da_pref_satis_pref_prio_n_to_0' == type_clearing:
+                if 'pda_cc_h2l' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_da,
-                                                bids=bids_uncleared_da,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = results_ps.append(positions_cleared_da, ignore_index=True)
 
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_ps,
-                                               bids=bids_uncleared_ps,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='n_to_0',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_ps,
+                                        bids=bids_uncleared_ps,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='h2l',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
-                if 'da_pref_satis_pref_prio_0_to_n' == type_clearing:
+                if 'pda_cc_l2h' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_da,
-                                                bids=bids_uncleared_da,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = results_ps.append(positions_cleared_da, ignore_index=True)
 
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_ps,
-                                               bids=bids_uncleared_ps,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='0_to_n',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_ps,
+                                        bids=bids_uncleared_ps,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='l2h',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
-                if 'da_pref_satis_pref_prio_sep' == type_clearing:
+                if 'pda_cc_sep' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_da,
-                                                bids=bids_uncleared_da,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = results_ps.append(positions_cleared_da, ignore_index=True)
 
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_ps,
-                                               bids=bids_uncleared_ps,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='sep',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_ps,
+                                        bids=bids_uncleared_ps,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='sep',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared.append(results_pp).reset_index(drop=True)
 
-                if 'da_pref_prio_n_to_0_pref_satis' == type_clearing:
+                if 'pda_h2l_cc' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_da,
-                                               bids=bids_uncleared_da,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='n_to_0',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='h2l',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared_da.append(results_pp).reset_index(drop=True)
 
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_pp,
-                                                bids=bids_uncleared_pp,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_pp,
+                                        bids=bids_uncleared_pp,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = positions_cleared.append(results_ps, ignore_index=True)
 
-                if 'da_pref_prio_0_to_n_pref_satis' == type_clearing:
+                if 'pda_l2h_cc' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_da,
-                                               bids=bids_uncleared_da,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='0_to_n',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='l2h',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared_da.append(results_pp).reset_index(drop=True)
 
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_pp,
-                                                bids=bids_uncleared_pp,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_pp,
+                                        bids=bids_uncleared_pp,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = positions_cleared.append(results_ps, ignore_index=True)
 
-                if 'da_pref_prio_sep_pref_satis' == type_clearing:
+                if 'pda_sep_cc' == type_clearing:
                     positions_cleared_da, offers_uncleared_da, bids_uncleared_da, offers_cleared_da, bids_cleared_da = \
-                        clearing_da(db_obj,
-                                    config_lem,
-                                    offers_ts_d,
-                                    bids_ts_d,
-                                    add_premium=False,
-                                    plotting=plotting,
-                                    plotting_title=plotting_title)
+                        clearing_pda(db_obj,
+                                     config_lem,
+                                     offers_ts_d,
+                                     bids_ts_d,
+                                     add_premium=False,
+                                     plotting=plotting,
+                                     plotting_title=plotting_title)
 
                     if not offers_uncleared_da.empty and bids_uncleared_da.empty:
                         results_pp, offers_uncleared_pp, bids_uncleared_pp, offers_cleared_pp, bids_cleared_pp = \
-                            clearing_pref_prio(db_obj=db_obj,
-                                               config_lem=config_lem,
-                                               offers=offers_uncleared_da,
-                                               bids=bids_uncleared_da,
-                                               type_clearing=type_clearing,
-                                               add_premium=True,
-                                               type_prioritization='sep',
-                                               plotting=plotting,
-                                               plotting_title=f'{plotting_title}; pref. satis.')
+                            clearing_pp(db_obj=db_obj,
+                                        config_lem=config_lem,
+                                        offers=offers_uncleared_da,
+                                        bids=bids_uncleared_da,
+                                        type_clearing=type_clearing,
+                                        add_premium=True,
+                                        type_prioritization='sep',
+                                        plotting=plotting,
+                                        plotting_title=f'{plotting_title}; pref. satis.')
                         positions_cleared = positions_cleared_da.append(results_pp).reset_index(drop=True)
 
                         results_ps, offers_uncleared_ps, bids_uncleared_ps, offers_cleared_ps, bids_cleared_ps = \
-                            clearing_pref_satis(db_obj,
-                                                config_lem,
-                                                offers=offers_uncleared_pp,
-                                                bids=bids_uncleared_pp,
-                                                add_premium=True,
-                                                plotting=plotting,
-                                                plotting_title=plotting_title,
-                                                verbose=verbose)
+                            clearing_cc(db_obj,
+                                        config_lem,
+                                        offers=offers_uncleared_pp,
+                                        bids=bids_uncleared_pp,
+                                        add_premium=True,
+                                        plotting=plotting,
+                                        plotting_title=plotting_title,
+                                        verbose=verbose)
 
                         positions_cleared = positions_cleared.append(results_ps, ignore_index=True)
 
@@ -941,16 +942,16 @@ def market_clearing(db_obj,
     return results_clearing_all, offers, bids, time_clearing_execution
 
 
-def clearing_da(db_obj,
-                config_lem,
-                offers,
-                bids,
-                type_clearing=None,
-                shuffle=True,
-                add_premium=False,
-                plotting=False,
-                plotting_title=None,
-                plotting_ylim=None):
+def clearing_pda(db_obj,
+                 config_lem,
+                 offers,
+                 bids,
+                 type_clearing=None,
+                 shuffle=True,
+                 add_premium=False,
+                 plotting=False,
+                 plotting_title=None,
+                 plotting_ylim=None):
     """
     Function clears offers and bids with a double sided auction
     @param db_obj: DatabaseConnection object
@@ -1125,16 +1126,16 @@ def clearing_da(db_obj,
     return positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared
 
 
-def clearing_pref_satis(db_obj,
-                        config_lem,
-                        offers,
-                        bids,
-                        type_clearing=None,
-                        max_while_executions=None,
-                        add_premium=False,
-                        plotting=False,
-                        plotting_title=None,
-                        verbose=False):
+def clearing_cc(db_obj,
+                config_lem,
+                offers,
+                bids,
+                type_clearing=None,
+                max_while_executions=None,
+                add_premium=False,
+                plotting=False,
+                plotting_title=None,
+                verbose=False):
     """
     Function clears offers and bids according to the preference satisfaction approach. First clearing a standard
     double sided auction, then checking whether all preferences have been satisfied, removing any unsatisfied bids and
@@ -1162,7 +1163,7 @@ def clearing_pref_satis(db_obj,
             offers[offers[db_obj.db_param.QTY_ENERGY] > 0].empty:
         return positions_cleared
     if type_clearing is None:
-        type_clearing = 'da_pref_satis'
+        type_clearing = 'cc'
     if max_while_executions is None:
         max_while_executions = 1000
     try:
@@ -1194,9 +1195,9 @@ def clearing_pref_satis(db_obj,
             bids_cld_q_all_unsatisfied = pd.DataFrame()
             # Clearing
             positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-                clearing_da(db_obj=db_obj, config_lem=config_lem, offers=offers, bids=bids_remaining,
-                            type_clearing=type_clearing, add_premium=add_premium,
-                            plotting=plotting, plotting_title=f'{plotting_title}; pref. satis. #{counter}')
+                clearing_pda(db_obj=db_obj, config_lem=config_lem, offers=offers, bids=bids_remaining,
+                             type_clearing=type_clearing, add_premium=add_premium,
+                             plotting=plotting, plotting_title=f'{plotting_title}; pref. satis. #{counter}')
 
             # Check if any bids and offers were cleared
             if positions_cleared.empty:
@@ -1274,15 +1275,15 @@ def clearing_pref_satis(db_obj,
     return positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared
 
 
-def clearing_pref_prio(db_obj,
-                       config_lem,
-                       offers,
-                       bids,
-                       type_clearing=None,
-                       type_prioritization=None,
-                       add_premium=False,
-                       plotting=False,
-                       plotting_title=None):
+def clearing_pp(db_obj,
+                config_lem,
+                offers,
+                bids,
+                type_clearing=None,
+                type_prioritization=None,
+                add_premium=False,
+                plotting=False,
+                plotting_title=None):
     """
     Function clears offers and bids according to the preference prioritization approach. First, clearing offers with the
     highest energy quality preference and the corresponding bids and then second highest preference and so on.
@@ -1292,7 +1293,7 @@ def clearing_pref_prio(db_obj,
     @param offers: dataframe of various offers consisting of price, quantity, quality, ts_delivery, id and type
     @param bids: dataframe of various bids consisting of price, quantity, quality, ts_delivery, id and type
     @param type_clearing: clearing type that is using clearing da functionality
-    @param type_prioritization: variable to select prioritization type ['n_to_0', '0_to_n', 'sep']
+    @param type_prioritization: variable to select prioritization type ['h2l', 'l2h', 'sep']
     @param add_premium: boolean value to add premium to bid price
     @param plotting: boolean value to plot clearing results
     @param plotting_title: title of plot, ignored if plotting is false
@@ -1304,11 +1305,11 @@ def clearing_pref_prio(db_obj,
     offers_cleared = pd.DataFrame()
     positions_cleared_all = pd.DataFrame()
     if type_prioritization is None:
-        type_prioritization = 'n_to_0'
+        type_prioritization = 'h2l'
     if type_clearing is None:
-        type_clearing = 'da_pref_prio'
+        type_clearing = 'pp'
     if plotting_title is None:
-        plotting_title = 'pref. prio.'
+        plotting_title = 'pp'
     else:
         plotting_title = f'{plotting_title}; pref. prio.'
     # Check whether offers or bids are empty
@@ -1322,7 +1323,7 @@ def clearing_pref_prio(db_obj,
     unique_preferences = np.unique(np.concatenate((offers[db_obj.db_param.QUALITY_ENERGY].unique(),
                                                    bids[db_obj.db_param.QUALITY_ENERGY].unique())))
     preferences_sorted = np.sort(unique_preferences)
-    if type_prioritization == 'n_to_0':
+    if type_prioritization == 'h2l':
         preferences_sorted = np.flip(preferences_sorted)
 
     # Calculate clearing prices for every quality
@@ -1330,12 +1331,12 @@ def clearing_pref_prio(db_obj,
         # Filter bids and offers by preference
         bids_temp = bids[bids[db_obj.db_param.QUALITY_ENERGY] == preference]
         offers_temp = pd.DataFrame()
-        if type_prioritization == 'n_to_0':
+        if type_prioritization == 'h2l':
             if preference == preferences_sorted[0]:
                 offers_temp = offers[offers[db_obj.db_param.QUALITY_ENERGY] == preference]
             else:
                 offers_temp = offers[offers[db_obj.db_param.QUALITY_ENERGY] == preference].append(offers_uncleared)
-        if type_prioritization == '0_to_n':
+        if type_prioritization == 'l2h':
             if preference == preferences_sorted[0]:
                 offers_temp = offers[offers[db_obj.db_param.QUALITY_ENERGY] >= preference]
             else:
@@ -1349,9 +1350,9 @@ def clearing_pref_prio(db_obj,
             continue
         # Calculate clearing prices
         positions_cleared, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared = \
-            clearing_da(db_obj=db_obj, config_lem=config_lem, offers=offers_temp, bids=bids_temp,
-                        type_clearing=type_clearing, add_premium=add_premium,
-                        plotting=plotting, plotting_title=f'{plotting_title} #{preference}')
+            clearing_pda(db_obj=db_obj, config_lem=config_lem, offers=offers_temp, bids=bids_temp,
+                         type_clearing=type_clearing, add_premium=add_premium,
+                         plotting=plotting, plotting_title=f'{plotting_title} #{preference}')
         positions_cleared_all = positions_cleared_all.append(positions_cleared).reset_index(drop=True)
 
     return positions_cleared_all, offers_uncleared, bids_uncleared, offers_cleared, bids_cleared
@@ -1757,10 +1758,9 @@ if __name__ == '__main__':
 
         return user_id_list
 
-    from ruamel.yaml import YAML
 
     # load configuration file
-    with open(f"..\\..\\config_ex_sim.yaml") as config_file:
+    with open(f"..\\..\\code_examples\\sim_0_config.yaml") as config_file:
         config_example = YAML().load(config_file)
     # Create a db connection object
     db_obj_example = db_connection.DatabaseConnection(
@@ -1787,7 +1787,7 @@ if __name__ == '__main__':
     df_positions = create_random_positions(db_obj=db_obj_example,
                                            config=config_example,
                                            ids_user=ids_users_random,
-                                           n_positions=100000,
+                                           n_positions=10000,
                                            verbose=False)
     # Post positions to market
     db_obj_example.post_positions(df_positions)
