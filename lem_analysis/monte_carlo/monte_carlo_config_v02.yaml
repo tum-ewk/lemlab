@@ -68,7 +68,7 @@ lem:
 
   "types_quality": {0: "na",                # energy quality types used for trading and labelling
                     1: "local",
-                    2: "green_local"}
+                    2: "local_green"}
 
   "types_position": {0: 'offer',
                      1: 'bid'}
@@ -159,7 +159,7 @@ retailer:
 ########################################################################################################################
 
 monte_carlo:
-  "n_iterations": 100
+  "n_iterations": 10
   "n_trials": 1
   "n_positions_per_iteration": 200
 

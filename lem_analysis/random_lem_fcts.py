@@ -19,15 +19,15 @@ def insert_random_positions(db_obj, config, positions, n_positions, t_d_range, i
     positions.loc[:, db_obj.db_param.STATUS_POSITION] = int(0)
     positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer', db_obj.db_param.PRICE_ENERGY] = [
         int(x * db_obj.db_param.EURO_TO_SIGMA / 1000)
-        for x in random.choices(np.arange(config['supplier']['price_buy'],
-                                          config['supplier']['price_sell'], 0.0001),
+        for x in random.choices(np.arange(config['retailer']['price_buy'],
+                                          config['retailer']['price_sell'], 0.0001),
                                 k=len(positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer', :]))]
     positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'offer',
                   db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = int(0)
     positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid', db_obj.db_param.PRICE_ENERGY] = [
         int(x * db_obj.db_param.EURO_TO_SIGMA / 1000)
-        for x in random.choices(np.arange(config['supplier']['price_buy'],
-                                          config['supplier']['price_sell'], 0.0001),
+        for x in random.choices(np.arange(config['retailer']['price_buy'],
+                                          config['retailer']['price_sell'], 0.0001),
                                 k=len(positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid', :]))]
     positions.loc[positions[db_obj.db_param.TYPE_POSITION] == 'bid',
                   db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = random.choices(range(0, 50, 1), k=len(

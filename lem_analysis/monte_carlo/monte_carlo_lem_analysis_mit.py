@@ -25,7 +25,7 @@ def run_clearings(db_obj,
                   type_clearing,
                   offers,
                   bids,
-                  ps_max_while_exec=None,
+                  cc_max_while_exec=None,
                   n_test_case=0,
                   verbose=False
                   ):
@@ -36,8 +36,8 @@ def run_clearings(db_obj,
     positions_cleared = pd.DataFrame()
 
     t_clearing_start = round(time.time())
-    if ps_max_while_exec is None:
-        ps_max_while_exec = 100
+    if cc_max_while_exec is None:
+        cc_max_while_exec = 100
 
     # Combinations WITHOUT consideration of quality premium
     if 'pda' == type_clearing:
@@ -77,7 +77,7 @@ def run_clearings(db_obj,
                         config_lem,
                         offers,
                         bids,
-                        max_while_executions=ps_max_while_exec,
+                        max_while_executions=cc_max_while_exec,
                         verbose=verbose)
 
     if 'cc_h2l' == type_clearing:
@@ -86,7 +86,7 @@ def run_clearings(db_obj,
                         config_lem,
                         offers,
                         bids,
-                        max_while_executions=ps_max_while_exec,
+                        max_while_executions=cc_max_while_exec,
                         verbose=verbose)
 
         if not bids_uncleared.empty and not offers_uncleared.empty:
@@ -108,7 +108,7 @@ def run_clearings(db_obj,
                         config_lem,
                         offers,
                         bids,
-                        max_while_executions=ps_max_while_exec,
+                        max_while_executions=cc_max_while_exec,
                         add_premium=True,
                         verbose=verbose)
 
@@ -182,7 +182,7 @@ def _init_db_obj_workers(function, db_dict, config, path_input, path_output):
     function.config = config
     function.path_input = path_input
     function.path_output = path_output
-    function.ps_max_while_exec = config['lem']['ps_max_while_exec']
+    function.cc_max_while_exec = config['lem']['cc_max_while_exec']
 
 
 def single_lem_simulation(test_case_number):
@@ -216,7 +216,7 @@ def single_lem_simulation(test_case_number):
                                                           type_clearing=clearing,
                                                           offers=offers,
                                                           bids=bids,
-                                                          ps_max_while_exec=single_lem_simulation.ps_max_while_exec,
+                                                          cc_max_while_exec=single_lem_simulation.cc_max_while_exec,
                                                           n_test_case=test_case_number,
                                                           verbose=False)
             positions_cleared.reset_index().to_feather(path=f'{single_lem_simulation.path_output}/'
@@ -433,7 +433,7 @@ def plot_mc_results_offers_cleared_95(config,
     handles, labels = axs.get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.5, .03), loc='lower center', frameon=False, ncol=5)
 
-    tikzplotlib.save(f'{path_figure}/mc_results_shares_offers_cleared_95.tex')
+    # tikzplotlib.save(f'{path_figure}/mc_results_shares_offers_cleared_95.tex')
     plt.savefig(f'{path_figure}/mc_results_shares_offers_cleared_95.png')
     plt.show()
 
@@ -537,7 +537,7 @@ def plot_mc_results_bids_cleared_95(config,
     handles, labels = axs.get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.5, .03), loc='lower center', frameon=False, ncol=5)
 
-    tikzplotlib.save(f'{path_figure}/mc_results_shares_bids_cleared_95.tex')
+#    tikzplotlib.save(f'{path_figure}/mc_results_shares_bids_cleared_95.tex')
     plt.savefig(f'{path_figure}/mc_results_shares_bids_cleared_95.png')
     plt.show()
 
@@ -591,7 +591,7 @@ def plot_mc_results_placed_positions_95(config,
     fig.subplots_adjust(wspace=0.2, top=0.95, bottom=0.1, left=0.08, right=.98)
     handles, labels = axs01.get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.5, .03), loc='lower center', frameon=False, ncol=5)
-    tikzplotlib.save(f'{path_figure}/mc_results_placed_positions_95.tex')
+    #tikzplotlib.save(f'{path_figure}/mc_results_placed_positions_95.tex')
     plt.savefig(f'{path_figure}/mc_results_placed_positions_95.png')
     plt.show()
 
@@ -766,7 +766,7 @@ def plot_mc_results_prices_wavg_95(config,
     handles, labels = axs.get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.5, .03), loc='lower center', frameon=False, ncol=7)
 
-    tikzplotlib.save(f'{path_figure}/mc_results_prices_wavg_95.tex')
+    # tikzplotlib.save(f'{path_figure}/mc_results_prices_wavg_95.tex')
     plt.savefig(f'{path_figure}/mc_results_prices_wavg_95.png')
     plt.show()
 
@@ -824,7 +824,7 @@ def plot_mc_results_prices_welfare_qty_traded_95(config,
                               color=dict_plot[type_clearing]['color'], label=type_clearing)
 
     fig.subplots_adjust(wspace=0.2, top=0.95, bottom=0.15, left=0.1, right=.98)
-    tikzplotlib.save(f'{path_figure}/mc_results_qty_traded_price_welfare_95.tex')
+    # tikzplotlib.save(f'{path_figure}/mc_results_qty_traded_price_welfare_95.tex')
     plt.savefig(f'{path_figure}/mc_results_qty_traded_price_welfare_95.png')
     plt.show()
 
@@ -847,7 +847,7 @@ def plot_all_clearing_results(config, results_dict, dict_plot=None):
 if __name__ == '__main__':
     # Run simulations ####################################
     # load configuration file
-    with open(f"monte_carlo_config.yaml") as config_file:
+    with open(f"monte_carlo_config_v02.yaml") as config_file:
         config_mc = yaml.load(config_file, Loader=yaml.FullLoader)
     # Create simulation directory
     t_current = pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')
