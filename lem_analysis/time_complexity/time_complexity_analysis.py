@@ -32,7 +32,6 @@ def run_clearings(db_obj,
     if verbose:
         print(f'\nTest case #{n_test_case}')
 
-    t_clearings = pd.DataFrame()
     positions_cleared = pd.DataFrame()
 
     t_clearing_start = time.time()
@@ -137,9 +136,9 @@ def run_clearings(db_obj,
         positions_cleared = calc_market_position_shares(db_obj, config_lem, offers, bids, positions_cleared)
 
     t_clearing_end = time.time()
-    t_clearings.at[n_test_case, type_clearing] = t_clearing_end - t_clearing_start
+    t_clearing = t_clearing_end - t_clearing_start
 
-    return positions_cleared, t_clearings
+    return positions_cleared, t_clearing
 
 
 if __name__ == '__main__':
@@ -150,22 +149,26 @@ if __name__ == '__main__':
     db_obj = DatabaseConnection(db_dict=config_tc["db_connections"]["database_connection_user"],
                                 lem_config=config_tc['lem'])
 
-    timing_df = pd.DataFrame(index=range(config_tc["time_complexity"]["min_positions"],
-                                         config_tc["time_complexity"]["max_positions"],
-                                         config_tc["time_complexity"]["step_size"]),
-                             columns=config_tc['lem']['types_clearing_ex_ante'].values())
+    timing_dict = dict()
+    timing_dict["config"] = pd.DataFrame(config_tc["time_complexity"], index=[0])
 
-    for n_positions in tqdm(range(config_tc["time_complexity"]["min_positions"],
-                                  config_tc["time_complexity"]["max_positions"],
-                                  config_tc["time_complexity"]["step_size"])):
+    for type_clearing in config_tc['lem']['types_clearing_ex_ante'].values():
+        timing_dict[type_clearing] = pd.DataFrame(index=range(config_tc["time_complexity"]["n_samples"]),
+                                                  columns=range(config_tc["time_complexity"]["min_positions"],
+                                                                config_tc["time_complexity"]["max_positions"],
+                                                                config_tc["time_complexity"]["step_size"]))
+
+    for n_positions in range(config_tc["time_complexity"]["min_positions"],
+                             config_tc["time_complexity"]["max_positions"],
+                             config_tc["time_complexity"]["step_size"]):
+
+        print(f"Number of positions: {n_positions}")
 
         # Create list of random user ids
         ids_users_random = create_user_ids(num=n_positions * 10)
 
-        temp_timing_df = pd.DataFrame(index=range(config_tc["time_complexity"]["n_trials"]),
-                                      columns=config_tc['lem']['types_clearing_ex_ante'].values())
-
-        for trial in range(config_tc["time_complexity"]["n_trials"]):
+        for sample in range(config_tc["time_complexity"]["n_samples"]):
+            print(f"Sample number: {sample}")
 
             # Compute random market positions
             positions = create_random_positions(db_obj=db_obj,
@@ -180,6 +183,8 @@ if __name__ == '__main__':
             bids = _convert_qualities_to_int(db_obj, bids, config_tc['lem']['types_quality'])
             offers = _convert_qualities_to_int(db_obj, offers, config_tc['lem']['types_quality'])
             for type_clearing in config_tc['lem']['types_clearing_ex_ante'].values():
+                print(f"Clearing type: {type_clearing}")
+
                 # run clearings and save to files
                 positions_cleared, t_clearing = run_clearings(db_obj=db_obj,
                                                               config_lem=config_tc['lem'],
@@ -187,14 +192,25 @@ if __name__ == '__main__':
                                                               offers=offers,
                                                               bids=bids,
                                                               cc_max_while_exec=config_tc["lem"]["cc_max_while_exec"],
-                                                              n_test_case=trial,
+                                                              n_test_case=sample,
                                                               verbose=False)
 
-                temp_timing_df.loc[trial, type_clearing] = t_clearing.loc[trial, type_clearing]
+                timing_dict[type_clearing].loc[sample, n_positions] = t_clearing
 
-        timing_df.loc[n_positions, :] = temp_timing_df.mean()
+    t_current_str = pd.Timestamp.now().strftime("%Y-%m-%d-%H-%M-%S")
+    file_name_timing_results = f"{t_current_str}_timing_results"
+    writer = pd.ExcelWriter(f"simulations\\{file_name_timing_results}.xlsx")
+    for key, df in timing_dict.items():
+        df.to_excel(writer, sheet_name=key)
+    writer.save()
 
-    timing_df.plot()
+    excel_file = pd.ExcelFile(f"simulations\\{file_name_timing_results}.xlsx")
+    timing_results_dict = {}
+    for sheet in excel_file.sheet_names:
+        timing_results_dict[sheet] = pd.read_excel(excel_file, sheet, index_col=0)
+
+    for key, value in timing_results_dict.items():
+        if key != "config":
+            timing_results_dict[key].mean().plot(label=key)
+    plt.legend()
     plt.show()
-    t_current = pd.Timestamp.now().strftime("%Y-%m-%d-%H-%M-%S")
-    timing_df.to_csv(f"{t_current}_timing_results.csv")
