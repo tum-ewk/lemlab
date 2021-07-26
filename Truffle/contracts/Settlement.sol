@@ -23,17 +23,18 @@ contract Settlement {
 		require(lib.get_num_meters()==energy_balances[0].length);
 		}
 	// utility implementation for not changing of contract in python
-	function get_horizon(){
+	function get_horizon()public view returns(uint){
 		return lib.get_horizon();
 	}
-	function get_num_meters(){
+	function get_num_meters()public view returns(uint){
 		return lib.get_num_meters();
 	}
+	// pushes the delta readings into the array
 	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
 		Settlement.meter_reading_deltas.push(meter_delta);
 	}
 	// function to push the energy balance to the matrix of energies
-	// The rows index is the ts_delivery and the columns index is the
+	// The rows index is the ts_delivery and the columns index is the number of meter
 	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance) public {
 		uint index = lib.ts_delivery_to_index(e_balance.ts_delivery);
 		e_balance.is_inside=true;
