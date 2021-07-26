@@ -100,12 +100,24 @@ contract LemLib {
     struct energy_balancing {
         string id_meter;
         uint ts_delivery;
-        bytes32 balance_address;
-        uint energy_balancing_positive;
-        uint energy_balancing_negative;
+        uint32 energy_balancing_positive;
+        uint32 energy_balancing_negative;
+        bool is_inside;     // extra variable to check wether the data has already been initialized (non intialized= false)
     }
 
-    uint16 public timestep_size = 15 * 60;       // we use a timestep of 15 minutes, converted to seconds
+    uint constant timestep_size = 15 * 60;                    // we use a timestep of 15 minutes, converted to seconds
+    uint constant num_meters = 20;                            // fixed number of meters_delta
+    uint constant horizon = 7*24*60*60/timestep_size;         // 7 days, divided in 15 minutes intervals
+    //functions for returning the variables
+    function get_horizon()public view returns(uint){
+        return horizon;
+    }
+    function get_num_meters() public view returns(uint){
+        return num_meters;
+    }
+    function get_timestep() public view returns(uint){
+        return timestep_size;
+    }
     //return true if a list of user infos has at least one user with id_user as the argument given in input
     function check_user_id_in_user_infos(string memory id_user, user_info[] memory user_infos) public pure returns(bool) {
         for(uint i = 0; i < user_infos.length; i++) {
@@ -399,7 +411,7 @@ contract LemLib {
     function ts_delivery_to_index(uint ts_delivery) public view returns(uint){
         uint monday_00 = 1626040800;    //reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone
         uint rest = ts_delivery % monday_00;
-        uint index = rest / (15*60);
+        uint index = rest / (timestep_size);
         return index;
     }
     // MATH UTILITY FUNCTIONS

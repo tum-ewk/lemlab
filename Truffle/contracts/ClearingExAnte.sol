@@ -11,37 +11,33 @@ contract ClearingExAnte {
 	every event produces a log at the end of a transaction. this event can be used for debugging(not live).
 	*/
 	event logString(string arg);
-	Lb.LemLib.offer_bid[] public offers;//list of total offers stored. they don't get deleted unless one reset the contract
-	Lb.LemLib.offer_bid[] public bids;//list of total bids stored. they don't get deleted unless one reset the contract
-	Lb.LemLib.user_info[] public user_infos;
-	Lb.LemLib.id_meter[] public id_meters;
+	Lb.LemLib.offer_bid[] offers;//list of total offers stored. they don't get deleted unless one reset the contract
+	Lb.LemLib.offer_bid[] bids;//list of total bids stored. they don't get deleted unless one reset the contract
+	Lb.LemLib.user_info[] user_infos;
+	Lb.LemLib.id_meter[] id_meters;
 	/*list of temporary offers stored. 
 	They are relative to each market clearing and for every market clearing they might be deleted. 
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
-	Lb.LemLib.offer_bid[] public temp_offers;
+	Lb.LemLib.offer_bid[] temp_offers;
 	/*list of temporary bids stored. 
 	They are relative to each market clearing and for every market clearing they might be deleted. 
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
-	Lb.LemLib.offer_bid[] public temp_bids;
-	Lb.LemLib.market_result[] public temp_market_results;//market results for each single clearing(for each specific t_clearing_current)
-	Lb.LemLib.market_result_total[] public market_results_total;//whole market results relative to the whole market clearing(96 loops)
-	string public string_to_log = "";//string used for the event logString
+	Lb.LemLib.offer_bid[] temp_bids;
+	Lb.LemLib.market_result[] temp_market_results;//market results for each single clearing(for each specific t_clearing_current)
+	Lb.LemLib.market_result_total[] market_results_total;//whole market results relative to the whole market clearing(96 loops)
+	string string_to_log = "";//string used for the event logString
 	Param p = new Param();//instance of the contract Param
 	Lb.LemLib lib= new Lb.LemLib();//instance of the contract LemLib(general library with useful functionalities)
 	Sorting srt = new Sorting();//instance of the contract Sorting(useful sorting functionalities)
 
-	mapping(bytes32 => Lb.LemLib.energy_balancing) public energy_balances;
-	string[] public energy_ids;
-	bytes32[] public energy_addresses;
 	//mapping(uint => address) ts_to_address;
 	//uint horizon = 7* 24*60*60 /lib.timestep_size; 	//we use a one week horizon with 15 minutes timesteps
 	//uint[horizon][] public energy_balances;
 
-	Lb.LemLib.meter_reading_delta[] public meter_reading_deltas;
-	//Lb.LemLib.energy_balancing[] public energy_balances;
 
 	constructor() public{
 		ClearingExAnte.clearTempData();//constructor where all the data is cleared.
+
 		}
 
 
@@ -141,30 +137,7 @@ contract ClearingExAnte {
 		ClearingExAnte.id_meters.push(id_meter);
 	}
 
-	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
-		ClearingExAnte.meter_reading_deltas.push(meter_delta);
-	}
-	// function to push the energy balance to the mapping of addresses, the address is calculated with the sum of
-	// the index in that time and the id_meter of that energy balance
-	// then we append the address if it does not exists in the list of addresses, together with the list of
-	// id_meters. The two list then have always the same size, making iterating through them easier and faster
-	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance, uint ts) public {
-		uint index = lib.ts_delivery_to_index(ts);
-		uint id_meter=lib.stringToUint(e_balance.id_meter);
-		e_balance.balance_address = keccak256(abi.encode(index+id_meter));
-		bool element_no_exist=true;
-		//append the address to the list of energy id_meters
-        for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
-            if(energy_address==ClearingExAnte.energy_addresses[i]){
-                element_no_exist=false;
-                break;
-            }
-        }
-        if(element_no_exist){
-            ClearingExAnte.energy_ids.push(e_balance.id_meter);
-			ClearingExAnte.energy_addresses.push(energy_address);
-        }
-	}
+
 	//gets the list of user_infos in the storage of the contract
 	function get_user_infos() public view returns (Lb.LemLib.user_info[] memory) {
 		return ClearingExAnte.user_infos;
@@ -178,7 +151,7 @@ contract ClearingExAnte {
 	// the function can additionally delete all the meters pointing to that user
 	function delete_user(Lb.LemLib.user_info memory user, bool del_meters) public {
 		for(uint i=0; i<ClearingExAnte.user_infos.length; i++){
-			if(keccak256(abi.encode(ClearingExAnte.user_infos[i].id_user))==keccak256(abi.encode(user.id_user))){
+			if(lib.compareStrings(ClearingExAnte.user_infos[i].id_user, user.id_user)){
 				ClearingExAnte.user_infos[i]=ClearingExAnte.user_infos[ClearingExAnte.user_infos.length-1];
 				ClearingExAnte.user_infos.length--;
 				break;
@@ -187,7 +160,7 @@ contract ClearingExAnte {
 		if (del_meters){
 			// same as delete_meter, but in this case we do not break, as there may be many meters for one user
 			for(uint j=0; j<ClearingExAnte.id_meters.length; j++){
-				if(keccak256(abi.encode(ClearingExAnte.id_meters[j].id_user))==keccak256(abi.encode(user.id_user))){
+				if(lib.compareStrings(ClearingExAnte.id_meters[j].id_user, user.id_user)){
 					ClearingExAnte.id_meters[j]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
 					ClearingExAnte.id_meters.length--;
 				}
@@ -197,7 +170,7 @@ contract ClearingExAnte {
 	//function to delete a single meter from the chain
 	function delete_meter(Lb.LemLib.id_meter memory meter) public{
 		for(uint i=0; i<ClearingExAnte.id_meters.length; i++){
-			if(keccak256(abi.encode(ClearingExAnte.id_meters[i].id_meter))==keccak256(abi.encode(meter.id_meter))){
+			if(lib.compareStrings(ClearingExAnte.id_meters[i].id_meter, meter.id_meter)){
 				ClearingExAnte.id_meters[i]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
 				ClearingExAnte.id_meters.length--;
 				break;
@@ -224,33 +197,7 @@ contract ClearingExAnte {
 	    return ClearingExAnte.temp_market_results;
 	}
 
-	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
-		return ClearingExAnte.meter_reading_deltas;
-	}
 
-	//function to return the energy balance of an specific timestep
-	function get_energy_balance_by_ts(uint ts) public view returns (Lb.LemLib.energy_balancing[] memory){
-		uint index = lib.ts_delivery_to_index(ts);
-		uint count_energies=0;
-		// as the two list energy_ids and energy_addresses are the same length and ordered, each id in the list matches
-		// and address in that list
-		for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
-			uint id_meter=lib.stringToUint(ClearingExAnte.energy_ids[i]);
-			if(keccak256(abi.encode(index+id_meter))==ClearingExAnte.energy_addresses[i]){
-					count_energies++;
-			}
-		}
-		uint ind=0;
-		Lb.LemLib.energy_balancing[] memory energies = new Lb.LemLib.energy_balancing[](count_energies);
-		for(uint i=0; i<ClearingExAnte.energy_addresses.length; i++){
-			bytes32 meter= keccak256(abi.encode(index+lib.stringToUint(ClearingExAnte.energy_ids[i])));
-			if(meter==ClearingExAnte.energy_addresses[i]){
-					energies[ind]=ClearingExAnte.energy_balances[meter];
-					ind++;
-			}
-		}
-		return energies;
-	}
 
 	//returns a filtering of the temporary positions(offer/bids). The ones having the ts_delivery == t_clearing_current and t_clearing_current in the limits of the ts_delivery first and last of the user
 	function filteredOffersBids_ts_delivery_user(uint t_clearing_current) public view returns (Lb.LemLib.offer_bid[] memory, Lb.LemLib.offer_bid[] memory){
