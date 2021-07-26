@@ -22,7 +22,13 @@ contract Settlement {
 		require(lib.get_horizon()==energy_balances.length);
 		require(lib.get_num_meters()==energy_balances[0].length);
 		}
-
+	// utility implementation for not changing of contract in python
+	function get_horizon(){
+		return lib.get_horizon();
+	}
+	function get_num_meters(){
+		return lib.get_num_meters();
+	}
 	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
 		Settlement.meter_reading_deltas.push(meter_delta);
 	}
@@ -59,6 +65,27 @@ contract Settlement {
 				results[count]=energy_balances[index][j];
 				count++;
 			}
+		}
+		return results;
+	}
+	function get_energy_balance_all() public returns(Lb.LemLib.energy_balancing[] memory){
+		uint count=0;
+		for(uint i=0; i<lib.get_horizon(); i++){
+			for(uint j=0; j<lib.get_num_meters();j++){
+			if(energy_balances[i][j].is_inside){
+				count++;
+			}
+		}
+		}
+		Lb.LemLib.energy_balancing[] memory results = new Lb.LemLib.energy_balancing[](count);
+		count=0;
+		for(uint i=0; i<lib.get_horizon(); i++){
+			for(uint j=0; j<lib.get_num_meters();j++){
+			if(energy_balances[i][j].is_inside){
+				results[count]=energy_balances[i][j];
+				count++;
+			}
+		}
 		}
 		return results;
 	}

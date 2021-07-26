@@ -93,16 +93,16 @@ def init_random_data():
     tx_hash = bc_obj.push_all_positions(positions, temp, permt)
     bc_obj.wait_for_transact(tx_hash)
 
-    if len(bc_obj.get_open_positions(isOffer=True, returnList=True)) == len(offers_db) and \
-            len(bc_obj.get_open_positions(isOffer=False, returnList=True)) == len(bids_db):
+    if len(bc_obj.get_open_positions(isOffer=True, return_list=True)) == len(offers_db) and \
+            len(bc_obj.get_open_positions(isOffer=False, return_list=True)) == len(bids_db):
         print(f"Pre-setting: stored {len(offers_db)} offers and {len(bids_db)} bids successfully.")
     else:
         print("Pre-setting: different number of offers and bids on blockchain and db")
         print("Pre-setting: offers on db: " + str(len(offers_db)))
         print(
-            "Pre-setting: offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, returnList=True))))
+            "Pre-setting: offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, return_list=True))))
         print("Pre-setting: bids on db: " + str(len(bids_db)))
-        print("Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, returnList=True))))
+        print("Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, return_list=True))))
 
 
 # I get basic variables from the blockchain. these variables are then used in the tests
@@ -130,10 +130,10 @@ def setUp_test(generate_bids_offer, timeout=600):
     bc_obj = BlockchainConnection(bc_dict=config['db_connections']['bc_dict'])
     # blockchain_utils.setUpBlockchain(timeout=timeout)
 
-    offers_blockchain_archive = bc_obj.get_open_positions(isOffer=True, temp=False, returnList=True)
-    bids_blockchain_archive = bc_obj.get_open_positions(isOffer=False, temp=False, returnList=True)
-    open_offers_blockchain = bc_obj.get_open_positions(isOffer=True, temp=True, returnList=True)
-    open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, returnList=True)
+    offers_blockchain_archive = bc_obj.get_open_positions(isOffer=True, temp=False, return_list=True)
+    bids_blockchain_archive = bc_obj.get_open_positions(isOffer=False, temp=False, return_list=True)
+    open_offers_blockchain = bc_obj.get_open_positions(isOffer=True, temp=True, return_list=True)
+    open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, return_list=True)
 
     user_infos_blockchain = bc_obj.get_list_all_users(return_list=True)
     id_meters_blockchain = bc_obj.get_list_all_meters(return_list=True)

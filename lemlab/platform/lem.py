@@ -90,7 +90,7 @@ def market_clearing(db_obj,
                                                 permanent=config_lem['positions_archive'])
             bc_obj.wait_for_transact(tx_hash)
         if verbose_bc:
-            if len(bc_obj.get_open_positions(returnBoth=True, returnList=True)) == len(bids) + len(offers):
+            if len(bc_obj.get_open_positions(returnBoth=True, return_list=True)) == len(bids) + len(offers):
                 print("Check: number of positions on bc and db are equal.")
             else:
                 print("Check: number of positions on bc and db are NOT equal.")

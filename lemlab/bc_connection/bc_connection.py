@@ -202,14 +202,6 @@ class BlockchainConnection:
 
         return df_readings_meter
 
-    #################################################
-    # Functions the meter_delta_readings
-    #################################################
-    def log_meter_readings_delta(self, df_meter_delta):
-        tx_hash = self.functions.push_meter_reading_delta(tuple(df_meter_delta.values)).transact({'from': self.coinbase})
-        return tx_hash
-    def get_meter_readings_delta(self):
-        meter_readings=self.functions.get_meter_reading_delta.call()
     # Functions for mapping the meters to the users and so
     # not possible yet, needs the id market agent
     """def get_mapping_to_user(self):
@@ -240,7 +232,7 @@ class BlockchainConnection:
     # Functions for the market bid submission table
     # Market participants only
 
-    def get_open_positions(self, isOffer=True, returnBoth=False, temp=True, user_id="", returnList=False):
+    def get_open_positions(self, isOffer=True, returnBoth=False, temp=True, user_id="", return_list=False):
         """
 
         Parameters
@@ -249,7 +241,7 @@ class BlockchainConnection:
         returnBoth:bool: to return both the offers and the bids
         temp: if the temporal data or the permanent data are to be retrieved
         user_id: if an specific user_id positions are to be retrieved
-        returnList: if the positions are to be retrieved as a List or Dataframe(default)
+        return_list: if the positions are to be retrieved as a List or Dataframe(default)
 
         Returns
         -------
@@ -265,7 +257,7 @@ class BlockchainConnection:
             position_list = self.functions.getOffers(temp).call() + \
                             self.functions.getBids(temp).call()
 
-        if returnList:
+        if return_list:
             return position_list
         position_df = pd.DataFrame(position_list, columns=bc_param.positions_market_ex_ante_column_names)
         if user_id != "":
@@ -316,8 +308,8 @@ class BlockchainConnection:
         except:
             # exceptions happens when the cost of deletion is too big. then we have to delete chunk by chunk
             limit_to_remove = 500
-            while len(self.get_open_positions(isOffer=True, temp=True, returnList=True)) > 0 or \
-                    len(self.get_open_positions(isOffer=False, temp=True, returnList=True)) > 0 or \
+            while len(self.get_open_positions(isOffer=True, temp=True, return_list=True)) > 0 or \
+                    len(self.get_open_positions(isOffer=False, temp=True, return_list=True)) > 0 or \
                     len(self.functions.getTempMarketResults().call()) > 0 or \
                     len(self.functions.getMarketResultsTotal().call()) > 0:
                 try:
@@ -336,8 +328,8 @@ class BlockchainConnection:
             # exceptions happens when the cost of deletion is too big. then we have to delete chunk by chunk
             # 500 entries are to be removed, in the future, to be replaced by some gas estimation function
             limit_to_remove = 500
-            while len(self.get_open_positions(isOffer=True, temp=False, returnList=True)) > 0 or \
-                    len(self.get_open_positions(isOffer=False, temp=False, returnList=True)) > 0 or \
+            while len(self.get_open_positions(isOffer=True, temp=False, return_list=True)) > 0 or \
+                    len(self.get_open_positions(isOffer=False, temp=False, return_list=True)) > 0 or \
                     len(self.functions.get_user_infos().call()) or \
                     len(self.functions.get_id_meters().call()):
                 try:
@@ -346,6 +338,51 @@ class BlockchainConnection:
                     self.wait_for_transact(tx_hash)
                 except:
                     limit_to_remove -= 50
+
+    """
+    ######################################################################
+    ###############         SETTLEMENT      ##############################
+    This functions are only callable when using the Settlement.sol contract
+    ######################################################################
+    """
+
+    #################################################
+    # Functions the meter_delta_readings
+    #################################################
+    def log_meter_readings_delta(self, df_meter_delta):
+        tx_hash = self.functions.push_meter_readings_delta(tuple(df_meter_delta.values)).transact(
+            {'from': self.coinbase})
+        return tx_hash
+
+    def get_meter_readings_delta(self):
+        return self.functions.get_meter_reading_delta.call()
+
+    def push_energy_balance(self, df_energy_balance):
+        tx_hash = self.functions.push_energy_balance(tuple(df_energy_balance.values)).transact(
+            {'from': self.coinbase})
+        return tx_hash
+
+    def get_energy_balances(self, ts=None, return_list=False):
+        """
+        Rturns the energy balances of the settlement, can be filtered by ts_delivery
+        Parameters
+        ----------
+        ts: ts_delivery, time of delivery
+        return_list: if list or dataframe are returned
+
+        Returns
+        -------
+        A list or dataframe of all the energy_balances
+        """
+        if ts is not None:
+            e_balances = self.functions.get_energy_balance_by_ts(ts).call()
+        else:
+            e_balances = self.functions.get_energy_balance_all().call()
+
+        if return_list:
+            return e_balances
+        else:
+            return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
 
     ###################################################
     # Utility functions
