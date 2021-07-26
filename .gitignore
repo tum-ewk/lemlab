@@ -131,3 +131,5 @@ dmypy.json
 lem_analysis/monte_carlo/simulations/
 
 #lem_analysis/
+
+lem_analysis/time_complexity/simulations/
