@@ -17,7 +17,7 @@ from tqdm import tqdm
 from lem_analysis.random_lem_fcts import create_random_positions, create_user_ids
 from lemlab.db_connection.db_connection import DatabaseConnection
 from lemlab.lem.clearing_ex_ante import clearing_pda, clearing_pp, clearing_cc, calc_market_position_shares, \
-    _convert_qualities_to_int
+     _convert_qualities_to_int
 
 
 def run_clearings(db_obj,
@@ -141,9 +141,9 @@ def run_clearings(db_obj,
     return positions_cleared, t_clearing
 
 
-if __name__ == '__main__':
+def run_time_complexity_analysis(config_file_name):
     # load configuration file
-    with open(f"time_complexity_config.yaml") as config_file:
+    with open(f"{config_file_name}") as config_file:
         config_tc = yaml.load(config_file, Loader=yaml.FullLoader)
 
     db_obj = DatabaseConnection(db_dict=config_tc["db_connections"]["database_connection_user"],
@@ -204,13 +204,44 @@ if __name__ == '__main__':
         df.to_excel(writer, sheet_name=key)
     writer.save()
 
-    excel_file = pd.ExcelFile(f"simulations\\{file_name_timing_results}.xlsx")
-    timing_results_dict = {}
-    for sheet in excel_file.sheet_names:
-        timing_results_dict[sheet] = pd.read_excel(excel_file, sheet, index_col=0)
+    return timing_dict, file_name_timing_results
+
+
+def plot_timing_results(timing_results_dict=None, file_name_timing_results=None):
+    if timing_results_dict is None and file_name_timing_results is not None:
+        timing_results_dict = load_timing_results_from_file(file_name_timing_results)
 
     for key, value in timing_results_dict.items():
         if key != "config":
             timing_results_dict[key].mean().plot(label=key)
     plt.legend()
     plt.show()
+
+
+def load_timing_results_from_file(file_name):
+    excel_file = pd.ExcelFile(f"simulations\\{file_name}")
+    timing_results_dict = {}
+    for sheet in excel_file.sheet_names:
+        timing_results_dict[sheet] = pd.read_excel(excel_file, sheet, index_col=0)
+
+    return timing_results_dict
+
+
+if __name__ == '__main__':
+
+    # Run timing analysis ###
+    config_file_name = "time_complexity_config.yaml"
+    timing_dict, file_name_timing_results = run_time_complexity_analysis(config_file_name=config_file_name)
+
+    # Plot timing results with dictionary ###
+    plot_timing_results(timing_dict)
+
+    # # Plot timing results from file ###
+    # file_name_timing_results_stored = "2021-07-24-17-44-46_timing_results.xlsx"
+    # plot_timing_results(file_name_timing_results=file_name_timing_results_stored)
+    #
+    # # Load and plot only subset of timing results ###
+    # file_name_timing_results_stored = "2021-07-24-17-44-46_timing_results.xlsx"
+    # timing_results = load_timing_results_from_file(file_name_timing_results_stored)
+    # timing_results_subset = {k: timing_results[k] for k in ("pda", "sep", "l2h", "h2l")}
+    # plot_timing_results(timing_results_subset)
