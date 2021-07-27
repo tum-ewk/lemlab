@@ -25,14 +25,13 @@ simulation:
 
 lem:
 #  ################# market settings #####################
-  "types_clearing_ex_ante": {0: "cc"}
-#                              "pda",
-#                             1: "sep",
-#                             2: "h2l",
-#                             3: "l2h",
-#                             4: "cc",
-#                             5: "cc_h2l",
-#                             6: "cc_h2l_pda"}
+  "types_clearing_ex_ante": {0: "pda",
+                             1: "sep",
+                             2: "h2l",
+                             3: "l2h",
+                             4: "cc",
+                             5: "cc_h2l",
+                             6: "cc_h2l_pda"}
   "types_clearing_ex_post": {0: "community"}
                                             # market types to be calculated
                                             # settlement and prosumers observe the first
@@ -161,9 +160,9 @@ retailer:
 
 time_complexity:
   "min_positions": 10
-  "max_positions": 120
-  "step_size": 50
-  "n_samples": 10
+  "max_positions": 10020
+  "step_size": 500
+  "n_samples": 100
 
 
 ########################################################################################################################

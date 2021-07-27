@@ -1,18 +1,8 @@
-import multiprocessing as mp
-import os
-import pickle
-import shutil
 import time
-import traceback
-import tikzplotlib
-from pathlib import Path
-import random
-
-import numpy as np
 import pandas as pd
-import yaml
+import numpy as np
+from ruamel.yaml import YAML
 from matplotlib import pyplot as plt
-from tqdm import tqdm
 
 from lem_analysis.random_lem_fcts import create_random_positions, create_user_ids
 from lemlab.db_connection.db_connection import DatabaseConnection
@@ -143,8 +133,9 @@ def run_clearings(db_obj,
 
 def run_time_complexity_analysis(config_file_name):
     # load configuration file
+    yaml = YAML()
     with open(f"{config_file_name}") as config_file:
-        config_tc = yaml.load(config_file, Loader=yaml.FullLoader)
+        config_tc = yaml.load(config_file)
 
     db_obj = DatabaseConnection(db_dict=config_tc["db_connections"]["database_connection_user"],
                                 lem_config=config_tc['lem'])
