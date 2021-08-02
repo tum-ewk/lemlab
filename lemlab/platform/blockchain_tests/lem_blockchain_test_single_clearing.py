@@ -47,7 +47,6 @@ def test_clearings():
     n_clearings = int(market_horizon / interval_clearing)
     print(f"Number of clearings: {n_clearings}")
 
-
     supplier_bids = False
     uniform_pricing = True
     discriminative_pricing = True

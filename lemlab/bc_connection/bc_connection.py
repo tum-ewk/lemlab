@@ -347,7 +347,7 @@ class BlockchainConnection:
     """
 
     #################################################
-    # Functions the meter_delta_readings
+    # Functions for the Settlement.sol contract
     #################################################
     def log_meter_readings_delta(self, df_meter_delta):
         tx_hash = self.functions.push_meter_readings_delta(tuple(df_meter_delta.values)).transact(
@@ -383,6 +383,11 @@ class BlockchainConnection:
             return e_balances
         else:
             return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
+
+    def determine_balancing_energy(self, list_ts_delivery):
+        tx_hash = self.functions.determine_balancing_energy(list_ts_delivery).transact({'from': self.coinbase})
+        self.wait_for_transact(tx_hash)
+        return self.get_energy_balances()
 
     ###################################################
     # Utility functions

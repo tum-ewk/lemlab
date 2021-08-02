@@ -2,13 +2,11 @@ import pytest
 import pandas as pd
 import time
 
-from lemlab.db_connection import db_param
-from lemlab.platform import lem
-from lemlab.platform.blockchain_tests import test_utils
+from tqdm import tqdm
 
-verbose_bc = True
-verbose_db = True
-shuffle = False
+from lemlab.platform import lem, lem_settlement
+from lemlab.platform.blockchain_tests import test_utils
+from lemlab.platform.lem import _add_supplier_bids, clearing_da
 
 offers_blockchain_archive, bids_blockchain_archive = None, None
 open_offers_blockchain, open_bids_blockchain = None, None
@@ -24,6 +22,11 @@ quality_index = None
 price_index = None
 db_obj = None
 bc_obj = None
+verbose = True
+
+verbose_bc = True
+verbose_db = True
+shuffle = False
 
 
 # this method is executed before all the others, to get useful global variables, needed for the tests
@@ -38,18 +41,10 @@ def setUp():
     db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
 
 
-# results of the full market clearing, the updated balances, on the blockchain and on python are compared
-def test_clearings():
+# this test, tests that for every ts_delivery, a single clearing produces the same results on python and blockchain
+def test_energy_balances():
     # Set clearing time
     t_clearing_start = round(time.time())
-
-    tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
-    bc_obj.wait_for_transact(tx_hash)
-    user_infos_bc_df = bc_obj.get_list_all_users()
-    user_infos_db = pd.concat([db_obj.get_info_user(user_id) for user_id in db_obj.get_list_all_users()])
-    user_infos_db = user_infos_db.sort_values(by=[db_param.ID_USER], ascending=[True])
-    user_infos_bc_df = user_infos_bc_df.sort_values(by=[db_param.ID_USER], ascending=[True])
-    user_infos_db = user_infos_db.set_index(user_infos_bc_df.index)
 
     start = time.time()
     market_results_python, _, _, _, market_results_blockchain = lem.market_clearing(db_obj=db_obj,
@@ -79,6 +74,33 @@ def test_clearings():
         else:
             pd.testing.assert_frame_equal(market_results_blockchain, market_results_python, check_dtype=False)
             assert True
+    ## until now it was same as full market clearing
 
-    # Check market position equality
-    pd.testing.assert_frame_equal(user_infos_db, user_infos_bc_df)
+    temp_market_results_blockchain = bc_obj.functions.getTempMarketResults().call()
+    list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
+    # if there are no market results, determine energies will not work
+    assert (len(temp_market_results_blockchain) > 0)
+    # we then take the meter readings and log them on the blockchain
+    meter_readings = db_obj.get_meter_readings_delta()
+    extra_bool = pd.DataFrame(True, range(len(meter_readings)))
+    meter_readings.join(extra_bool)
+    bc_obj.log_meter_readings_delta(meter_readings)
+
+    balancing_energies_db = db_obj.get_energy_balancing()
+    # for the blockchain
+    balancing_energies_blockchain = bc_obj.determine_balancing_energy(list_ts_delivery)
+    assert (len(balancing_energies_db) == len(balancing_energies_blockchain),
+            "Error, the dimensions of both dataframes arent equal")
+    assert (pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain))
+
+
+def test():
+    list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
+    # for the database
+    lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
+    balancing_energies_db = db_obj.get_energy_balancing()
+    # for the blockchain
+    balancing_energies_blockchain = bc_obj.determine_balancing_energy(list_ts_delivery)
+    assert (len(balancing_energies_db) == len(balancing_energies_blockchain),
+            "Error, the dimensions of both dataframes arent equal")
+    assert (pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain))

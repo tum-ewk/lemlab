@@ -102,7 +102,7 @@ contract LemLib {
         uint ts_delivery;
         uint32 energy_balancing_positive;
         uint32 energy_balancing_negative;
-        bool is_inside;     // extra variable to check wether the data has already been initialized (non intialized= false)
+        bool meter_initialized;     // extra variable to check wether the data has already been initialized (non intialized= false)
     }
 
     uint constant timestep_size = 15 * 60;                    // we use a timestep of 15 minutes, converted to seconds

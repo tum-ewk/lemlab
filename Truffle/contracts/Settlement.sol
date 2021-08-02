@@ -37,9 +37,9 @@ contract Settlement {
 	// The rows index is the ts_delivery and the columns index is the number of meter
 	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance) public {
 		uint index = lib.ts_delivery_to_index(e_balance.ts_delivery);
-		e_balance.is_inside=true;
+		e_balance.meter_initialized=true;
 		for(uint i=0; i<lib.get_num_meters(); i++){
-			if(! energy_balances[index][i].is_inside){
+			if(! energy_balances[index][i].meter_initialized){
 				energy_balances[index][i]=e_balance;
 				break;
 			}
@@ -55,14 +55,14 @@ contract Settlement {
 		uint index = lib.ts_delivery_to_index(ts);
 		uint count=0;
 		for(uint i=0; i<lib.get_num_meters(); i++){
-			if(energy_balances[index][i].is_inside){
+			if(energy_balances[index][i].meter_initialized){
 				count++;
 			}
 		}
 		Lb.LemLib.energy_balancing[] memory results = new Lb.LemLib.energy_balancing[](count);
 		count=0;
 		for(uint j=0; j<lib.get_num_meters(); j++){
-			if(energy_balances[index][j].is_inside){
+			if(energy_balances[index][j].meter_initialized){
 				results[count]=energy_balances[index][j];
 				count++;
 			}
@@ -73,7 +73,7 @@ contract Settlement {
 		uint count=0;
 		for(uint i=0; i<lib.get_horizon(); i++){
 			for(uint j=0; j<lib.get_num_meters();j++){
-			if(energy_balances[i][j].is_inside){
+			if(energy_balances[i][j].meter_initialized){
 				count++;
 			}
 		}
@@ -82,7 +82,7 @@ contract Settlement {
 		count=0;
 		for(uint i=0; i<lib.get_horizon(); i++){
 			for(uint j=0; j<lib.get_num_meters();j++){
-			if(energy_balances[i][j].is_inside){
+			if(energy_balances[i][j].meter_initialized){
 				results[count]=energy_balances[i][j];
 				count++;
 			}
@@ -114,7 +114,7 @@ contract Settlement {
 				Lb.LemLib.energy_balancing memory result_energy;
 				result_energy.id_meter=meters[j].id_meter;
 				result_energy.ts_delivery=list_ts_delivery[i];
-				result_energy.is_inside=false;
+				result_energy.meter_initialized=false;
 				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
 				if(current_actual_energy>=0){
 					result_energy.energy_balancing_positive=uint32(current_actual_energy);
