@@ -40,7 +40,7 @@ def update_complete_meter_readings(db_obj):
         # immediately BEFORE AND AFTER the ts_delivery under consideration
         list_meters_logged = sorted(_get_list_meters_logged(db_obj, ts_delivery))
         # proceed only if all meters have logged values
-        if list_meters == list_meters_logged:
+        if set(list_meters).issubset(set(list_meters_logged)):
             # get cumulative meter readings, before and after
             df_metering_logs_cumulative = db_obj.get_meter_readings_cumulative(
                 t_reading_first=ts_delivery,
@@ -66,9 +66,33 @@ def update_complete_meter_readings(db_obj):
                 db_obj.db_param.STATUS_METER_READINGS_PROCESSED: [1],
                 db_obj.db_param.STATUS_SETTLEMENT_COMPLETE: [0]
             }))
+            calculate_virtual_submeters(db_obj=db_obj, list_ts_delivery=[ts_delivery])
         else:
-            # print(f"    {ts_delivery} cannot be settled yet as not all smart meters have logged their readings yet.")
-            break
+            # get cumulative meter readings, before and after
+            df_metering_logs_cumulative = db_obj.get_meter_readings_cumulative(
+                t_reading_first=ts_delivery,
+                t_reading_last=ts_delivery + 900)
+
+            df_metering_logs_cumulative_now = \
+                df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery + 900
+                                            ].set_index(db_obj.db_param.ID_METER)
+
+            df_metering_logs_cumulative_prev = \
+                df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery
+                                            ].set_index(db_obj.db_param.ID_METER)
+
+            df_metering_logs_cumulative_prev = df_metering_logs_cumulative_prev[
+                df_metering_logs_cumulative_prev.index.isin(
+                    list(df_metering_logs_cumulative_now.index))]
+
+            # calculate energy delta, log deltas to database
+            df_meter_reading_delta = df_metering_logs_cumulative_now - df_metering_logs_cumulative_prev
+            df_meter_reading_delta["t_reading"] = ts_delivery
+            df_meter_reading_delta = df_meter_reading_delta.rename(columns={
+                db_obj.db_param.T_READING: db_obj.db_param.TS_DELIVERY,
+                db_obj.db_param.ENERGY_IN_CUM: db_obj.db_param.ENERGY_IN,
+                db_obj.db_param.ENERGY_OUT_CUM: db_obj.db_param.ENERGY_OUT}).reset_index()
+            db_obj.log_readings_meter_delta(df_meter_reading_delta)
 
 
 def calculate_virtual_submeters(db_obj, list_ts_delivery):
@@ -178,7 +202,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
                 market_results[market_results[db_obj.db_param.ID_USER_OFFER] == entry.loc[db_obj.db_param.ID_METER]
                                ][db_obj.db_param.QTY_ENERGY_TRADED].sum()
 
-            current_balancing_energy = current_market_energy - entry.loc["energy_net"]
+            current_balancing_energy = -1 * (current_market_energy - entry.loc["energy_net"])
             # append result to dict
             dict_bal_ener[db_obj.db_param.ID_METER].append(entry.loc[db_obj.db_param.ID_METER])
             dict_bal_ener[db_obj.db_param.TS_DELIVERY].append(ts_d)
@@ -501,6 +525,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
                 submeter_flows["quality"] == lem_config["types_quality"][quality],
                 db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]] =\
                 submeter_flows["energy_out"]
+
         # add column containing main meter ids
         submeter_flows["id_meter_main"] = submeter_flows["id_meter"]
         submeter_flows = submeter_flows.replace({"id_meter_main": map_submeter_to_main})
@@ -511,6 +536,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         map_meter_main_to_energy_out = dict([(i, a) for i, a in zip(main_meter_flows[db_obj.db_param.ID_METER],
                                                                     main_meter_flows[db_obj.db_param.ENERGY_OUT])])
         submeter_flows = submeter_flows.replace({"energy_out_main_meter": map_meter_main_to_energy_out})
+
         # make quality flows percentages
         for quality in lem_config["types_quality"]:
             submeter_flows[db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]] = \
@@ -520,6 +546,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         final_qualities = submeter_flows.fillna(0).copy()
         final_qualities["temp"] = 1
         final_qualities = final_qualities.groupby("temp").sum()
+
         if len(final_qualities):
             final_qualities.loc[1, "share_quality_na"] += outside_flow
             final_qualities.loc[1, "energy_out_main_meter"] += outside_flow
@@ -533,6 +560,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             else:
                 quality = 0
             dict_results_ex_post[q].append(quality)
+
         ###
         # Determine community price
         ###
@@ -547,7 +575,6 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             price = _lookup(local_share, lookup_supply_ratio, lookup_price) * euro_kwh_to_sigma_wh
             dict_results_ex_post[db_obj.db_param.PRICE_ENERGY_MARKET_
                                  + lem_config['types_pricing_ex_post'][type_pricing]].append(price)
-
     if len(list_ts_delivery) and len(dict_results_ex_post[db_obj.db_param.TS_DELIVERY]):
         db_obj.log_results_market_ex_post(pd.DataFrame(dict_results_ex_post))
 
@@ -740,4 +767,18 @@ def _decomp_float(float_in, return_val="pos", dec_places=0):
 
 
 if __name__ == "__main__":
-    pass
+    from ruamel.yaml import YAML
+    from lemlab.db_connection.db_connection import DatabaseConnection
+    with open(f"./scenario_config.yaml") as config_file:
+        config_example = YAML().load(config_file)
+    # Create a db connection object
+    db_obj_feldtest = DatabaseConnection(
+        db_dict=config_example['db_connections']['database_connection_admin'],
+        lem_config=config_example['lem'])
+    determine_prices_ex_post_markets(db_obj_feldtest, path_simulation="C:/Users/ga59zah/PycharmProjects/lemlab/simulation_results/test_sim",
+                                     lem_config=config_example["lem"],
+                                     list_ts_delivery=[1623919500 + 5 * 900,
+                                                       1623919500 + 6 * 900,
+                                                       1623919500 + 7 * 900,
+                                                       1623919500 + 8 * 900
+                                                       ])

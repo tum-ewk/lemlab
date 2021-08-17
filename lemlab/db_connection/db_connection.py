@@ -72,16 +72,15 @@ class DatabaseConnection:
         list_columns_pk = self.get_table_columns(table_name=self.db_param.NAME_TABLE_INFO_USER, pk_only=True)
         list_columns_not_pk = list(set(list_columns_all) - set(list_columns_pk))
         sql = f"UPDATE {self.db_param.NAME_TABLE_INFO_USER} SET "
-        column = ""
         for column in list_columns_not_pk[:-1]:
             if type(df_user.loc[0, column]) is str:
                 sql += f"{column} = '{df_user.loc[0, column]}', "
             else:
                 sql += f"{column} = {df_user.loc[0, column]}, "
-        if type(df_user.loc[0, column]) is str:
-            sql += f"{list_columns_not_pk[-1]} = '{df_user.loc[0, list_columns_not_pk[-1]]}' "
+        if type(df_user.loc[0, list_columns_not_pk[-1]]) is str:
+            sql += f"{list_columns_not_pk[-1]} = '{df_user.loc[0, list_columns_not_pk[-1]]}'"
         else:
-            sql += f"{list_columns_not_pk[-1]} = {df_user.loc[0, list_columns_not_pk[-1]]} "
+            sql += f"{list_columns_not_pk[-1]} = {df_user.loc[0, list_columns_not_pk[-1]]}"
         sql += f" WHERE {self.db_param.ID_USER} = '{df_user.loc[0, self.db_param.ID_USER]}';"
         self.engine.execute(sql)
 
@@ -185,13 +184,12 @@ class DatabaseConnection:
         list_columns_pk = self.get_table_columns(table_name=self.db_param.NAME_TABLE_INFO_METER, pk_only=True)
         list_columns_not_pk = list(set(list_columns_all) - set(list_columns_pk))
         sql = f"UPDATE {self.db_param.NAME_TABLE_INFO_METER} SET "
-        column = ""
         for column in list_columns_not_pk[:-1]:
             if type(df_meter.loc[0, column]) is str:
                 sql += f"{column} = '{df_meter.loc[0, column]}', "
             else:
                 sql += f"{column} = {df_meter.loc[0, column]}, "
-        if type(df_meter.loc[0, column]) is str:
+        if type(df_meter.loc[0, list_columns_not_pk[-1]]) is str:
             sql += f"{list_columns_not_pk[-1]} = '{df_meter.loc[0, list_columns_not_pk[-1]]}' "
         else:
             sql += f"{list_columns_not_pk[-1]} = {df_meter.loc[0, list_columns_not_pk[-1]]} "
