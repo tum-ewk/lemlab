@@ -169,7 +169,7 @@ class ScenarioExecutor:
 
         self.db_conn_admin.end_connection()
         self.db_conn_user.end_connection()
-        exit()
+        #exit()
 
     def end_execution(self):
         """
@@ -353,7 +353,7 @@ class ScenarioExecutor:
                     self.db_conn_admin.db_param.TYPE_METER: [self.config["lem"]["types_meter"][0]],
                     self.db_conn_admin.db_param.ID_METER_SUPER: [prosumer_config["id_meter_grid"]],
                     self.db_conn_admin.db_param.ID_AGGREGATOR: [agg_id],
-                    self.db_conn_admin.db_param.QUALITY_ENERGY: [plant_config[plant].get("quality")],
+                    self.db_conn_admin.db_param.QUALITY_ENERGY: [plant_config[plant].get("quality", "na")],
                     self.db_conn_admin.db_param.TS_DELIVERY_FIRST: [ts_delivery_first],
                     self.db_conn_admin.db_param.TS_DELIVERY_LAST: [2 ** 31 - 1],
                     self.db_conn_admin.db_param.INFO_ADDITIONAL: [plant_config[plant].get("type")]}
@@ -766,8 +766,6 @@ class ScenarioExecutor:
         # in some simulations, some plant have no physical meters. Their power flow must be implicitly calculated and
         # assigned to a virtual meter.
 
-        lem_settlement.calculate_virtual_submeters(db_obj=self.db_conn_admin,
-                                                   list_ts_delivery=list_ts_delivery_ready)
         # if ex-ante market selected, clear market
         if self.config["lem"]["types_clearing_ex_ante"]:
             clearing_ex_ante.market_clearing(db_obj=self.db_conn_admin,
