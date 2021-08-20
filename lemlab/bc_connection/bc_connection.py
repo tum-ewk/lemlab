@@ -349,9 +349,15 @@ class BlockchainConnection:
     #################################################
     # Functions for the Settlement.sol contract
     #################################################
-    def log_meter_readings_delta(self, df_meter_delta):
+    def log_meter_reading_delta(self, df_meter_delta):
         tx_hash = self.functions.push_meter_readings_delta(tuple(df_meter_delta.values)).transact(
             {'from': self.coinbase})
+        return tx_hash
+
+    def log_meter_readings_delta(self, df_meter_deltas):
+        for _, row in tqdm(df_meter_deltas.iterrows(), total=df_meter_deltas.shape[0]):
+            tx_hash = self.log_meter_reading_delta(row)
+
         return tx_hash
 
     def get_meter_readings_delta(self):

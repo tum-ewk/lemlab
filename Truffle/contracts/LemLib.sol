@@ -104,6 +104,11 @@ contract LemLib {
         uint32 energy_balancing_negative;
         bool meter_initialized;     // extra variable to check wether the data has already been initialized (non intialized= false)
     }
+    struct status_settlement{
+        uint ts_delivery;
+        uint16 status_meter_readings_processed;
+        uint16 status_settlement_complete;
+    }
 
     uint constant timestep_size = 15 * 60;                    // we use a timestep of 15 minutes, converted to seconds
     uint constant num_meters = 20;                            // fixed number of meters_delta

@@ -7,6 +7,7 @@ from tqdm import tqdm
 from lemlab.platform import lem, lem_settlement
 from lemlab.platform.blockchain_tests import test_utils
 from lemlab.platform.lem import _add_supplier_bids, clearing_da
+from lemlab.bc_connection.bc_connection import BlockchainConnection
 
 offers_blockchain_archive, bids_blockchain_archive = None, None
 open_offers_blockchain, open_bids_blockchain = None, None
@@ -42,7 +43,8 @@ def setUp():
 
 
 # this test, tests that for every ts_delivery, a single clearing produces the same results on python and blockchain
-def test_energy_balances():
+def test_market_clearing_full():
+    print("Starting full market clearing test")
     # Set clearing time
     t_clearing_start = round(time.time())
 
@@ -60,6 +62,8 @@ def test_energy_balances():
 
     end = time.time()
 
+    print("Market clearing done in", (end - start) / 60, "minutes")
+
     if shuffle:
         assert len(market_results_python) >= 0.1 * len(market_results_blockchain) or len(
             market_results_blockchain) >= 0.1 * len(market_results_python)
@@ -75,32 +79,35 @@ def test_energy_balances():
             pd.testing.assert_frame_equal(market_results_blockchain, market_results_python, check_dtype=False)
             assert True
     ## until now it was same as full market clearing
-
-    temp_market_results_blockchain = bc_obj.functions.getTempMarketResults().call()
-    list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
-    # if there are no market results, determine energies will not work
-    assert (len(temp_market_results_blockchain) > 0)
-    # we then take the meter readings and log them on the blockchain
-    meter_readings = db_obj.get_meter_readings_delta()
-    extra_bool = pd.DataFrame(True, range(len(meter_readings)))
-    meter_readings.join(extra_bool)
-    bc_obj.log_meter_readings_delta(meter_readings)
-
-    balancing_energies_db = db_obj.get_energy_balancing()
-    # for the blockchain
-    balancing_energies_blockchain = bc_obj.determine_balancing_energy(list_ts_delivery)
-    assert (len(balancing_energies_db) == len(balancing_energies_blockchain),
-            "Error, the dimensions of both dataframes arent equal")
-    assert (pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain))
+    print("Market clearing full test passed and finished")
 
 
-def test():
+def test_balancing_energy():
+    print("Starting balancing energies test")
     list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
     # for the database
     lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
     balancing_energies_db = db_obj.get_energy_balancing()
+    meter_readings_delta = db_obj.get_meter_readings_delta(id_meter='%%grid%%')  # grid=main_meters
+    assert ((not balancing_energies_db.empty and not meter_readings_delta.empty),
+            "Error, there are no meter readings to push")
+
     # for the blockchain
-    balancing_energies_blockchain = bc_obj.determine_balancing_energy(list_ts_delivery)
+    # connect to our contract
+    settlement_dict = config['db_connections']['bc_dict']
+    settlement_dict["contract_name"] = "Settlement"
+    bc_obj_set = BlockchainConnection(settlement_dict)
+    # set the meter readings and determine balancing energy
+    tx_hash = bc_obj_set.log_meter_readings_delta(meter_readings_delta)
+    bc_obj_set.wait_for_transact(tx_hash)
+    balancing_energies_blockchain = bc_obj_set.determine_balancing_energy(list_ts_delivery)
+    # asserts
     assert (len(balancing_energies_db) == len(balancing_energies_blockchain),
-            "Error, the dimensions of both dataframes arent equal")
-    assert (pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain))
+            "Error, the len of both dataframes isnt equal")
+    if balancing_energies_db.empty and balancing_energies_blockchain.empty:
+        print("Both dataframes are empty")
+        assert False
+    else:
+        pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain)
+
+    print("Balancing energies test finished")

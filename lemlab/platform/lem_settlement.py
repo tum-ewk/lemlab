@@ -119,7 +119,8 @@ def update_complete_meter_readings(db_obj):
 
 def determine_balancing_energy(db_obj, list_ts_delivery):
     for ts_d in list_ts_delivery:
-        meter_readings_delta = db_obj.get_main_meter_net_flow(ts_delivery=ts_d)
+        meter_readings_delta = db_obj.get_meter_readings_delta(ts_delivery_first=ts_d, ts_delivery_last=ts_d,
+                                                               id_meter='%%grid%%')     # grid=main_meters
         market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
         for _, entry in meter_readings_delta.iterrows():
             current_meter_id = entry.loc[db_obj.db_param.ID_METER]
@@ -140,7 +141,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
                 db_obj.db_param.ENERGY_BALANCING_NEGATIVE: [_decomp_float(float_in=current_balancing_energy,
                                                                           return_val="neg")]
             }
-            db_obj.log_energy_balancing(pd.DataFrame().from_dict(dict_bal_ener))
+            db_obj.log_energy_balancing(pd.DataFrame(dict_bal_ener))
 
 
 def set_prices_settlement(db_obj, path_simulation, list_ts_delivery):

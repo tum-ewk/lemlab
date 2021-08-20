@@ -103,6 +103,10 @@ positions_market_ex_ante_column_names = [ID_USER, QTY_ENERGY, PRICE_ENERGY, QUAL
 positions_market_ex_ante_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(), BigInteger(),
                                           Text(), BigInteger(), BigInteger, BigInteger(), BigInteger()]
 
+status_settlement_column_names = [TS_DELIVERY, STATUS_METER_READINGS_PROCESSED, STATUS_SETTLEMENT_COMPLETE, ]
+
+status_settlement_column_dtypes = [BigInteger(), BigInteger(), BigInteger()]
+
 
 def map_name_to_dtype(names_column, dtypes_column):
     assert len(names_column) == len(dtypes_column)
