@@ -82,11 +82,53 @@ def test_market_clearing_full():
     print("Market clearing full test passed and finished")
 
 
+def test_simulate_meter_readings_from_market_results():
+    """
+    Read market results from data base
+    Aggregate users with meters for each timestep
+    Randomly change energy traded
+    Push output energy traded into meter_reading_deltas
+    Returns
+    -------
+
+    """
+    # for this to work, we need to have a full market cleared before, so execute the test if you havent
+    market_results, _ = db_obj.get_results_market_ex_ante()
+    print("\nMarket results", market_results)
+    # retrieve list of users and initialize a mapping
+    list_users = list(set(market_results[db_obj.db_param.ID_USER_OFFER]))
+    user2ts_qty = dict([(user, {}) for user in list_users])
+    list_ts_delivery = []   # additionally we save all the timesteps registered
+    # for each user we have a dictionary with each single timestep as key and the total energy traded in that
+    # timestep as value
+    for i, row in market_results.iterrows():
+        if row[db_obj.db_param.TS_DELIVERY] in user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]]:
+            user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] += row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+        else:
+            user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] = row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+
+        list_ts_delivery.append(row[db_obj.db_param.TS_DELIVERY])
+
+    list_ts_delivery = list(set(list_ts_delivery)).sort()   # eliminate dupiclates and sort in ascending order
+
+    print(user2ts_qty)
+    # we now map each user to its meter
+    map_user2meter = db_obj.get_map_to_main_meter()
+    # we filter the rest of the mappings from the dict and get only user 2 meter
+    user2meter = dict([(user, map_user2meter[user]) for user in list_users])
+
+
+"""
+
 def test_balancing_energy():
     print("Starting balancing energies test")
     list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
     # for the database
     lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
+    # TODO: call update_meter_readings from lem_settlement
+
     balancing_energies_db = db_obj.get_energy_balancing()
     meter_readings_delta = db_obj.get_meter_readings_delta(id_meter='%%grid%%')  # grid=main_meters
     assert ((not balancing_energies_db.empty and not meter_readings_delta.empty),
@@ -111,3 +153,5 @@ def test_balancing_energy():
         pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain)
 
     print("Balancing energies test finished")
+    
+"""

@@ -2,6 +2,7 @@ import os
 import time
 import yaml
 import pandas as pd
+import subprocess
 
 from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import lem
@@ -102,7 +103,8 @@ def init_random_data():
         print(
             "Pre-setting: offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, return_list=True))))
         print("Pre-setting: bids on db: " + str(len(bids_db)))
-        print("Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, return_list=True))))
+        print(
+            "Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, return_list=True))))
 
 
 # I get basic variables from the blockchain. these variables are then used in the tests
@@ -157,6 +159,9 @@ def result_test(testname, passed):
     else:
         with pd.ExcelWriter(outfile) as writer:
             res.to_excel(writer)
+
+
+
 
 
 if __name__ == '__main__':

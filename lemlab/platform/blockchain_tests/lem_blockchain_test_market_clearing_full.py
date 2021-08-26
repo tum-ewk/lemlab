@@ -62,8 +62,8 @@ def test_clearings():
                                                                                     bc_test=True)
 
     market_results_python = market_results_python['da']
-
     end = time.time()
+    print("Elapsed time market clearing", (end-start)/60.0, "minutes")
 
     if shuffle:
         assert len(market_results_python) >= 0.1 * len(market_results_blockchain) or len(
