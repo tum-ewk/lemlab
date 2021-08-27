@@ -161,8 +161,111 @@ def result_test(testname, passed):
             res.to_excel(writer)
 
 
+def test_simulate_meter_readings_from_market_results():
+    """
+    Read market results from data base
+    Aggregate users with meters for each timestep
+    Randomly change energy traded
+    Push output energy traded into meter_reading_deltas
+    Returns
+    -------
 
+    """
+    yaml_file = scenario_file_path
+    # load configuration file
+    with open(yaml_file) as config_file:
+        config = yaml.load(config_file, Loader=yaml.FullLoader)
+    # Create a db connection object
+    db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
+                                              lem_config=config['lem'])
+    # Initialize database
+    db_obj.init_db(clear_tables=False, reformat_tables=False)
+
+    # for this to work, we need to have a full market cleared before, so execute the test if you havent
+    market_results, _ = db_obj.get_results_market_ex_ante()
+    print("\nMarket results", market_results)
+    # retrieve list of users and initialize a mapping
+    list_users_offers = list(set(market_results[db_obj.db_param.ID_USER_OFFER]))
+    list_users_bids = list(set(market_results[db_obj.db_param.ID_USER_BID]))
+
+    user_offers2ts_qty = dict([(user, {}) for user in list_users_offers])
+    user_bids2ts_qty = dict([(user, {}) for user in list_users_bids])
+
+    list_ts_delivery = []  # additionally we save all the timesteps registered
+    # for each user we have a dictionary with each single timestep as key and the total energy traded in that
+    # timestep as value
+    for i, row in market_results.iterrows():
+        # for the user offers
+        if row[db_obj.db_param.TS_DELIVERY] in user_offers2ts_qty[row[db_obj.db_param.ID_USER_OFFER]]:
+            user_offers2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] += row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+        else:
+            user_offers2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] = row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+
+        # for the user bids
+        if row[db_obj.db_param.TS_DELIVERY] in user_bids2ts_qty[row[db_obj.db_param.ID_USER_BID]]:
+            user_bids2ts_qty[row[db_obj.db_param.ID_USER_BID]][row[db_obj.db_param.TS_DELIVERY]] -= row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+        else:
+            user_bids2ts_qty[row[db_obj.db_param.ID_USER_BID]][row[db_obj.db_param.TS_DELIVERY]] = row[
+                db_obj.db_param.QTY_ENERGY_TRADED]
+
+        list_ts_delivery.append(row[db_obj.db_param.TS_DELIVERY])
+
+    list_ts_delivery = sorted(list(set(list_ts_delivery)))  # eliminate dupiclates and sort in ascending order
+    # we know aggregate both the user bids and offers
+    list_users_offers.extend(list_users_bids)
+    list_users_offers = list(set(list_users_offers))
+
+    # we now map each user to its meter
+    map_user2meter = db_obj.get_map_to_main_meter()
+    # we filter the rest of the mappings from the dict and get only user 2 meter
+    user2meter = dict([(user, map_user2meter[user]) for user in list_users_offers])
+    print(user2meter)
+
+    assert list_users_offers == list(user2meter.keys()), "The list of users from the market result and the meters " \
+                                                         "does not match "
+
+    meter2ts_qty = dict([(user2meter[user], {}) for user in list_users_offers])
+
+    for user, meter in user2meter.items():
+        # we first extract the current ts in both the users and the offers
+        list_current_ts = list(user_offers2ts_qty[user].keys())
+        list_current_ts.extend(list(user_bids2ts_qty[user].keys()))
+        list_current_ts = list(set(list_current_ts))
+        for ts in list_current_ts:
+            # there may be an offer with such ts but not a bid or viceversa, so we initialize the other to 0
+            try:
+                offer = user_offers2ts_qty[user][ts]
+            except KeyError:
+                offer = 0
+            try:
+                bid = user_bids2ts_qty[user][ts]
+            except KeyError:
+                bid = 0
+            meter2ts_qty[meter][ts] = offer - bid
+
+    print("User offer qty", meter2ts_qty)
+    
+    assert list(meter2ts_qty.keys()) == list(user2meter.values()), "Meters do not match in market and meter tables"
+    delta_meter_readings = pd.DataFrame(columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER,
+                                                 db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
+    for meter in meter2ts_qty:
+        for ts in meter2ts_qty[meter]:
+            if meter2ts_qty[meter][ts] > 0:
+                delta_meter_readings.append({db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
+                                             db_obj.db_param.ENERGY_IN: meter2ts_qty[meter][ts],
+                                             db_obj.db_param.ENERGY_OUT: 0})
+            else:
+                delta_meter_readings.append({db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
+                                             db_obj.db_param.ENERGY_IN: 0,
+                                             db_obj.db_param.ENERGY_OUT: meter2ts_qty[meter][ts]})
+
+    # delta_meter_readings.from_dict(meter2ts_qty)
+    print(delta_meter_readings.head())
 
 
 if __name__ == '__main__':
-    init_random_data()
+    # init_random_data()
+    test_simulate_meter_readings_from_market_results()
