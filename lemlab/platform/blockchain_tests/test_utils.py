@@ -3,10 +3,12 @@ import time
 import yaml
 import pandas as pd
 import subprocess
+import random
 
 from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import lem
 from lemlab.bc_connection.bc_connection import BlockchainConnection
+from lemlab.platform.lem_settlement import determine_balancing_energy
 
 from current_scenario_file import scenario_file_path
 
@@ -167,7 +169,7 @@ def test_simulate_meter_readings_from_market_results():
     Aggregate users with meters for each timestep
     Randomly change energy traded
     Push output energy traded into meter_reading_deltas
-    Returns
+    Returns: None
     -------
 
     """
@@ -183,6 +185,7 @@ def test_simulate_meter_readings_from_market_results():
 
     # for this to work, we need to have a full market cleared before, so execute the test if you havent
     market_results, _ = db_obj.get_results_market_ex_ante()
+    assert not market_results.empty, "Error: The market results are empty"
     print("\nMarket results", market_results)
     # retrieve list of users and initialize a mapping
     list_users_offers = list(set(market_results[db_obj.db_param.ID_USER_OFFER]))
@@ -213,8 +216,8 @@ def test_simulate_meter_readings_from_market_results():
 
         list_ts_delivery.append(row[db_obj.db_param.TS_DELIVERY])
 
-    list_ts_delivery = sorted(list(set(list_ts_delivery)))  # eliminate dupiclates and sort in ascending order
-    # we know aggregate both the user bids and offers
+    list_ts_delivery = sorted(list(set(list_ts_delivery)))  # eliminate duplicates and sort in ascending order
+    # we know aggregate both the users who bid and the ones who offer
     list_users_offers.extend(list_users_bids)
     list_users_offers = list(set(list_users_offers))
 
@@ -222,7 +225,6 @@ def test_simulate_meter_readings_from_market_results():
     map_user2meter = db_obj.get_map_to_main_meter()
     # we filter the rest of the mappings from the dict and get only user 2 meter
     user2meter = dict([(user, map_user2meter[user]) for user in list_users_offers])
-    print(user2meter)
 
     assert list_users_offers == list(user2meter.keys()), "The list of users from the market result and the meters " \
                                                          "does not match "
@@ -230,10 +232,10 @@ def test_simulate_meter_readings_from_market_results():
     meter2ts_qty = dict([(user2meter[user], {}) for user in list_users_offers])
 
     for user, meter in user2meter.items():
-        # we first extract the current ts in both the users and the offers
+        # we first extract the timesteps where the user had an interaction, offer or bid
         list_current_ts = list(user_offers2ts_qty[user].keys())
         list_current_ts.extend(list(user_bids2ts_qty[user].keys()))
-        list_current_ts = list(set(list_current_ts))
+        list_current_ts = list(set(list_current_ts))    # eliminate duplicates
         for ts in list_current_ts:
             # there may be an offer with such ts but not a bid or viceversa, so we initialize the other to 0
             try:
@@ -246,24 +248,30 @@ def test_simulate_meter_readings_from_market_results():
                 bid = 0
             meter2ts_qty[meter][ts] = offer - bid
 
-    print("User offer qty", meter2ts_qty)
-    
     assert list(meter2ts_qty.keys()) == list(user2meter.values()), "Meters do not match in market and meter tables"
+
+    # we create the dataframe for the delta readings and append the information
     delta_meter_readings = pd.DataFrame(columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER,
                                                  db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
     for meter in meter2ts_qty:
         for ts in meter2ts_qty[meter]:
+            rand_factor = random.randrange(-15, 15) / 100.0 + 1.0
             if meter2ts_qty[meter][ts] > 0:
-                delta_meter_readings.append({db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
-                                             db_obj.db_param.ENERGY_IN: meter2ts_qty[meter][ts],
-                                             db_obj.db_param.ENERGY_OUT: 0})
+                delta_meter_readings = delta_meter_readings.append(
+                    {db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
+                     db_obj.db_param.ENERGY_IN: int(round(meter2ts_qty[meter][ts] * rand_factor)),
+                     db_obj.db_param.ENERGY_OUT: 0}, ignore_index=True)
             else:
-                delta_meter_readings.append({db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
-                                             db_obj.db_param.ENERGY_IN: 0,
-                                             db_obj.db_param.ENERGY_OUT: meter2ts_qty[meter][ts]})
+                delta_meter_readings = delta_meter_readings.append(
+                    {db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
+                     db_obj.db_param.ENERGY_IN: 0,
+                     db_obj.db_param.ENERGY_OUT: -int(round(meter2ts_qty[meter][ts] * rand_factor))}, ignore_index=True)
 
-    # delta_meter_readings.from_dict(meter2ts_qty)
-    print(delta_meter_readings.head())
+    print("Delta meter readings", delta_meter_readings.head())
+    db_obj.log_readings_meter_delta(delta_meter_readings)  # log into the database
+
+    # determine the balancing energy
+    determine_balancing_energy(db_obj=db_obj, list_ts_delivery=list_ts_delivery)
 
 
 if __name__ == '__main__':

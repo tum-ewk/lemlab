@@ -119,8 +119,7 @@ def update_complete_meter_readings(db_obj):
 
 def determine_balancing_energy(db_obj, list_ts_delivery):
     for ts_d in list_ts_delivery:
-        meter_readings_delta = db_obj.get_meter_readings_delta(ts_delivery_first=ts_d, ts_delivery_last=ts_d,
-                                                               id_meter='%%grid%%')     # grid=main_meters
+        meter_readings_delta = db_obj.get_meter_readings_delta(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
         market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
         for _, entry in meter_readings_delta.iterrows():
             current_meter_id = entry.loc[db_obj.db_param.ID_METER]
