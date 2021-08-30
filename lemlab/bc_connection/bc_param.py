@@ -107,6 +107,9 @@ status_settlement_column_names = [TS_DELIVERY, STATUS_METER_READINGS_PROCESSED, 
 
 status_settlement_column_dtypes = [BigInteger(), BigInteger(), BigInteger()]
 
+meter_reading_delta_column_names = [TS_DELIVERY, ID_METER, ENERGY_IN, ENERGY_OUT]
+meter_reading_delta_column_dtypes = [BigInteger(), Text(), BigInteger(), BigInteger()]
+
 
 def map_name_to_dtype(names_column, dtypes_column):
     assert len(names_column) == len(dtypes_column)

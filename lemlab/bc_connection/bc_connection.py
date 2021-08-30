@@ -349,6 +349,23 @@ class BlockchainConnection:
     #################################################
     # Functions for the Settlement.sol contract
     #################################################
+    def clear_data(self):
+        try:
+            tx_hash = self.functions.clear_data().transact({'from': self.coinbase})
+            self.wait_for_transact(tx_hash)
+        except:
+            limit_to_remove = 400
+            second_half = 0
+            while limit_to_remove+second_half < 700:
+                try:
+                    tx_hash = self.functions.clear_data_gas_limit(limit_to_remove, second_half).transact(
+                        {'from': self.coinbase})
+                    self.wait_for_transact(tx_hash)
+                except:
+                    limit_to_remove -= 50
+
+                second_half += int(limit_to_remove * 2/3)
+
     def log_meter_reading_delta(self, df_meter_delta):
         tx_hash = self.functions.push_meter_readings_delta(tuple(df_meter_delta.values)).transact(
             {'from': self.coinbase})
@@ -360,8 +377,12 @@ class BlockchainConnection:
 
         return tx_hash
 
-    def get_meter_readings_delta(self):
-        return self.functions.get_meter_reading_delta.call()
+    def get_meter_readings_delta(self, return_list=False):
+        meter_deltas_list = self.functions.get_meter_readings_delta().call()
+        if return_list:
+            return meter_deltas_list
+        else:
+            return pd.DataFrame(meter_deltas_list, columns=bc_param.meter_reading_delta_column_names)
 
     def push_energy_balance(self, df_energy_balance):
         tx_hash = self.functions.push_energy_balance(tuple(df_energy_balance.values)).transact(

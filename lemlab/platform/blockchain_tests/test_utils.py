@@ -108,6 +108,12 @@ def init_random_data():
         print(
             "Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, return_list=True))))
 
+    # clearing for the settlement contract too
+    settlement_dict = config['db_connections']['bc_dict']
+    settlement_dict["contract_name"] = "Settlement"
+    bc_obj_set = BlockchainConnection(settlement_dict)
+    bc_obj_set.clear_data()
+
 
 # I get basic variables from the blockchain. these variables are then used in the tests
 def setUp_test(generate_bids_offer, timeout=600):
@@ -163,7 +169,7 @@ def result_test(testname, passed):
             res.to_excel(writer)
 
 
-def test_simulate_meter_readings_from_market_results():
+def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15):
     """
     Read market results from data base
     Aggregate users with meters for each timestep
@@ -171,22 +177,23 @@ def test_simulate_meter_readings_from_market_results():
     Push output energy traded into meter_reading_deltas
     Returns: None
     -------
-
+    random_variance: how much the energy delta is changed to create some energy balances, if 0, no changes
+    are made at all
     """
-    yaml_file = scenario_file_path
-    # load configuration file
-    with open(yaml_file) as config_file:
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
-    # Create a db connection object
-    db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
-                                              lem_config=config['lem'])
-    # Initialize database
-    db_obj.init_db(clear_tables=False, reformat_tables=False)
+    if db_obj is None:
+        yaml_file = scenario_file_path
+        # load configuration file
+        with open(yaml_file) as config_file:
+            config = yaml.load(config_file, Loader=yaml.FullLoader)
+        # Create a db connection object
+        db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
+                                                  lem_config=config['lem'])
+        # Initialize database
+        db_obj.init_db(clear_tables=False, reformat_tables=False)
 
     # for this to work, we need to have a full market cleared before, so execute the test if you havent
     market_results, _ = db_obj.get_results_market_ex_ante()
     assert not market_results.empty, "Error: The market results are empty"
-    print("\nMarket results", market_results)
     # retrieve list of users and initialize a mapping
     list_users_offers = list(set(market_results[db_obj.db_param.ID_USER_OFFER]))
     list_users_bids = list(set(market_results[db_obj.db_param.ID_USER_BID]))
@@ -235,7 +242,7 @@ def test_simulate_meter_readings_from_market_results():
         # we first extract the timesteps where the user had an interaction, offer or bid
         list_current_ts = list(user_offers2ts_qty[user].keys())
         list_current_ts.extend(list(user_bids2ts_qty[user].keys()))
-        list_current_ts = list(set(list_current_ts))    # eliminate duplicates
+        list_current_ts = list(set(list_current_ts))  # eliminate duplicates
         for ts in list_current_ts:
             # there may be an offer with such ts but not a bid or viceversa, so we initialize the other to 0
             try:
@@ -255,7 +262,10 @@ def test_simulate_meter_readings_from_market_results():
                                                  db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
     for meter in meter2ts_qty:
         for ts in meter2ts_qty[meter]:
-            rand_factor = random.randrange(-15, 15) / 100.0 + 1.0
+            if not rand_percent_var:     # not equal to 0
+                rand_factor = random.randrange(-rand_percent_var, rand_percent_var) / 100.0 + 1.0
+            else:
+                rand_factor = 1
             if meter2ts_qty[meter][ts] > 0:
                 delta_meter_readings = delta_meter_readings.append(
                     {db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
@@ -267,11 +277,9 @@ def test_simulate_meter_readings_from_market_results():
                      db_obj.db_param.ENERGY_IN: 0,
                      db_obj.db_param.ENERGY_OUT: -int(round(meter2ts_qty[meter][ts] * rand_factor))}, ignore_index=True)
 
-    print("Delta meter readings", delta_meter_readings.head())
     db_obj.log_readings_meter_delta(delta_meter_readings)  # log into the database
 
-    # determine the balancing energy
-    determine_balancing_energy(db_obj=db_obj, list_ts_delivery=list_ts_delivery)
+    return list_ts_delivery
 
 
 if __name__ == '__main__':

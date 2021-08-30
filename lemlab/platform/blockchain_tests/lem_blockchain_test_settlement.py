@@ -78,61 +78,21 @@ def test_market_clearing_full():
         else:
             pd.testing.assert_frame_equal(market_results_blockchain, market_results_python, check_dtype=False)
             assert True
-    ## until now it was same as full market clearing
     print("Market clearing full test passed and finished")
 
 
-def test_simulate_meter_readings_from_market_results():
-    """
-    Read market results from data base
-    Aggregate users with meters for each timestep
-    Randomly change energy traded
-    Push output energy traded into meter_reading_deltas
-    Returns
-    -------
-
-    """
-    # for this to work, we need to have a full market cleared before, so execute the test if you havent
-    market_results, _ = db_obj.get_results_market_ex_ante()
-    print("\nMarket results", market_results)
-    # retrieve list of users and initialize a mapping
-    list_users = list(set(market_results[db_obj.db_param.ID_USER_OFFER]))
-    user2ts_qty = dict([(user, {}) for user in list_users])
-    list_ts_delivery = []   # additionally we save all the timesteps registered
-    # for each user we have a dictionary with each single timestep as key and the total energy traded in that
-    # timestep as value
-    for i, row in market_results.iterrows():
-        if row[db_obj.db_param.TS_DELIVERY] in user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]]:
-            user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] += row[
-                db_obj.db_param.QTY_ENERGY_TRADED]
-        else:
-            user2ts_qty[row[db_obj.db_param.ID_USER_OFFER]][row[db_obj.db_param.TS_DELIVERY]] = row[
-                db_obj.db_param.QTY_ENERGY_TRADED]
-
-        list_ts_delivery.append(row[db_obj.db_param.TS_DELIVERY])
-
-    list_ts_delivery = list(set(list_ts_delivery)).sort()   # eliminate dupiclates and sort in ascending order
-
-    print(user2ts_qty)
-    # we now map each user to its meter
-    map_user2meter = db_obj.get_map_to_main_meter()
-    # we filter the rest of the mappings from the dict and get only user 2 meter
-    user2meter = dict([(user, map_user2meter[user]) for user in list_users])
-
-
-"""
-
 def test_balancing_energy():
+    # this test requires first to have a fully completed market clearing stored in both the DB and the Blockchain
     print("Starting balancing energies test")
-    list_ts_delivery = lem_settlement._get_list_ts_delivery_ready(db_obj)
     # for the database
+    list_ts_delivery = test_utils.test_simulate_meter_readings_from_market_results(db_obj=db_obj, rand_percent_var=15)
     lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
-    # TODO: call update_meter_readings from lem_settlement
 
+    meter_readings_delta = db_obj.get_meter_readings_delta()
     balancing_energies_db = db_obj.get_energy_balancing()
-    meter_readings_delta = db_obj.get_meter_readings_delta(id_meter='%%grid%%')  # grid=main_meters
-    assert ((not balancing_energies_db.empty and not meter_readings_delta.empty),
-            "Error, there are no meter readings to push")
+
+    assert not meter_readings_delta.empty, "Error: the delta meter readings are empty"
+    assert not balancing_energies_db.empty, "Error: the balancing energy is empty"
 
     # for the blockchain
     # connect to our contract
@@ -141,8 +101,9 @@ def test_balancing_energy():
     bc_obj_set = BlockchainConnection(settlement_dict)
     # set the meter readings and determine balancing energy
     tx_hash = bc_obj_set.log_meter_readings_delta(meter_readings_delta)
-    bc_obj_set.wait_for_transact(tx_hash)
+    print("Deltas", bc_obj_set.get_meter_readings_delta())
     balancing_energies_blockchain = bc_obj_set.determine_balancing_energy(list_ts_delivery)
+    print("Bal energies",balancing_energies_blockchain)
     # asserts
     assert (len(balancing_energies_db) == len(balancing_energies_blockchain),
             "Error, the len of both dataframes isnt equal")
@@ -153,5 +114,3 @@ def test_balancing_energy():
         pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain)
 
     print("Balancing energies test finished")
-    
-"""

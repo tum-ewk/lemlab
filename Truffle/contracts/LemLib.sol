@@ -408,9 +408,6 @@ contract LemLib {
                 index++;
             }
         }
-        for(uint j=index; j<meters.length-1;j++){
-            delete filtered_results[j];
-        }
         return filtered_results;
     }
     function ts_delivery_to_index(uint ts_delivery) public view returns(uint){
