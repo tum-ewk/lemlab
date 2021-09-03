@@ -240,8 +240,14 @@ def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_v
 
     for user, meter in user2meter.items():
         # we first extract the timesteps where the user had an interaction, offer or bid
-        list_current_ts = list(user_offers2ts_qty[user].keys())
-        list_current_ts.extend(list(user_bids2ts_qty[user].keys()))
+        try:
+            list_current_ts = list(user_offers2ts_qty[user].keys())
+        except KeyError:
+            list_current_ts = []
+        try:
+            list_current_ts.extend(list(user_bids2ts_qty[user].keys()))
+        except KeyError:
+            pass
         list_current_ts = list(set(list_current_ts))  # eliminate duplicates
         for ts in list_current_ts:
             # there may be an offer with such ts but not a bid or viceversa, so we initialize the other to 0
@@ -262,7 +268,7 @@ def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_v
                                                  db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
     for meter in meter2ts_qty:
         for ts in meter2ts_qty[meter]:
-            if not rand_percent_var:     # not equal to 0
+            if not rand_percent_var:  # not equal to 0
                 rand_factor = random.randrange(-rand_percent_var, rand_percent_var) / 100.0 + 1.0
             else:
                 rand_factor = 1

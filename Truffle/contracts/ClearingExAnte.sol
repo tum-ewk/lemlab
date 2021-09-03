@@ -40,7 +40,9 @@ contract ClearingExAnte {
 
 		}
 
-
+	function get_own_address() public view returns(address){
+		return address(this);
+	}
 	function clearTempData() public pure {//function that deletes objects from the contract storage
 	    delete ClearingExAnte.temp_offers;
 		delete ClearingExAnte.temp_bids;

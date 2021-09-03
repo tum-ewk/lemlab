@@ -1,78 +1,62 @@
 pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
 
+
 import "./ClearingExAnte.sol";
 import "./Sorting.sol";
+
 
 contract Settlement {
 
     event logString(string arg);
-    Lb.LemLib lib= new Lb.LemLib();//instance of the contract LemLib(general library with useful functionalities)
-	Sorting srt = new Sorting();//instance of the contract Sorting(useful sorting functionalities)
-    //ClearingExAnte clearing;
-
+    Lb.LemLib lib= new Lb.LemLib();		//instance of the contract LemLib(general library with useful functionalities)
+	Sorting srt = new Sorting();		//instance of the contract Sorting(useful sorting functionalities)
 	ClearingExAnte clearing;
 
-	Lb.LemLib.meter_reading_delta[20] meter_reading_deltas;
+	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672x20 matrix
 	Lb.LemLib.energy_balancing[20][672] energy_balances;		//need to be constant numbers, no variables
 	mapping(bytes32=>uint16) meter2id;
 
-	constructor() public{
+	constructor(address clearing_ex_ante) public{
 		// since the size of the data needs to be hard coded, we check it matches the lib contract
 		require(lib.get_horizon()==energy_balances.length, "The horizon does not match the one specified in the Lib contract");
 		require(lib.get_num_meters()==energy_balances[0].length, "The number of meters specified does not match the ones in the Lib contract");
+		clearing=ClearingExAnte(clearing_ex_ante);
 		}
 	function clear_data() public{
 		delete meter_reading_deltas;
 		delete energy_balances;
 	}
 	function clear_data_gas_limit(uint max_entries, uint sec_half) public {
-		if(sec_half>0){
-			for(uint i = 0; i < max_entries; i++){
+	    	for(uint i = 0; i < max_entries; i++){
+				if(Settlement.meter_reading_deltas.length>0){
+	    			Settlement.meter_reading_deltas.length--;
+				}
 				if(i+sec_half<lib.get_horizon()){
-	    			delete energy_balances[i+sec_half];
+	    			delete Settlement.energy_balances[i+sec_half];
 				}
 			}
-		}
-		else{
-	    	for(uint i = 0; i < max_entries; i++){
-				if(i<lib.get_num_meters()){
-	    			delete meter_reading_deltas[i];
-				}
-				if(i+sec_half<lib.get_horizon()){
-	    			delete energy_balances[i+sec_half];
-				}
-	    	}
-		}
 	}
 	function get_meter2id(string memory meter_id) public view returns(uint){
-		bytes32 meter=bytes32(keccak256(abi.encode(meter_id)));
-		// minus one because we always save starting from 1 to reserve the 0 for uninitialized meters
-		return uint(meter2id[meter]-1);
+		Lb.LemLib.id_meter[] memory id_meters = clearing.get_id_meters();
+		for(uint i=0; i<id_meters.length; i++){
+			if(lib.compareStrings(meter_id, id_meters[i].id_meter)){
+				return i;
+			}
+		}
+		revert("The id_meter provided was not found in the market clearing");
 	}
 	// utility implementation for not changing of contract in python
 	function get_horizon()public view returns(uint){
 		return lib.get_horizon();
 	}
 	function get_num_meters()public view returns(uint){
-		return lib.get_num_meters();
+		return meter_reading_deltas.length;
 	}
 	// pushes the delta readings into the array
 	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
-		bytes32 meter=bytes32(keccak256(abi.encode(meter_delta.id_meter)));
-		if(meter2id[meter]>0){	//meter already pushed before
-			meter_reading_deltas[get_meter2id(meter_delta.id_meter)]=meter_delta;
-		}
-		else{
-			for(uint i=0;i<lib.get_num_meters();i++){
-				if(meter_reading_deltas[i].ts_delivery==0){			//meter not initialized
-					meter2id[meter]=uint16(i+1);
-					meter_reading_deltas[i]=meter_delta;
-					break;
-				}
-			}
-		}
+		Settlement.meter_reading_deltas.push(meter_delta);
 	}
 	// function to push the energy balance to the matrix of energies
 	// The rows index is the ts_delivery and the columns index is the number of meter
@@ -80,25 +64,12 @@ contract Settlement {
 		uint index = lib.ts_delivery_to_index(e_balance.ts_delivery);
 		e_balance.meter_initialized=true;
 		uint index2=get_meter2id(e_balance.id_meter);
+		require(index2!=uint256(-1), "Error, the id_meter could not be found in the market clearing");
 		energy_balances[index][index2]=e_balance;
 
 	}
 	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
-		uint len=0;
-		for(uint i=0; i<lib.get_num_meters(); i++){
-			if(meter_reading_deltas[i].ts_delivery!=0){
-				len++;
-			}
-		}
-		Lb.LemLib.meter_reading_delta[] memory deltas=new Lb.LemLib.meter_reading_delta[](len);
-		uint index=0;
-		for(uint i=0; i<lib.get_num_meters(); i++){
-			if(meter_reading_deltas[i].ts_delivery!=0){
-				deltas[index]=meter_reading_deltas[i];
-				index++;
-			}
-		}
-		return deltas;
+		return Settlement.meter_reading_deltas;
 	}
 
 	//function to return the energy balance of an specific timestep
@@ -140,6 +111,10 @@ contract Settlement {
 		}
 		}
 		return results;
+	}
+
+	function get_market_results() public view returns(Lb.LemLib.market_result[] memory){
+		return clearing.getTempMarketResults();
 	}
 
 	// function to determine the changes in energy for a given list of time steps

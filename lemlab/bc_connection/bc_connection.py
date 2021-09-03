@@ -356,15 +356,14 @@ class BlockchainConnection:
         except:
             limit_to_remove = 400
             second_half = 0
-            while limit_to_remove+second_half < 700:
+            while limit_to_remove + second_half < 900:
                 try:
                     tx_hash = self.functions.clear_data_gas_limit(limit_to_remove, second_half).transact(
                         {'from': self.coinbase})
                     self.wait_for_transact(tx_hash)
+                    second_half += int(limit_to_remove*0.5)
                 except:
                     limit_to_remove -= 50
-
-                second_half += int(limit_to_remove * 2/3)
 
     def log_meter_reading_delta(self, df_meter_delta):
         tx_hash = self.functions.push_meter_readings_delta(tuple(df_meter_delta.values)).transact(
@@ -415,6 +414,13 @@ class BlockchainConnection:
         tx_hash = self.functions.determine_balancing_energy(list_ts_delivery).transact({'from': self.coinbase})
         self.wait_for_transact(tx_hash)
         return self.get_energy_balances()
+
+    def get_market_results(self, return_list=False):
+        market_results_list = self.functions.get_market_results().call()
+        if return_list:
+            return market_results_list
+        else:
+            return pd.DataFrame(market_results_list)
 
     ###################################################
     # Utility functions
