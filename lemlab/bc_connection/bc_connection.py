@@ -416,11 +416,15 @@ class BlockchainConnection:
         return self.get_energy_balances()
 
     def get_market_results(self, return_list=False):
-        market_results_list = self.functions.get_market_results().call()
+        # market_results_list = self.functions.get_market_results().call()
+        market_results_list = self.functions.getTempMarketResults().call()
         if return_list:
             return market_results_list
         else:
             return pd.DataFrame(market_results_list)
+
+    def clearing_add(self):
+        return str(self.functions.get_clearing_add().call())
 
     ###################################################
     # Utility functions

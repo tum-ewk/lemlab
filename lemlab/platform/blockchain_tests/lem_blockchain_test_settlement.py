@@ -88,7 +88,9 @@ def test_balancing_energy():
     list_ts_delivery = test_utils.test_simulate_meter_readings_from_market_results(db_obj=db_obj, rand_percent_var=15)
     lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
 
-    meter_readings_delta = db_obj.get_meter_readings_delta().sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER]).reset_index(drop=True)
+    meter_readings_delta = db_obj.get_meter_readings_delta().sort_values(
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
+    meter_readings_delta = meter_readings_delta.reset_index(drop=True)
     balancing_energies_db = db_obj.get_energy_balancing()
 
     assert not meter_readings_delta.empty, "Error: the delta meter readings are empty"
@@ -102,19 +104,22 @@ def test_balancing_energy():
     # set the meter readings and determine balancing energy
     tx_hash = bc_obj_set.log_meter_readings_delta(meter_readings_delta)
     bc_obj_set.wait_for_transact(tx_hash)
-    delta_meters = bc_obj_set.get_meter_readings_delta().sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER]).reset_index(drop=True)
+    delta_meters = bc_obj_set.get_meter_readings_delta().sort_values(
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
+    delta_meters = delta_meters.reset_index(drop=True)
     print("Deltas", delta_meters)
-    market_results = bc_obj_set.get_market_results(return_list=True)
+    # TODO, tem market results are empty, why ?
+    market_results = bc_obj.get_market_results(return_list=True)
     print("MR", market_results)
+    print("Clearing add", bc_obj_set.clearing_add())
 
-    assert pd.testing.assert_frame_equal(delta_meters, meter_readings_delta), "Error, the delta meter dataframes " \
-                                                                              "arent equal "
+    pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
 
     balancing_energies_blockchain = bc_obj_set.determine_balancing_energy(list_ts_delivery)
     print("Bal energies", balancing_energies_blockchain)
     # asserts
     assert len(balancing_energies_db) == len(balancing_energies_blockchain), \
-            "Error, the len of both dataframes isnt equal"
+        "Error, the len of both dataframes isnt equal"
     if balancing_energies_db.empty and balancing_energies_blockchain.empty:
         print("Both dataframes are empty")
         assert False

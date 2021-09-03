@@ -12,6 +12,7 @@ contract Settlement {
     Lb.LemLib lib= new Lb.LemLib();		//instance of the contract LemLib(general library with useful functionalities)
 	Sorting srt = new Sorting();		//instance of the contract Sorting(useful sorting functionalities)
 	ClearingExAnte clearing;
+	address clearing_add;
 
 	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672x20 matrix
@@ -23,10 +24,14 @@ contract Settlement {
 		require(lib.get_horizon()==energy_balances.length, "The horizon does not match the one specified in the Lib contract");
 		require(lib.get_num_meters()==energy_balances[0].length, "The number of meters specified does not match the ones in the Lib contract");
 		clearing=ClearingExAnte(clearing_ex_ante);
+		clearing_add=clearing_ex_ante;
 		}
 	function clear_data() public{
 		delete meter_reading_deltas;
 		delete energy_balances;
+	}
+	function get_clearing_add() public view returns(address){
+		return clearing_add;
 	}
 	function clear_data_gas_limit(uint max_entries, uint sec_half) public {
 	    	for(uint i = 0; i < max_entries; i++){
