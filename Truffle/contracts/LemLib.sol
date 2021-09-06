@@ -422,9 +422,18 @@ contract LemLib {
     }
     function ts_delivery_to_index(uint ts_delivery) public view returns(uint){
         uint monday_00 = 1626040800;    //reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone
-        uint rest = ts_delivery % monday_00;
-        uint index = rest / (timestep_size);
+        uint dist=horizon*timestep_size;
+        uint div=(ts_delivery-monday_00)/dist;
+        // we transform first the ts into a ts inside a week time starting from monday_00
+        ts_delivery=ts_delivery-(div-1)*dist;
+        // we then calculate the index based on the distance, being monday_00 the 0 up to 672
+        uint rest = ts_delivery%monday_00;
+        uint index = rest / timestep_size;
+        if(index<uint(0) || index>uint(672)){
+            revert("Error in the format of the ts_delivery provided");
+        }
         return index;
+
     }
     // MATH UTILITY FUNCTIONS
     //returns the max element of an array

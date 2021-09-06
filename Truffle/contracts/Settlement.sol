@@ -17,6 +17,8 @@ contract Settlement {
 	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672x20 matrix
 	Lb.LemLib.energy_balancing[20][672] energy_balances;		//need to be constant numbers, no variables
+	mapping(string=>uint32) meter_id2index;
+	bool meters_initialized=false;
 
 
 	constructor(address clearing_ex_ante) public{
@@ -43,14 +45,18 @@ contract Settlement {
 				}
 			}
 	}
-	function get_meter2id(string memory meter_id) public view returns(uint){
+	function initialize_meters() private{
+		// 0 is reserved for un-initialized meters
 		Lb.LemLib.id_meter[] memory id_meters = clearing.get_id_meters();
 		for(uint i=0; i<id_meters.length; i++){
-			if(lib.compareStrings(meter_id, id_meters[i].id_meter)){
-				return i;
-			}
+			meter_id2index[id_meters[i].id_meter]=uint32(i+1);
 		}
-		revert("The id_meter provided was not found in the market clearing");
+		meters_initialized=true;
+	}
+	function get_meter2id(string memory meter_id) public view returns(uint){
+		uint index=uint(meter_id2index[meter_id])-1;
+		require(index!=uint(0),"The id_meter provided was not found in the market clearing");
+		return index;
 	}
 	// utility implementation for not changing of contract in python
 	function get_horizon()public view returns(uint){
@@ -139,6 +145,9 @@ contract Settlement {
 		//Lb.LemLib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(, true);
 		if(list_ts_delivery.length==0){
 			return;
+		}
+		if(!meters_initialized){
+			initialize_meters();
 		}
 		for(uint i=0; i<list_ts_delivery.length; i++){
 			Lb.LemLib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(get_meter_readings_delta(), list_ts_delivery[i]);

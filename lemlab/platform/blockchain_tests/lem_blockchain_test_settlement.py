@@ -110,6 +110,7 @@ def test_balancing_energy():
     print("Deltas", delta_meters)
     market_results = bc_obj_set.get_market_results()
     print("MR", market_results)
+    print("Meters", bc_obj.get_list_all_meters(return_list=True))
 
     pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
 
