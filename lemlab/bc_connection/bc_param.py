@@ -110,6 +110,15 @@ status_settlement_column_dtypes = [BigInteger(), BigInteger(), BigInteger()]
 meter_reading_delta_column_names = [TS_DELIVERY, ID_METER, ENERGY_IN, ENERGY_OUT]
 meter_reading_delta_column_dtypes = [BigInteger(), Text(), BigInteger(), BigInteger()]
 
+market_result_column_names = [ID_USER_OFFER, PRICE_ENERGY_OFFER, NUMBER_POSITION_OFFER, TS_DELIVERY, ID_USER_BID,
+                              PRICE_ENERGY_BID, NUMBER_POSITION_BID, PRICE_ENERGY_MARKET_ + "uniform",
+                              PRICE_ENERGY_MARKET_ + "discriminative", QTY_ENERGY_TRADED, SHARE_QUALITY_ + "NA",
+                              SHARE_QUALITY_ + "local", SHARE_QUALITY_ + "green", SHARE_QUALITY_ + "green_local",
+                              T_CLEARED]
+
+market_result_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(), Text(), BigInteger(), BigInteger(),
+                               BigInteger(), BigInteger(), BigInteger(), BigInteger(), BigInteger(), BigInteger(),
+                               BigInteger(), BigInteger()]
 
 
 def map_name_to_dtype(names_column, dtypes_column):

@@ -33,6 +33,7 @@ class BlockchainConnection:
             self.web3_eth = web3_instance.eth
             self.coinbase = web3_instance.eth.coinbase
             self.functions = self.platform.functions
+            self.contract = bc_dict.get("contract_name")
         except Exception as e:
             print(e)
             assert False
@@ -361,7 +362,7 @@ class BlockchainConnection:
                     tx_hash = self.functions.clear_data_gas_limit(limit_to_remove, second_half).transact(
                         {'from': self.coinbase})
                     self.wait_for_transact(tx_hash)
-                    second_half += int(limit_to_remove*0.5)
+                    second_half += int(limit_to_remove * 0.5)
                 except:
                     limit_to_remove -= 50
 
@@ -404,30 +405,33 @@ class BlockchainConnection:
             e_balances = self.functions.get_energy_balance_by_ts(ts).call()
         else:
             e_balances = self.functions.get_energy_balance_all().call()
-
+        if len(e_balances) == 1 and e_balances[0][1] < 0:
+            # if the ts_delivery is <0 that means that no energy balances were found
+            return []
         if return_list:
             return e_balances
         else:
             return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
 
     def determine_balancing_energy(self, list_ts_delivery):
-        tx_hash = self.functions.determine_balancing_energy(list_ts_delivery).transact({'from': self.coinbase})
+        tx_hash = self.functions.determine_balancing_energy(tuple(list_ts_delivery)).transact({'from': self.coinbase})
         self.wait_for_transact(tx_hash)
         return self.get_energy_balances()
 
     def get_market_results(self, return_list=False):
-        # market_results_list = self.functions.get_market_results().call()
-        market_results_list = self.functions.getTempMarketResults().call()
+        # returns a list of all the  market_results_total from the contract
+        if self.contract == "ClearingExAnte":
+            market_results_list = self.functions.getMarketResultsTotal().call()
+        else:
+            market_results_list = self.functions.get_market_results_total().call()
         if return_list:
             return market_results_list
         else:
-            return pd.DataFrame(market_results_list)
-
-    def clearing_add(self):
-        return str(self.functions.get_clearing_add().call())
+            return pd.DataFrame(market_results_list, columns=bc_param.market_result_column_names)
 
     ###################################################
     # Utility functions
+    ###################################################
     def wait_for_transact(self, tx_hash):
         tx_receipt = self.web3_eth.waitForTransactionReceipt(tx_hash)
         return tx_receipt

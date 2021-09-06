@@ -83,7 +83,7 @@ def test_market_clearing_full():
 
 def test_balancing_energy():
     # this test requires first to have a fully completed market clearing stored in both the DB and the Blockchain
-    print("Starting balancing energies test")
+    print("\nStarting balancing energies test")
     # for the database
     list_ts_delivery = test_utils.test_simulate_meter_readings_from_market_results(db_obj=db_obj, rand_percent_var=15)
     lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
@@ -108,10 +108,8 @@ def test_balancing_energy():
         by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
     delta_meters = delta_meters.reset_index(drop=True)
     print("Deltas", delta_meters)
-    # TODO, tem market results are empty, why ?
-    market_results = bc_obj.get_market_results(return_list=True)
+    market_results = bc_obj_set.get_market_results()
     print("MR", market_results)
-    print("Clearing add", bc_obj_set.clearing_add())
 
     pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
 
@@ -120,8 +118,8 @@ def test_balancing_energy():
     # asserts
     assert len(balancing_energies_db) == len(balancing_energies_blockchain), \
         "Error, the len of both dataframes isnt equal"
-    if balancing_energies_db.empty and balancing_energies_blockchain.empty:
-        print("Both dataframes are empty")
+    if balancing_energies_blockchain.empty:
+        print("Error, blockchain dataframe is empty")
         assert False
     else:
         pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain)

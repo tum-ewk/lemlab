@@ -17,7 +17,7 @@ contract Settlement {
 	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672x20 matrix
 	Lb.LemLib.energy_balancing[20][672] energy_balances;		//need to be constant numbers, no variables
-	mapping(bytes32=>uint16) meter2id;
+
 
 	constructor(address clearing_ex_ante) public{
 		// since the size of the data needs to be hard coded, we check it matches the lib contract
@@ -57,7 +57,7 @@ contract Settlement {
 		return lib.get_horizon();
 	}
 	function get_num_meters()public view returns(uint){
-		return meter_reading_deltas.length;
+		return lib.get_num_meters();
 	}
 	// pushes the delta readings into the array
 	function push_meter_readings_delta(Lb.LemLib.meter_reading_delta memory meter_delta) public {
@@ -69,7 +69,6 @@ contract Settlement {
 		uint index = lib.ts_delivery_to_index(e_balance.ts_delivery);
 		e_balance.meter_initialized=true;
 		uint index2=get_meter2id(e_balance.id_meter);
-		require(index2!=uint256(-1), "Error, the id_meter could not be found in the market clearing");
 		energy_balances[index][index2]=e_balance;
 
 	}
@@ -78,13 +77,19 @@ contract Settlement {
 	}
 
 	//function to return the energy balance of an specific timestep
-	function get_energy_balance_by_ts(uint ts) public returns(Lb.LemLib.energy_balancing[] memory){
+	function get_energy_balance_by_ts(uint ts) public view returns(Lb.LemLib.energy_balancing[] memory){
 		uint index = lib.ts_delivery_to_index(ts);
 		uint count=0;
 		for(uint i=0; i<lib.get_num_meters(); i++){
 			if(energy_balances[index][i].meter_initialized){
 				count++;
 			}
+		}
+		// if we do not find any energies for that time, we just return a one element list with the ts_delivery=-1 to easily sort that later
+		if(count==0){
+			Lb.LemLib.energy_balancing[] memory sample=new Lb.LemLib.energy_balancing[](1);
+			sample[0].ts_delivery=uint(-1);
+			return sample;
 		}
 		Lb.LemLib.energy_balancing[] memory results = new Lb.LemLib.energy_balancing[](count);
 		count=0;
@@ -96,14 +101,19 @@ contract Settlement {
 		}
 		return results;
 	}
-	function get_energy_balance_all() public returns(Lb.LemLib.energy_balancing[] memory){
+	function get_energy_balance_all() public view returns(Lb.LemLib.energy_balancing[] memory){
 		uint count=0;
 		for(uint i=0; i<lib.get_horizon(); i++){
 			for(uint j=0; j<lib.get_num_meters();j++){
-			if(energy_balances[i][j].meter_initialized){
-				count++;
+				if(energy_balances[i][j].meter_initialized){
+					count++;
+				}
 			}
 		}
+		if(count==0){
+			Lb.LemLib.energy_balancing[] memory sample=new Lb.LemLib.energy_balancing[](1);
+			sample[0].ts_delivery=uint(-1);
+			return sample;
 		}
 		Lb.LemLib.energy_balancing[] memory results = new Lb.LemLib.energy_balancing[](count);
 		count=0;
@@ -117,9 +127,9 @@ contract Settlement {
 		}
 		return results;
 	}
-
-	function get_market_results() public view returns(Lb.LemLib.market_result[] memory){
-		return clearing.getTempMarketResults();
+	// we get the total market results, as the temp list is empty
+	function get_market_results_total() public view returns(Lb.LemLib.market_result_total[] memory){
+		return clearing.getMarketResultsTotal();
 	}
 
 	// function to determine the changes in energy for a given list of time steps
@@ -127,9 +137,16 @@ contract Settlement {
 	// Finally, it pushes the results to a mapping according to the timestep
     function determine_balancing_energy(uint[] memory list_ts_delivery) public{
 		//Lb.LemLib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(, true);
+		if(list_ts_delivery.length==0){
+			return;
+		}
 		for(uint i=0; i<list_ts_delivery.length; i++){
 			Lb.LemLib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(get_meter_readings_delta(), list_ts_delivery[i]);
-			Lb.LemLib.market_result[] memory results=lib.market_results_inside_ts_delivery(clearing.getTempMarketResults(), list_ts_delivery[i]);
+			Lb.LemLib.market_result_total[] memory results=lib.market_results_inside_ts_delivery(get_market_results_total(), list_ts_delivery[i]);
+
+			if(meters[0].ts_delivery<uint(0) || results[0].ts_delivery<uint(0)){
+				continue;	// this means that no meters or market_results were found for that ts
+			}
 			for(uint j=0; j<meters.length;j++){
 				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
 				uint current_market_energy=0;
@@ -148,12 +165,12 @@ contract Settlement {
 				result_energy.meter_initialized=false;
 				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
 				if(current_actual_energy>=0){
-					result_energy.energy_balancing_positive=uint32(current_actual_energy);
+					result_energy.energy_balancing_positive=uint128(current_actual_energy);
 					result_energy.energy_balancing_negative=0;
 				}
 				else{
 					result_energy.energy_balancing_positive=0;
-					result_energy.energy_balancing_negative=-uint32(current_actual_energy);
+					result_energy.energy_balancing_negative=-uint128(current_actual_energy);
 				}
 				Settlement.push_energy_balance(result_energy);
 			}

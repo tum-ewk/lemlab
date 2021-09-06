@@ -100,8 +100,8 @@ contract LemLib {
     struct energy_balancing {
         string id_meter;
         uint ts_delivery;
-        uint32 energy_balancing_positive;
-        uint32 energy_balancing_negative;
+        uint128 energy_balancing_positive;
+        uint128 energy_balancing_negative;
         bool meter_initialized;     // extra variable to check wether the data has already been initialized (non intialized= false)
     }
     struct status_settlement{
@@ -372,14 +372,19 @@ contract LemLib {
     }
     //function to get the market results inside a ts_delivery, it first copies the results, then deletes the rest of
     //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
-    function market_results_inside_ts_delivery(market_result[] memory results, uint ts_delivery) public returns(market_result[] memory){
+    function market_results_inside_ts_delivery(market_result_total[] memory results, uint ts_delivery) public returns(market_result_total[] memory){
         uint length_results=0;
         for(uint i=0; i<results.length; i++){
             if(results[i].ts_delivery==ts_delivery){
                 length_results++;
             }
         }
-        market_result[] memory filtered_results= new market_result[](length_results);
+        if(length_results==0){
+            market_result_total[] memory sample=new market_result_total[](1);
+            sample[0].ts_delivery=uint(-1);
+            return sample;
+        }
+        market_result_total[] memory filtered_results= new market_result_total[](length_results);
         uint index=0;
         for(uint i=0; i<results.length; i++){
             if(results[i].ts_delivery==ts_delivery){
@@ -399,6 +404,11 @@ contract LemLib {
             if(meters[i].ts_delivery==ts_delivery){
                 length_meters++;
             }
+        }
+        if(length_meters==0){
+            meter_reading_delta[] memory sample= new meter_reading_delta[](1);
+            sample[0].ts_delivery=uint(-1);
+            return sample;
         }
         meter_reading_delta[] memory filtered_results= new meter_reading_delta[](length_meters);
         uint index=0;
