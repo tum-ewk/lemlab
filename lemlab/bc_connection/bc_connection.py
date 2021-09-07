@@ -27,13 +27,17 @@ class BlockchainConnection:
             contract_address = data['networks'][str(bc_dict.get("network_id"))]['address']
             contract_abi = json.dumps(data['abi'])
             # create contract instance with the coinbase and the contract function
-            self.platform = web3_instance.eth.contract(address=contract_address,
+            self.contract = web3_instance.eth.contract(address=contract_address,
                                                        abi=contract_abi,
                                                        bytecode=contract_bytecode)
             self.web3_eth = web3_instance.eth
             self.coinbase = web3_instance.eth.coinbase
-            self.functions = self.platform.functions
-            self.contract = bc_dict.get("contract_name")
+            self.functions = self.contract.functions
+            self.contract_name = bc_dict.get("contract_name")
+            if self.contract_name == "Settlement":
+                self.events_energy_added = self.contract.events.energy_added.createFilter(fromBlock='latest')
+
+            self.bc_param = bc_param
         except Exception as e:
             print(e)
             assert False
@@ -141,7 +145,7 @@ class BlockchainConnection:
                 main_meters_list.append(dict(meter))
 
         if return_list:
-            return main_meters_list
+            return list(main_meters_list)
         else:
             return pd.DataFrame(main_meters_list, columns=bc_param.info_meter_column_names)
 
@@ -420,7 +424,7 @@ class BlockchainConnection:
 
     def get_market_results(self, return_list=False):
         # returns a list of all the  market_results_total from the contract
-        if self.contract == "ClearingExAnte":
+        if self.contract_name == "ClearingExAnte":
             market_results_list = self.functions.getMarketResultsTotal().call()
         else:
             market_results_list = self.functions.get_market_results_total().call()
@@ -428,6 +432,10 @@ class BlockchainConnection:
             return market_results_list
         else:
             return pd.DataFrame(market_results_list, columns=bc_param.market_result_column_names)
+
+    def get_meter_ids(self):
+        list_id_meters = self.functions.get_all_meters().call()
+        return list_id_meters
 
     ###################################################
     # Utility functions
@@ -442,9 +450,16 @@ class BlockchainConnection:
     def get_log(self, tx_hash):
         tx_receipt = self.wait_for_transact(tx_hash)
         log_to_process = tx_receipt['logs'][0]
-        processed_log = self.platform.events.logString().processLog(log_to_process)
+        processed_log = self.contract.events.logString().processLog(log_to_process)
         log = processed_log['args']['arg']
         return log
+
+    def get_events(self):
+        count = 0
+        for event in self.events_energy_added.get_new_entries():
+            if count % 5 == 0:
+                print(event)
+            count += 1
 
 
 if __name__ == "__main__":

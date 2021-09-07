@@ -288,6 +288,39 @@ def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_v
     return list_ts_delivery
 
 
+def test_ts_uint(ts_delivery):
+
+    timestep_size = int(15 * 60)
+    horizon = int(7 * 24 * 60 * 60 / timestep_size)
+    monday_00 = 1626040800  # reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone
+    dist = horizon * timestep_size + 1
+    div = int((ts_delivery - monday_00) / dist)
+    # we transform first the ts into a ts inside a week time starting from monday_00
+    new_ts = ts_delivery - div * dist
+    # we then calculate the index based on the distance, being monday_00 the 0 up to 672
+    rest = int(new_ts % monday_00)
+    index = int(rest / timestep_size)
+    return index
+
+
 if __name__ == '__main__':
     # init_random_data()
-    test_simulate_meter_readings_from_market_results()
+    # test_simulate_meter_readings_from_market_results()
+    yaml_file = scenario_file_path
+    # load configuration file
+    with open(f"" + yaml_file) as config_file:
+        config = yaml.load(config_file, Loader=yaml.FullLoader)
+
+    # Create a db connection object
+    db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
+                                              lem_config=config['lem'])
+    # Initialize database
+    db_obj.init_db(clear_tables=False, reformat_tables=False)
+
+    delta_meters = db_obj.get_meter_readings_delta()
+    ts_delivery = delta_meters["ts_delivery"].tolist()
+    ts_delivery.append(1626040800 + 7 * 24 * 60 * 60)
+    ts_delivery = list(set(ts_delivery))
+    index = {ts: test_ts_uint(ts) for ts in ts_delivery}
+    print("Ts deliveries", ts_delivery)
+    print("Index", index)

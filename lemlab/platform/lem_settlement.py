@@ -156,6 +156,7 @@ def set_prices_settlement(db_obj, path_simulation, list_ts_delivery):
         price_levies_pos = config_dict["price_energy_levies_positive"] * euro_kwh_to_sigma_wh
         price_levies_neg = config_dict["price_energy_levies_negative"] * euro_kwh_to_sigma_wh
         if config_dict["bal_energy_pricing_mechanism"] == "file":
+            # in this case are all 0.15 por positive and negative
             df_bal_prices = ft.read_dataframe(f"{path_simulation}/platform/balancing_prices.ft"
                                               ).set_index("timestamp")
             price_bal_pos = df_bal_prices.loc[ts_delivery, "price_balancing_energy_positive"] * euro_kwh_to_sigma_wh

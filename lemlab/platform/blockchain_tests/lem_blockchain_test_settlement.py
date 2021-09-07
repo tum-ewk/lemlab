@@ -108,14 +108,31 @@ def test_balancing_energy():
         by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
     delta_meters = delta_meters.reset_index(drop=True)
     print("Deltas", delta_meters)
+    delda_ids = set(delta_meters[db_obj.db_param.ID_METER])
+    delda_ids = sorted(list(delda_ids))
     market_results = bc_obj_set.get_market_results()
     print("MR", market_results)
-    print("Meters", bc_obj.get_list_all_meters(return_list=True))
+    meters = sorted(list(set(bc_obj.get_list_all_meters()[db_obj.db_param.ID_METER].tolist())))
+    print("Meters", meters)
+    print("Deltas ids", delda_ids)
+    assert delda_ids == meters
+    meter_ids = bc_obj_set.get_meter_ids()
+    print("meter ids", meter_ids, len(meter_ids))
 
     pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
 
     balancing_energies_blockchain = bc_obj_set.determine_balancing_energy(list_ts_delivery)
+    balancing_energies_blockchain = balancing_energies_blockchain.drop(columns=[bc_obj_set.bc_param.IS_INSIDE])
+
+    balancing_energies_db = balancing_energies_db.sort_values(by=[bc_obj_set.bc_param.ID_METER,
+                                                                  bc_obj_set.bc_param.TS_DELIVERY])
+    balancing_energies_db = balancing_energies_db.reset_index(drop=True)
+    balancing_energies_blockchain = balancing_energies_blockchain.sort_values(by=[bc_obj_set.bc_param.ID_METER,
+                                                                                  bc_obj_set.bc_param.TS_DELIVERY])
+    balancing_energies_blockchain = balancing_energies_blockchain.reset_index(drop=True)
     print("Bal energies", balancing_energies_blockchain)
+    print("Bal db", balancing_energies_db)
+    bc_obj_set.get_events()
     # asserts
     assert len(balancing_energies_db) == len(balancing_energies_blockchain), \
         "Error, the len of both dataframes isnt equal"
