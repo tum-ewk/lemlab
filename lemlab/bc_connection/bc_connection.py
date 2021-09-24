@@ -376,6 +376,7 @@ class BlockchainConnection:
         return tx_hash
 
     def log_meter_readings_delta(self, df_meter_deltas):
+        print("Logging meter reading deltas")
         for _, row in tqdm(df_meter_deltas.iterrows(), total=df_meter_deltas.shape[0]):
             tx_hash = self.log_meter_reading_delta(row)
 
@@ -415,7 +416,10 @@ class BlockchainConnection:
         if return_list:
             return e_balances
         else:
-            return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
+            # we drop the additional parameter is_inside, which is only used for blockchain purposes
+            bal_energies = pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
+            bal_energies = bal_energies.drop(columns=[bc_param.IS_INSIDE])
+            return bal_energies
 
     def determine_balancing_energy(self, list_ts_delivery):
         tx_hash = self.functions.determine_balancing_energy(tuple(list_ts_delivery)).transact({'from': self.coinbase})

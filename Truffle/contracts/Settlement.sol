@@ -14,10 +14,12 @@ contract Settlement {
 	ClearingExAnte clearing;
 	address clearing_add;
 
+	// array of meter_reading_deltas per timestep, usually around 150 in length
 	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
+	// mapping of every meter_id to its index for storing it in the energy balances
+	mapping(string=>uint) meter2id;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672x20 matrix
 	Lb.LemLib.energy_balancing[20][672] energy_balances;		//need to be constant numbers, no variables
-	mapping(string=>uint) meter_id2index;
 	bool meters_initialized=false;
 
 	constructor(address clearing_ex_ante) public{
@@ -28,6 +30,7 @@ contract Settlement {
 		clearing_add=clearing_ex_ante;
 		}
 	event energy_added(uint ts, uint meter_index);
+	event wrong_number_meters(string log);
 	function clear_data() public{
 		delete meter_reading_deltas;
 		delete energy_balances;
@@ -45,18 +48,23 @@ contract Settlement {
 				}
 			}
 	}
+	// initializes a mapping of each meter to its respective uint id
 	function initialize_meters() private{
 		// 0 is reserved for un-initialized meters
 		Lb.LemLib.id_meter[] memory id_meters = clearing.get_id_meters();
-		for(uint i=0; i<id_meters.length; i++){
-			meter_id2index[id_meters[i].id_meter]=i+1;
+		uint len_meter=id_meters.length;
+		if(len_meter>lib.get_num_meters()){
+			len_meter=lib.get_num_meters();
+			emit wrong_number_meters("\nThe number of meters exceeds 20, meters capped to the first 20");
+		}
+		for(uint i=0; i<len_meter; i++){
+			meter2id[id_meters[i].id_meter]=i+1;
 		}
 		meters_initialized=true;
 	}
+	// returns the id meter, substracting the 1 added before
 	function get_meter2id(string memory meter_id) public view returns(uint){
-		uint index=meter_id2index[meter_id]-1;
-		require(index>=uint(0),"The id_meter provided was not found in the market clearing");
-		return index;
+		return meter2id[meter_id]-1;
 	}
 	// utility implementation for not changing of contract in python
 	function get_horizon()public view returns(uint){
@@ -65,6 +73,7 @@ contract Settlement {
 	function get_num_meters()public view returns(uint){
 		return lib.get_num_meters();
 	}
+	// function to return the int ids of the meter, just used for testing purposes
 	function get_all_meters() public view returns(uint[] memory){
 		Lb.LemLib.id_meter[] memory id_meters = clearing.get_id_meters();
 		uint[] memory meter_ids=new uint[](id_meters.length);
@@ -81,11 +90,14 @@ contract Settlement {
 	// function to push the energy balance to the matrix of energies
 	// The rows index is the ts_delivery and the columns index is the number of meter
 	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance) public {
-		uint index = lib.ts_delivery_to_index(e_balance.ts_delivery);
-		uint index2=get_meter2id(e_balance.id_meter);
+		uint ts = lib.ts_delivery_to_index(e_balance.ts_delivery);
+		uint meter_id=get_meter2id(e_balance.id_meter);
 		e_balance.meter_initialized=true;
-		emit energy_added(index, index2);
-		energy_balances[index][index2]=e_balance;
+		if( ts>672){
+			ts=672;
+			emit energy_added(ts, meter_id);	// emits an energy added event to catch on the tests
+		}
+		energy_balances[ts][meter_id]=e_balance;
 
 	}
 	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
@@ -118,6 +130,7 @@ contract Settlement {
 		}
 		return results;
 	}
+	// same function for geting all the energy balances
 	function get_energy_balance_all() public view returns(Lb.LemLib.energy_balancing[] memory){
 		uint count=0;
 		for(uint i=0; i<lib.get_horizon(); i++){
@@ -168,14 +181,14 @@ contract Settlement {
 				continue;	// this means that no meters or market_results were found for that ts
 			}
 			for(uint j=0; j<meters.length;j++){
-				uint current_actual_energy=meters[j].energy_out-meters[j].energy_in;
-				uint current_market_energy=0;
+				int current_actual_energy=int(meters[j].energy_out)-int(meters[j].energy_in);
+				int current_market_energy=0;
 				for(uint k=0; k<results.length;k++){
 					if(lib.compareStrings(meters[j].id_meter, results[k].id_user_bid)){
-						current_market_energy -=  results[k].qty_energy_traded;
+						current_market_energy -=  int(results[k].qty_energy_traded);
 					}
 					else if(lib.compareStrings(meters[j].id_meter, results[k].id_user_offer)){
-						current_market_energy += results[k].qty_energy_traded;
+						current_market_energy += int(results[k].qty_energy_traded);
 					}
 				}
 				current_actual_energy -= current_market_energy;
@@ -185,12 +198,12 @@ contract Settlement {
 				result_energy.meter_initialized=false;
 				// in a similar way to python´s decompose float function, we store the difference in energy if positive or negative
 				if(current_actual_energy>=0){
-					result_energy.energy_balancing_positive=current_actual_energy;
+					result_energy.energy_balancing_positive=uint(current_actual_energy);
 					result_energy.energy_balancing_negative=0;
 				}
 				else{
 					result_energy.energy_balancing_positive=0;
-					result_energy.energy_balancing_negative=-current_actual_energy;
+					result_energy.energy_balancing_negative=uint(-current_actual_energy);
 				}
 				Settlement.push_energy_balance(result_energy);
 			}

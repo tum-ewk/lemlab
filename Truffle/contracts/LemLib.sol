@@ -430,8 +430,6 @@ contract LemLib {
         // we then calculate the index based on the distance, being monday_00 the 0 up to 672
         uint index = ts_delivery%monday_00;
         index = index / timestep_size;
-        require(index>=uint(0), "Error in the index under 0");
-        require(index<=uint(672), "Error index over 672");
         return index;
 
     }
