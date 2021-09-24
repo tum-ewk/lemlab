@@ -64,7 +64,11 @@ contract Settlement {
 	}
 	// returns the id meter, substracting the 1 added before
 	function get_meter2id(string memory meter_id) public view returns(uint){
-		return meter2id[meter_id]-1;
+		int index=int(meter2id[meter_id])-1;
+		if(index<0){
+			index=19;
+		}
+		return uint(index);
 	}
 	// utility implementation for not changing of contract in python
 	function get_horizon()public view returns(uint){
@@ -93,9 +97,9 @@ contract Settlement {
 		uint ts = lib.ts_delivery_to_index(e_balance.ts_delivery);
 		uint meter_id=get_meter2id(e_balance.id_meter);
 		e_balance.meter_initialized=true;
-		if( ts>672){
-			ts=672;
+		if( ts>671){
 			emit energy_added(ts, meter_id);	// emits an energy added event to catch on the tests
+			ts=671;
 		}
 		energy_balances[ts][meter_id]=e_balance;
 

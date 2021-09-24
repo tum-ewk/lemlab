@@ -459,6 +459,7 @@ class BlockchainConnection:
         return log
 
     def get_events(self):
+        print("Streaming emitted events")
         count = 0
         for event in self.events_energy_added.get_new_entries():
             if count % 5 == 0:
