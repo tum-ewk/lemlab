@@ -417,14 +417,11 @@ class BlockchainConnection:
             return e_balances
         else:
             # we drop the additional parameter is_inside, which is only used for blockchain purposes
-            bal_energies = pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
-            bal_energies = bal_energies.drop(columns=[bc_param.IS_INSIDE])
-            return bal_energies
+            return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
 
     def determine_balancing_energy(self, list_ts_delivery):
         tx_hash = self.functions.determine_balancing_energy(tuple(list_ts_delivery)).transact({'from': self.coinbase})
         self.wait_for_transact(tx_hash)
-        return self.get_energy_balances()
 
     def get_market_results(self, return_list=False):
         # returns a list of all the  market_results_total from the contract
@@ -437,9 +434,6 @@ class BlockchainConnection:
         else:
             return pd.DataFrame(market_results_list, columns=bc_param.market_result_column_names)
 
-    def get_meter_ids(self):
-        list_id_meters = self.functions.get_all_meters().call()
-        return list_id_meters
 
     ###################################################
     # Utility functions

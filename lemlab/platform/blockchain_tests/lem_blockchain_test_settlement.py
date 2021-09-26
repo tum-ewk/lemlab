@@ -120,7 +120,8 @@ def test_balancing_energy():
 
     pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
 
-    balancing_energies_blockchain = bc_obj_set.determine_balancing_energy(list_ts_delivery)
+    bc_obj_set.determine_balancing_energy(list_ts_delivery)
+    balancing_energies_blockchain = bc_obj_set.get_energy_balances()
 
     balancing_energies_db = balancing_energies_db.sort_values(by=[bc_obj_set.bc_param.ID_METER,
                                                                   bc_obj_set.bc_param.TS_DELIVERY])

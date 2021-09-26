@@ -102,7 +102,6 @@ contract LemLib {
         uint ts_delivery;
         uint energy_balancing_positive;
         uint energy_balancing_negative;
-        bool meter_initialized;     // extra variable to check wether the data has already been initialized (non intialized= false)
     }
     struct status_settlement{
         uint ts_delivery;
