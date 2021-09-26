@@ -119,6 +119,11 @@ market_result_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(),
                                BigInteger(), BigInteger(), BigInteger(), BigInteger(), BigInteger(), BigInteger(),
                                BigInteger(), BigInteger()]
 
+prices_settlement_column_names = [TS_DELIVERY, PRICE_ENERGY_BALANCING_POSITIVE, PRICE_ENERGY_BALANCING_NEGATIVE,
+                                  PRICE_ENERGY_LEVIES_POSITIVE, PRICE_ENERGY_LEVIES_NEGATIVE]
+
+prices_settlement_column_dtypes = [BigInteger(), BigInteger, BigInteger(), BigInteger(), BigInteger()]
+
 
 def map_name_to_dtype(names_column, dtypes_column):
     assert len(names_column) == len(dtypes_column)

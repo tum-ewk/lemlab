@@ -103,6 +103,13 @@ contract LemLib {
         uint energy_balancing_positive;
         uint energy_balancing_negative;
     }
+    struct price_settlement{
+        uint ts_delivery;
+        uint price_energy_balancing_positive;
+        uint price_energy_balancing_negative;
+        uint price_energy_levies_positive;
+        uint price_energy_levies_negative;
+    }
     struct status_settlement{
         uint ts_delivery;
         uint16 status_meter_readings_processed;
@@ -112,6 +119,7 @@ contract LemLib {
     uint constant timestep_size = 15 * 60;                    // we use a timestep of 15 minutes, converted to seconds
     uint constant num_meters = 20;                            // fixed number of meters_delta
     uint constant horizon = 7*24*60*60/timestep_size;         // 7 days, divided in 15 minutes intervals
+    uint euro_to_sigma=1e9;
     //functions for returning the variables
     function get_horizon()public view returns(uint){
         return horizon;

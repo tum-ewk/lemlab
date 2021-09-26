@@ -437,6 +437,60 @@ class BlockchainConnection:
         else:
             return pd.DataFrame(market_results_list, columns=bc_param.market_result_column_names)
 
+    def set_prices_settlement(self, list_ts_delivery, price_bal_pos=None, price_bal_neg=None,
+                              price_lev_pos=None, price_lev_neg=None):
+
+        if price_bal_pos is not None:
+            assert price_bal_neg is not None, "Error, please input a value for price_bal_neg"
+            assert price_lev_pos is not None, "Error, please input a value for price_lev_pos"
+            assert price_lev_neg is not None, "Error, please input a value for price_lev_neg"
+
+            if type(price_bal_pos) == list:
+                assert len(list_ts_delivery) == len(price_bal_pos), "Error, please input list of the same size"
+                assert type(price_bal_neg) == list and len(price_bal_neg) == len(
+                    list_ts_delivery), "Error, if given list, all parameters must be lists of the same size"
+                assert type(price_bal_pos) == list and len(price_bal_pos) == len(
+                    list_ts_delivery), "Error, if given list, all parameters must be lists of the same size"
+                assert type(price_lev_neg) == list and len(price_lev_neg) == len(
+                    list_ts_delivery), "Error, if given list, all parameters must be lists of the same size"
+                self.functions.set_prices_settlement_custom_list(tuple(list_ts_delivery), tuple(price_bal_pos),
+                                                                 tuple(price_bal_neg), tuple(price_lev_pos),
+                                                                 tuple(price_lev_neg)).transact({"from": self.coinbase})
+            else:
+                assert type(price_bal_pos) == float and type(price_bal_neg) == float and type(
+                    price_lev_pos) == float and type(price_lev_neg) == float, "Error, all the parameters must be" \
+                                                                              " either all list or all floats"
+                euro_kwh_to_sigma_wh = bc_param.EURO_TO_SIGMA / 1000
+                price_bal_pos = int(price_bal_pos * euro_kwh_to_sigma_wh)
+                price_bal_neg = int(price_bal_neg * euro_kwh_to_sigma_wh)
+                price_lev_pos = int(price_lev_pos * euro_kwh_to_sigma_wh)
+                price_lev_neg = int(price_lev_neg * euro_kwh_to_sigma_wh)
+
+                self.functions.set_prices_settlement_custom(tuple(list_ts_delivery), price_bal_pos,
+                                                            price_bal_neg, price_lev_pos,
+                                                            price_lev_neg).transact({"from": self.coinbase})
+        else:
+            # we set the parameters to their defaults values
+            # price_bal_pos = 0.15
+            # price_bal_neg = 0.15
+            # price_lev_pos = 0
+            # price_lev_neg = 0.18
+            self.functions.set_prices_settlement(tuple(list_ts_delivery)).transact({"from": self.coinbase})
+
+    def get_prices_settlement(self, ts_delivery=None, return_list=False):
+        if ts_delivery is not None:
+            list_prices_settlement = self.functions.get_prices_settlement_by_ts(ts_delivery).call()
+        else:
+            list_prices_settlement = self.functions.get_prices_settlement().call()
+
+        if len(list_prices_settlement) == 1 and list_prices_settlement[0][0] < 0:
+            # this means that no results were found for that ts_delivery or in general none are stored
+            return []
+        if return_list:
+            return list_prices_settlement
+        else:
+            return pd.DataFrame(list_prices_settlement, columns=bc_param.prices_settlement_column_names)
+
     ###################################################
     # Utility functions
     ###################################################

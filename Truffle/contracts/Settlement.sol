@@ -16,17 +16,14 @@ contract Settlement {
 
 	// array of meter_reading_deltas per timestep, usually around 150 in length
 	Lb.LemLib.meter_reading_delta[] meter_reading_deltas;
-	// mapping of every meter_id to its index for storing it in the energy balances
-	mapping(string=>uint) meter2id;
 	// in solitidy, in the definition the order of indexes is inversed, so this is in reality a 672xnum_meters matrix
 	// the number of meters is left uninitialized so they can be pushed and modified
 	Lb.LemLib.energy_balancing[][672] energy_balances;		//need to be constant numbers, no variables
-	bool meters_initialized=false;
+	Lb.LemLib.price_settlement[672] prices_settlement;
 
 	constructor(address clearing_ex_ante) public{
 		// since the size of the data needs to be hard coded, we check it matches the lib contract
 		require(lib.get_horizon()==energy_balances.length, "The horizon does not match the one specified in the Lib contract");
-		//require(lib.get_num_meters()==energy_balances[0].length, "The number of meters specified does not match the ones in the Lib contract");
 		clearing=ClearingExAnte(clearing_ex_ante);
 		clearing_add=clearing_ex_ante;
 		}
@@ -112,7 +109,37 @@ contract Settlement {
 		return results;
 		}
 	}
-
+	function get_prices_settlement_by_ts(uint ts) public view returns(Lb.LemLib.price_settlement memory){
+		uint index = lib.ts_delivery_to_index(ts);
+		return prices_settlement[index];
+	}
+	function get_prices_settlement() public view returns(Lb.LemLib.price_settlement[] memory){
+		uint count=0;
+		for(uint i=0; i<lib.get_horizon(); i++){
+			if(prices_settlement[i].ts_delivery!=0){
+				count++;
+			}
+		}
+		// safe check, if there are no energy balances we cannot create an array with length 0
+		// so we create a single element array with the ts_delivery equal to -1, this will be later
+		// filtered out in the bc_connection python interface
+		if(count==0){
+			Lb.LemLib.price_settlement[] memory sample=new Lb.LemLib.price_settlement[](1);
+			sample[0].ts_delivery=uint(-1);
+			return sample;
+		}
+		else{
+			uint ind=0;
+			Lb.LemLib.price_settlement[] memory prices = new Lb.LemLib.price_settlement[](count);
+			for(uint i=0; i<lib.get_horizon(); i++){
+				if(prices_settlement[i].ts_delivery!=0){
+					prices[ind]=prices_settlement[i];
+					ind++;
+				}
+			}
+		return prices;
+		}
+	}
 	// we get the total market results, as the temp list is empty
 	// this is just for utility to call it from the Settlement contract instance instead of the ClearingExAnte instance
 	function get_market_results_total() public view returns(Lb.LemLib.market_result_total[] memory){
@@ -123,7 +150,6 @@ contract Settlement {
 	// the function calculates the change of energy for every meter inside a specific timestep
 	// Finally, it pushes the results to a mapping according to the timestep
     function determine_balancing_energy(uint[] memory list_ts_delivery) public{
-		//Lb.LemLib.market_result[] memory sorted_results=srt.quick_sort_market_result_ts_delivery(, true);
 		if(list_ts_delivery.length==0){
 			return;
 		}
@@ -131,7 +157,7 @@ contract Settlement {
 			Lb.LemLib.meter_reading_delta[] memory meters=lib.meters_delta_inside_ts_delivery(get_meter_readings_delta(), list_ts_delivery[i]);
 			Lb.LemLib.market_result_total[] memory results=lib.market_results_inside_ts_delivery(get_market_results_total(), list_ts_delivery[i]);
 
-			if(meters[0].ts_delivery<uint(0) || results[0].ts_delivery<uint(0)){
+			if(meters[0].ts_delivery<0 || results[0].ts_delivery<0){
 				continue;	// this means that no meters or market_results were found for that ts
 			}
 			for(uint j=0; j<meters.length;j++){
@@ -161,6 +187,61 @@ contract Settlement {
 				Settlement.push_energy_balance(result_energy);
 			}
 
+		}
+	}
+	// function to set the prices settlement given a list of ts_deliveries and the ints of the prices
+	// the prices are expected to be in an already sigma format
+	function set_prices_settlement_custom(uint[] memory list_ts_delivery, uint price_bal_pos, uint price_bal_neg,
+											uint price_lev_pos, uint price_lev_neg) public{
+		if(list_ts_delivery.length==0){
+			return;
+		}
+		Lb.LemLib.price_settlement memory price;
+		price.price_energy_balancing_positive=price_bal_pos;
+		price.price_energy_balancing_negative=price_bal_neg;
+		price.price_energy_levies_positive=price_lev_pos;
+		price.price_energy_levies_negative=price_lev_neg;
+		for(uint i=0; i<list_ts_delivery.length; i++){
+			price.ts_delivery=list_ts_delivery[i];
+			uint ts = lib.ts_delivery_to_index(list_ts_delivery[i]);
+			prices_settlement[ts]=price;
+		}
+
+	}
+	// same function but set different prices for each timestep
+	function set_prices_settlement_custom_list(uint[] memory list_ts_delivery, uint[] memory price_bal_pos,
+												uint[] memory price_bal_neg, uint[] memory price_lev_pos,
+												uint[] memory price_lev_neg) public{
+		if(list_ts_delivery.length==0){
+			return;
+		}
+		// the current python implemetation already checks if all the list have the same length
+		Lb.LemLib.price_settlement memory price;
+		for(uint i=0; i<list_ts_delivery.length; i++){
+			price.ts_delivery=list_ts_delivery[i];
+			price.price_energy_balancing_positive=price_bal_pos[i];
+			price.price_energy_balancing_negative=price_bal_neg[i];
+			price.price_energy_levies_positive=price_lev_pos[i];
+			price.price_energy_levies_negative=price_lev_neg[i];
+			uint ts = lib.ts_delivery_to_index(list_ts_delivery[i]);
+			prices_settlement[ts]=price;
+		}
+	}
+	// function to set the prices settlement given a list of ts_deliveries, the prices are set to the default
+	// values right now
+	function set_prices_settlement(uint[] memory list_ts_delivery) public{
+		if(list_ts_delivery.length==0){
+			return;
+		}
+		Lb.LemLib.price_settlement memory price;
+		price.price_energy_balancing_positive=15e4;
+		price.price_energy_balancing_negative=15e4;
+		price.price_energy_levies_positive=0;
+		price.price_energy_levies_negative=18e4;
+		for(uint i=0; i<list_ts_delivery.length; i++){
+			price.ts_delivery=list_ts_delivery[i];
+			uint ts = lib.ts_delivery_to_index(list_ts_delivery[i]);
+			prices_settlement[ts]=price;
 		}
 	}
 }
