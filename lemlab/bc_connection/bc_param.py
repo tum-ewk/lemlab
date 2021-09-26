@@ -74,7 +74,6 @@ SHARE_PREFERENCE_BIDS_ = 'share_preference_bids_'
 SHARE_QUALITY_OFFERS_ = 'share_quality_offers_'
 SHARE_PREFERENCE_BIDS_CLEARED_ = 'share_preference_bids_cleared_'
 SHARE_QUALITY_OFFERS_CLEARED_ = 'share_quality_offers_cleared_'
-IS_INSIDE = 'is_inside'
 
 # Conversion factors
 EURO_TO_SIGMA = 1e9  # conversion rate from euro to internal currency sigma
@@ -92,9 +91,9 @@ info_meter_column_names = [ID_METER, ID_USER, ID_METER_SUPER, TYPE_METER, ID_AGG
 
 info_meter_column_dtypes = [Text(), Text(), Text(), Text(), Text(), Text(), BigInteger(), BigInteger(), Text()]
 
-energy_balance_column_names = [ID_METER, TS_DELIVERY, ENERGY_BALANCING_POSITIVE, ENERGY_BALANCING_NEGATIVE, IS_INSIDE]
+energy_balance_column_names = [ID_METER, TS_DELIVERY, ENERGY_BALANCING_POSITIVE, ENERGY_BALANCING_NEGATIVE]
 
-energy_balance_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger(), Boolean()]
+energy_balance_column_dtypes = [Text(), BigInteger(), BigInteger(), BigInteger()]
 
 # in the blockchain, but not in the DataBase, QUALITY_ENERGY is an int
 # representing the quality for faster and easier computation

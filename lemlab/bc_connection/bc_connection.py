@@ -396,7 +396,7 @@ class BlockchainConnection:
 
     def get_energy_balances(self, ts=None, return_list=False):
         """
-        Rturns the energy balances of the settlement, can be filtered by ts_delivery
+        Returns the energy balances of the settlement, can be filtered by ts_delivery
         Parameters
         ----------
         ts: ts_delivery, time of delivery
@@ -419,10 +419,13 @@ class BlockchainConnection:
             # we drop the additional parameter is_inside, which is only used for blockchain purposes
             return pd.DataFrame(e_balances, columns=bc_param.energy_balance_column_names)
 
+    # function to calculate the balancing energy given a list of timesteps for the Settlement contract
     def determine_balancing_energy(self, list_ts_delivery):
         tx_hash = self.functions.determine_balancing_energy(tuple(list_ts_delivery)).transact({'from': self.coinbase})
         self.wait_for_transact(tx_hash)
 
+    # function to get the market results, either from the ClearingExAnte contract or the Settlement contract
+    # both contracts will return the same results
     def get_market_results(self, return_list=False):
         # returns a list of all the  market_results_total from the contract
         if self.contract_name == "ClearingExAnte":
@@ -433,7 +436,6 @@ class BlockchainConnection:
             return market_results_list
         else:
             return pd.DataFrame(market_results_list, columns=bc_param.market_result_column_names)
-
 
     ###################################################
     # Utility functions
@@ -452,6 +454,7 @@ class BlockchainConnection:
         log = processed_log['args']['arg']
         return log
 
+    # prints the streamed events during the execution of a contract, in this case, only for the Settlement contract
     def get_events(self):
         print("Streaming emitted events")
         count = 0

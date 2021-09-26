@@ -30,6 +30,7 @@ contract Settlement {
 		clearing=ClearingExAnte(clearing_ex_ante);
 		clearing_add=clearing_ex_ante;
 		}
+	// events used for debugging and printing
 	event energy_added(uint ts);
 	event wrong_number_meters(string log);
 	function clear_data() public{
@@ -54,6 +55,7 @@ contract Settlement {
 	function get_horizon()public view returns(uint){
 		return lib.get_horizon();
 	}
+	// not used anymore, left for utility
 	function get_num_meters()public view returns(uint){
 		return lib.get_num_meters();
 	}
@@ -66,7 +68,7 @@ contract Settlement {
 	// The rows index is the ts_delivery
 	function push_energy_balance(Lb.LemLib.energy_balancing memory e_balance) public {
 		uint ts = lib.ts_delivery_to_index(e_balance.ts_delivery);
-		if( ts>671){
+		if( ts>671){		// safe check for debugging, technically, the ts_index should never pass 671
 			emit energy_added(ts);	// emits an energy added event to catch on the tests
 			ts=671;
 		}
@@ -90,6 +92,9 @@ contract Settlement {
 		for(uint i=0; i<lib.get_horizon(); i++){
 			count += energy_balances[i].length;
 		}
+		// safe check, if there are no energy balances we cannot create an array with length 0
+		// so we create a single element array with the ts_delivery equal to -1, this will be later
+		// filtered out in the bc_connection python interface
 		if(count==0){
 			Lb.LemLib.energy_balancing[] memory sample=new Lb.LemLib.energy_balancing[](1);
 			sample[0].ts_delivery=uint(-1);
@@ -109,6 +114,7 @@ contract Settlement {
 	}
 
 	// we get the total market results, as the temp list is empty
+	// this is just for utility to call it from the Settlement contract instance instead of the ClearingExAnte instance
 	function get_market_results_total() public view returns(Lb.LemLib.market_result_total[] memory){
 		return clearing.getMarketResultsTotal();
 	}

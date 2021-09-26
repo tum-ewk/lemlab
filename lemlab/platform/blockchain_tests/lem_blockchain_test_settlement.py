@@ -104,22 +104,22 @@ def test_balancing_energy():
     # set the meter readings and determine balancing energy
     tx_hash = bc_obj_set.log_meter_readings_delta(meter_readings_delta)
     bc_obj_set.wait_for_transact(tx_hash)
+
+    # first, assert that the meter_reading_detlas are the same
     delta_meters = bc_obj_set.get_meter_readings_delta().sort_values(
         by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
     delta_meters = delta_meters.reset_index(drop=True)
-    print("Delta meter readings", delta_meters)
+    pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
+
+    # assert that the meters are the same in both
     delda_ids = set(delta_meters[db_obj.db_param.ID_METER])
     delda_ids = sorted(list(delda_ids))
     market_results = bc_obj_set.get_market_results()
-    print("Market Results", market_results)
     meters = sorted(list(set(bc_obj.get_list_all_meters()[db_obj.db_param.ID_METER].tolist())))
     assert delda_ids == meters
     assert len(delda_ids) == 20
-    # meter_ids = bc_obj_set.get_meter_ids()
-    # print("meter ids", meter_ids, len(meter_ids))
 
-    pd.testing.assert_frame_equal(delta_meters, meter_readings_delta, check_dtype=False)
-
+    # finally, we calculate the balancing energy and compare it to the one on the DB
     bc_obj_set.determine_balancing_energy(list_ts_delivery)
     balancing_energies_blockchain = bc_obj_set.get_energy_balances()
 
@@ -131,8 +131,7 @@ def test_balancing_energy():
     balancing_energies_blockchain = balancing_energies_blockchain.reset_index(drop=True)
     print("Bal energies", balancing_energies_blockchain)
     print("Bal db", balancing_energies_db)
-    bc_obj_set.get_events()
-    # asserts
+    bc_obj_set.get_events()     # print the emited events
     assert len(balancing_energies_db) == len(balancing_energies_blockchain), \
         "Error, the len of both dataframes isnt equal"
     if balancing_energies_blockchain.empty:
