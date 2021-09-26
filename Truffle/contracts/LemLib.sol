@@ -110,6 +110,19 @@ contract LemLib {
         uint price_energy_levies_positive;
         uint price_energy_levies_negative;
     }
+    struct log_transaction{
+        string id_user;
+        uint ts_delivery;
+        uint price_energy_market;
+        string type_transaction;
+        int qty_energy;         // some values can be negative too
+        int delta_balance;
+        uint t_update_balance;
+        uint64 share_quality_offers_cleared_na;
+        uint64 share_quality_offers_cleared_local;
+        uint64 share_quality_offers_cleared_green;
+        uint64 share_quality_offers_cleared_green_local;
+    }
     struct status_settlement{
         uint ts_delivery;
         uint16 status_meter_readings_processed;

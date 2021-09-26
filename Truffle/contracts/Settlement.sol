@@ -20,6 +20,7 @@ contract Settlement {
 	// the number of meters is left uninitialized so they can be pushed and modified
 	Lb.LemLib.energy_balancing[][672] energy_balances;		//need to be constant numbers, no variables
 	Lb.LemLib.price_settlement[672] prices_settlement;
+	Lb.LemLib.log_transaction[][672] logs_transaction;
 
 	constructor(address clearing_ex_ante) public{
 		// since the size of the data needs to be hard coded, we check it matches the lib contract
@@ -76,7 +77,9 @@ contract Settlement {
 	function get_meter_readings_delta() public view returns (Lb.LemLib.meter_reading_delta[] memory){
 		return Settlement.meter_reading_deltas;
 	}
-
+	function get_id_meters() public view returns(Lb.LemLib.id_meter[] memory){
+		return clearing.get_id_meters();
+	}
 
 	//function to return the energy balance of an specific timestep
 	function get_energy_balance_by_ts(uint ts) public view returns(Lb.LemLib.energy_balancing[] memory){
@@ -242,6 +245,99 @@ contract Settlement {
 			price.ts_delivery=list_ts_delivery[i];
 			uint ts = lib.ts_delivery_to_index(list_ts_delivery[i]);
 			prices_settlement[ts]=price;
+		}
+	}
+	function update_balance_balancing_costs(uint[] list_ts_delivery, uint ts_now, string supplier) public{
+		//TODO: What kind of supplier ?? How to get it ??
+		if(list_ts_delivery.length==0){
+			return;
+		}
+		// in the meter struct is the id_user for each meter
+		mapping(string=>string) memory id_meter2_id_user=clearing.get_meter2user();
+
+		for(uint i=0; i<list_ts_delivery.length; i++){
+			Lb.LemLib.price_settlement memory settlement_price=get_prices_settlement_by_ts(list_ts_delivery[i]);
+			Lb.LemLib.energy_balancing[] memory energy_bal=get_energy_balance_by_ts(list_ts_delivery[i]);
+			uint index = lib.ts_delivery_to_index(list_ts_delivery[i]);
+			// set an empty transaction from
+
+			for(uint j=0; j<energy_bal.length; j++){
+				string id_user=energy_bal[j].id_meter;
+				if(energy_bal[j].energy_balancing_positive>0){
+					uint transaction_value=energy_bal[j].energy_balancing_positive*settlement_price.price_energy_balancing_positive;
+
+					// credit supplier
+					Lb.LemLib.log_transaction memory transaction_log;
+					transaction_log.id_user=supplier;
+					transaction_log.ts_delivery=list_ts_delivery[i];
+					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
+					transaction_log.type_transaction="balancing";
+					// TODO: when qty energy is negative ?
+					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_positive);
+					transaction_log.delta_balance=int(transaction_value);
+					transaction_log.t_update_balance=ts_now;
+					transaction_log.share_quality_offers_cleared_na=0;
+					transaction_log.share_quality_offers_cleared_local=0;
+					transaction_log.share_quality_offers_cleared_green=0;
+					transaction_log.share_quality_offers_cleared_green_local=0;
+
+					logs_transaction[index].push(transaction_log);
+
+					// debit consumer
+					Lb.LemLib.log_transaction memory transaction_log;
+					transaction_log.id_user=id_meter2_id_user[energy_bal[j].id_meter];
+					transaction_log.ts_delivery=list_ts_delivery[i];
+					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
+					transaction_log.type_transaction="balancing";
+					// TODO: when qty energy is negative ?
+					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_positive);
+					transaction_log.delta_balance=int(-transaction_value);
+					transaction_log.t_update_balance=ts_now;
+					transaction_log.share_quality_offers_cleared_na=0;
+					transaction_log.share_quality_offers_cleared_local=0;
+					transaction_log.share_quality_offers_cleared_green=0;
+					transaction_log.share_quality_offers_cleared_green_local=0;
+
+					logs_transaction[index].push(transaction_log);
+				}
+				else if(energy_bal[j].energy_balancing_negative>0){
+					uint transaction_value=energy_bal[j].energy_balancing_negative*settlement_price.price_energy_balancing_negative;
+
+					// credit supplier
+					Lb.LemLib.log_transaction memory transaction_log;
+					transaction_log.id_user=supplier;
+					transaction_log.ts_delivery=list_ts_delivery[i];
+					transaction_log.price_energy_market=settlement_price.price_energy_balancing_negative;
+					transaction_log.type_transaction="balancing";
+					// TODO: when qty energy is negative ?
+					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_negative);
+					transaction_log.delta_balance=int(transaction_value);
+					transaction_log.t_update_balance=ts_now;
+					transaction_log.share_quality_offers_cleared_na=0;
+					transaction_log.share_quality_offers_cleared_local=0;
+					transaction_log.share_quality_offers_cleared_green=0;
+					transaction_log.share_quality_offers_cleared_green_local=0;
+
+					logs_transaction[index].push(transaction_log);
+
+					// debit consumer
+					Lb.LemLib.log_transaction memory transaction_log;
+					transaction_log.id_user=id_meter2_id_user[energy_bal[j].id_meter];
+					transaction_log.ts_delivery=list_ts_delivery[i];
+					transaction_log.price_energy_market=settlement_price.price_energy_balancing_negative;
+					transaction_log.type_transaction="balancing";
+					// TODO: when qty energy is negative ?
+					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_negative);
+					transaction_log.delta_balance=int(-transaction_value);
+					transaction_log.t_update_balance=ts_now;
+					transaction_log.share_quality_offers_cleared_na=0;
+					transaction_log.share_quality_offers_cleared_local=0;
+					transaction_log.share_quality_offers_cleared_green=0;
+					transaction_log.share_quality_offers_cleared_green_local=0;
+
+					logs_transaction[index].push(transaction_log);
+				}
+			}
 		}
 	}
 }
