@@ -200,17 +200,18 @@ contract ClearingExAnte {
 	function getTempMarketResults() public view returns (Lb.LemLib.market_result[] memory) {
 	    return ClearingExAnte.temp_market_results;
 	}
-	function create_meter2user() public{
+	function create_meter2user() private{
 		if(!mapping_created){
-			Lb.LemLib.id_meter[] memory id_meters=get_id_meters();
-			for(uint i=0; i<id_meters.length; i++){
-				id_meter2id_user[id_meters[i].id_meter]=id_meters[i].id_user;
+			Lb.LemLib.id_meter[] memory meters=get_id_meters();
+			for(uint i=0; i<meters.length; i++){
+				id_meter2id_user[meters[i].id_meter]=meters[i].id_user;
 			}
 			mapping_created=true;
 		}
 	}
-	function get_meter2user() public view returns(mapping(string=>string) memory){
-		return id_meter2id_user;
+	function get_meter2user(string memory id_meter) public returns(string memory){
+		create_meter2user();
+		return id_meter2id_user[id_meter];
 	}
 
 
@@ -659,6 +660,17 @@ contract ClearingExAnte {
 				}
 			}
 		}
+	}
+	//similar to the functions above, but it takes the parameters as input to update, only for 1 single user
+	function update_user_balances(Lb.LemLib.log_transaction memory transaction_log) public{
+		for(uint i=0; i<user_infos.length; i++){
+			if(lib.compareStrings(user_infos[i].id_user, transaction_log.id_user)){
+				user_infos[i].balance_account+=transaction_log.delta_balance;
+				user_infos[i].t_update_balance=transaction_log.t_update_balance;
+				break;
+			}
+		}
+
 	}
 	//it performs the full market clearing. The results are then stored in the variable market_results_total
 	function market_clearing(uint n_clearings, uint t_clearing_first, bool supplier_bids, bool uniform_pricing, bool discriminative_pricing, uint clearing_interval, uint t_clearing_start, bool shuffle, bool verbose, bool update_balances, bool simulation_test) public {

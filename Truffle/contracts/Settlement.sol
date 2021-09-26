@@ -247,13 +247,11 @@ contract Settlement {
 			prices_settlement[ts]=price;
 		}
 	}
-	function update_balance_balancing_costs(uint[] list_ts_delivery, uint ts_now, string supplier) public{
+	function update_balance_balancing_costs(uint[] memory list_ts_delivery, uint ts_now, string memory supplier) public{
 		//TODO: What kind of supplier ?? How to get it ??
 		if(list_ts_delivery.length==0){
 			return;
 		}
-		// in the meter struct is the id_user for each meter
-		mapping(string=>string) memory id_meter2_id_user=clearing.get_meter2user();
 
 		for(uint i=0; i<list_ts_delivery.length; i++){
 			Lb.LemLib.price_settlement memory settlement_price=get_prices_settlement_by_ts(list_ts_delivery[i]);
@@ -262,12 +260,11 @@ contract Settlement {
 			// set an empty transaction from
 
 			for(uint j=0; j<energy_bal.length; j++){
-				string id_user=energy_bal[j].id_meter;
 				if(energy_bal[j].energy_balancing_positive>0){
 					uint transaction_value=energy_bal[j].energy_balancing_positive*settlement_price.price_energy_balancing_positive;
+					Lb.LemLib.log_transaction memory transaction_log;
 
 					// credit supplier
-					Lb.LemLib.log_transaction memory transaction_log;
 					transaction_log.id_user=supplier;
 					transaction_log.ts_delivery=list_ts_delivery[i];
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
@@ -276,16 +273,16 @@ contract Settlement {
 					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_positive);
 					transaction_log.delta_balance=int(transaction_value);
 					transaction_log.t_update_balance=ts_now;
-					transaction_log.share_quality_offers_cleared_na=0;
-					transaction_log.share_quality_offers_cleared_local=0;
-					transaction_log.share_quality_offers_cleared_green=0;
-					transaction_log.share_quality_offers_cleared_green_local=0;
+					transaction_log.share_quality_offers_cleared_na=uint64(0);
+					transaction_log.share_quality_offers_cleared_local=uint64(0);
+					transaction_log.share_quality_offers_cleared_green=uint64(0);
+					transaction_log.share_quality_offers_cleared_green_local=uint64(0);
 
 					logs_transaction[index].push(transaction_log);
+					clearing.update_user_balances(transaction_log);
 
 					// debit consumer
-					Lb.LemLib.log_transaction memory transaction_log;
-					transaction_log.id_user=id_meter2_id_user[energy_bal[j].id_meter];
+					transaction_log.id_user=clearing.get_meter2user(energy_bal[j].id_meter);
 					transaction_log.ts_delivery=list_ts_delivery[i];
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
 					transaction_log.type_transaction="balancing";
@@ -293,18 +290,18 @@ contract Settlement {
 					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_positive);
 					transaction_log.delta_balance=int(-transaction_value);
 					transaction_log.t_update_balance=ts_now;
-					transaction_log.share_quality_offers_cleared_na=0;
-					transaction_log.share_quality_offers_cleared_local=0;
-					transaction_log.share_quality_offers_cleared_green=0;
-					transaction_log.share_quality_offers_cleared_green_local=0;
+					transaction_log.share_quality_offers_cleared_na=uint64(0);
+					transaction_log.share_quality_offers_cleared_local=uint64(0);
+					transaction_log.share_quality_offers_cleared_green=uint64(0);
+					transaction_log.share_quality_offers_cleared_green_local=uint64(0);
 
 					logs_transaction[index].push(transaction_log);
+					clearing.update_user_balances(transaction_log);
 				}
 				else if(energy_bal[j].energy_balancing_negative>0){
 					uint transaction_value=energy_bal[j].energy_balancing_negative*settlement_price.price_energy_balancing_negative;
-
-					// credit supplier
 					Lb.LemLib.log_transaction memory transaction_log;
+					// credit supplier
 					transaction_log.id_user=supplier;
 					transaction_log.ts_delivery=list_ts_delivery[i];
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_negative;
@@ -313,16 +310,16 @@ contract Settlement {
 					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_negative);
 					transaction_log.delta_balance=int(transaction_value);
 					transaction_log.t_update_balance=ts_now;
-					transaction_log.share_quality_offers_cleared_na=0;
-					transaction_log.share_quality_offers_cleared_local=0;
-					transaction_log.share_quality_offers_cleared_green=0;
-					transaction_log.share_quality_offers_cleared_green_local=0;
+					transaction_log.share_quality_offers_cleared_na=uint64(0);
+					transaction_log.share_quality_offers_cleared_local=uint64(0);
+					transaction_log.share_quality_offers_cleared_green=uint64(0);
+					transaction_log.share_quality_offers_cleared_green_local=uint64(0);
 
 					logs_transaction[index].push(transaction_log);
+					clearing.update_user_balances(transaction_log);
 
 					// debit consumer
-					Lb.LemLib.log_transaction memory transaction_log;
-					transaction_log.id_user=id_meter2_id_user[energy_bal[j].id_meter];
+					transaction_log.id_user=clearing.get_meter2user(energy_bal[j].id_meter);
 					transaction_log.ts_delivery=list_ts_delivery[i];
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_negative;
 					transaction_log.type_transaction="balancing";
@@ -330,12 +327,13 @@ contract Settlement {
 					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_negative);
 					transaction_log.delta_balance=int(-transaction_value);
 					transaction_log.t_update_balance=ts_now;
-					transaction_log.share_quality_offers_cleared_na=0;
-					transaction_log.share_quality_offers_cleared_local=0;
-					transaction_log.share_quality_offers_cleared_green=0;
-					transaction_log.share_quality_offers_cleared_green_local=0;
+					transaction_log.share_quality_offers_cleared_na=uint64(0);
+					transaction_log.share_quality_offers_cleared_local=uint64(0);
+					transaction_log.share_quality_offers_cleared_green=uint64(0);
+					transaction_log.share_quality_offers_cleared_green_local=uint64(0);
 
 					logs_transaction[index].push(transaction_log);
+					clearing.update_user_balances(transaction_log);
 				}
 			}
 		}
