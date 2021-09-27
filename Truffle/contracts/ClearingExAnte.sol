@@ -122,19 +122,8 @@ contract ClearingExAnte {
 	}
 	//add a user info to the lists of user_infos in the storage of the contract
 	function push_user_info(Lb.LemLib.user_info memory user_info) public {
-	    /*bool go_on = true;
-	    uint i = 0;
-	    while(go_on && i < ClearingExAnte.user_infos.length) {
-	        if(lib.compareStrings(ClearingExAnte.user_infos[i].id_user, user_info.id_user)) {
-                ClearingExAnte.user_infos[i] = user_info;
-                go_on = false;
-            }
-	        i++;
-	    }
-	    if(go_on) {
-	        ClearingExAnte.user_infos.push(user_info);
-	    }*/
 	    ClearingExAnte.user_infos.push(user_info);
+
 	}
 	//add a id_meter to the lists of id_meters in the storage of the contract
 	function push_id_meters(Lb.LemLib.id_meter memory id_meter) public {
@@ -202,15 +191,13 @@ contract ClearingExAnte {
 	}
 	function create_meter2user() private{
 		if(!mapping_created){
-			Lb.LemLib.id_meter[] memory meters=get_id_meters();
-			for(uint i=0; i<meters.length; i++){
-				id_meter2id_user[meters[i].id_meter]=meters[i].id_user;
+			for(uint i=0; i<id_meters.length; i++){
+				id_meter2id_user[id_meters[i].id_meter]=id_meters[i].id_user;
 			}
 			mapping_created=true;
 		}
 	}
 	function get_meter2user(string memory id_meter) public returns(string memory){
-		create_meter2user();
 		return id_meter2id_user[id_meter];
 	}
 
@@ -670,7 +657,6 @@ contract ClearingExAnte {
 				break;
 			}
 		}
-
 	}
 	//it performs the full market clearing. The results are then stored in the variable market_results_total
 	function market_clearing(uint n_clearings, uint t_clearing_first, bool supplier_bids, bool uniform_pricing, bool discriminative_pricing, uint clearing_interval, uint t_clearing_start, bool shuffle, bool verbose, bool update_balances, bool simulation_test) public {
@@ -693,6 +679,7 @@ contract ClearingExAnte {
     	}
     	//updating balances on storage
     	if(update_balances) updateBalances();
+		create_meter2user();
     	if(verbose) {
     		string_to_log = lib.concatenateStrings(string_to_log, "Updated balances of users");
     		emit logString(string_to_log);

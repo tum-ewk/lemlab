@@ -145,27 +145,27 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
 
 def set_prices_settlement(db_obj, path_simulation, files_path, list_ts_delivery):
     # read platform config
-    #with open(f"{path_simulation}/platform/config_account.json", "r") as read_file:
+    # with open(f"{path_simulation}/platform/config_account.json", "r") as read_file:
     with open(f"{path_simulation}test_run_no_rts/lem/config_account.json", "r") as read_file:
         config_dict = json.load(read_file)
     # currently EURO_TO_SIGMA = 1e9
     euro_kwh_to_sigma_wh = db_obj.db_param.EURO_TO_SIGMA / 1000
 
     for ts_delivery in list_ts_delivery:
-        price_bal_pos = config_dict["price_energy_balancing_positive"] * euro_kwh_to_sigma_wh   # 0.1 *1e6
-        price_bal_neg = config_dict["price_energy_balancing_negative"] * euro_kwh_to_sigma_wh   # 0.1 *1e6
-        price_levies_pos = config_dict["price_energy_levies_positive"] * euro_kwh_to_sigma_wh   # 0
-        price_levies_neg = config_dict["price_energy_levies_negative"] * euro_kwh_to_sigma_wh   # 0.18*1e6
+        price_bal_pos = config_dict["price_energy_balancing_positive"] * euro_kwh_to_sigma_wh  # 0.15 *1e6
+        price_bal_neg = config_dict["price_energy_balancing_negative"] * euro_kwh_to_sigma_wh  # 0.15 *1e6
+        price_levies_pos = config_dict["price_energy_levies_positive"] * euro_kwh_to_sigma_wh  # 0
+        price_levies_neg = config_dict["price_energy_levies_negative"] * euro_kwh_to_sigma_wh  # 0.18*1e6
         if config_dict["bal_energy_pricing_mechanism"] == "file":
             # in this case are all 0.15 por positive and negative
-            df_bal_prices = ft.read_dataframe(f"{files_path}/lem/balancing_prices/balancing_prices_1.csv"
-                                              ).set_index("timestamp")
+            df_bal_prices = pd.read_csv(f"{files_path}/lem/balancing_prices/balancing_prices_1.csv"
+                                        ).set_index("timestamp")
             price_bal_pos = df_bal_prices.loc[ts_delivery, "price_balancing_energy_positive"] * euro_kwh_to_sigma_wh
             price_bal_neg = df_bal_prices.loc[ts_delivery, "price_balancing_energy_negative"] * euro_kwh_to_sigma_wh
         if config_dict["levy_pricing_mechanism"] == "file":
             # in this case, positive=0, negative=0.18
-            df_levy_prices = ft.read_dataframe(f"{files_path}/lem/levy_prices/levy_prices_1.csv"
-                                               ).set_index("timestamp")
+            df_levy_prices = pd.read_csv(f"{files_path}/lem/levy_prices/levy_prices_1.csv"
+                                         ).set_index("timestamp")
             price_levies_pos = df_levy_prices.loc[ts_delivery, "price_energy_levies_positive"] * euro_kwh_to_sigma_wh
             price_levies_neg = df_levy_prices.loc[ts_delivery, "price_energy_levies_negative"] * euro_kwh_to_sigma_wh
 
@@ -183,7 +183,7 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
     dict_map_to_user = db_obj.get_mapping_to_user()
 
     for ts_d in list_ts_delivery:
-        settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d)
+        settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
 
         pos_bal_ener_price = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE])
         neg_bal_ener_price = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_BALANCING_NEGATIVE])
@@ -258,6 +258,7 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
                 for quality in lem_config["types_quality"]:
                     dict_transactions[db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]].append(0)
     if len(list_ts_delivery) and len(dict_transactions[db_obj.db_param.ID_USER]):
+        print("Transacts",dict_transactions)
         db_obj.log_transactions(pd.DataFrame.from_dict(dict_transactions))
         db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
 

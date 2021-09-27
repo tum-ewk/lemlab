@@ -480,7 +480,7 @@ class DatabaseConnection:
     def get_prices_settlement(self, ts_delivery_first=None, ts_delivery_last=None):
 
         ts_delivery_first = ts_delivery_first if ts_delivery_first is not None else 0
-        ts_delivery_last = ts_delivery_last if ts_delivery_last is not None else ts_delivery_first
+        ts_delivery_last = ts_delivery_last if ts_delivery_last is not None else 2147483647
 
         sql = f"SELECT * FROM {self.db_param.NAME_TABLE_PRICES_SETTLEMENT} " \
               f"WHERE {self.db_param.TS_DELIVERY} " \

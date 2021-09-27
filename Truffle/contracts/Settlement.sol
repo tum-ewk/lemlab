@@ -88,7 +88,7 @@ contract Settlement {
 	//function to return the energy balance of an specific timestep
 	function get_energy_balance_by_ts(uint ts) public view returns(Lb.LemLib.energy_balancing[] memory){
 		uint index = lib.ts_delivery_to_index(ts);
-		return energy_balances[ts];
+		return energy_balances[index];
 	}
 	// same function for getting all the energy balances
 	function get_energy_balance_all() public view returns(Lb.LemLib.energy_balancing[] memory){
@@ -292,10 +292,16 @@ contract Settlement {
 			Lb.LemLib.price_settlement memory settlement_price=get_prices_settlement_by_ts(list_ts_delivery[i]);
 			Lb.LemLib.energy_balancing[] memory energy_bal=get_energy_balance_by_ts(list_ts_delivery[i]);
 			uint index = lib.ts_delivery_to_index(list_ts_delivery[i]);
+			if(index>671){
+				emit energy_added(index);
+				index=671;
+			}
 			// set an empty transaction from
-
+			if(energy_bal.length<1){
+				continue;
+			}
 			for(uint j=0; j<energy_bal.length; j++){
-				if(energy_bal[j].energy_balancing_positive>0){
+				if(energy_bal[j].energy_balancing_positive!=0){
 					uint transaction_value=energy_bal[j].energy_balancing_positive*settlement_price.price_energy_balancing_positive;
 					Lb.LemLib.log_transaction memory transaction_log;
 
@@ -333,9 +339,10 @@ contract Settlement {
 					logs_transaction[index].push(transaction_log);
 					clearing.update_user_balances(transaction_log);
 				}
-				else if(energy_bal[j].energy_balancing_negative>0){
+				else if(energy_bal[j].energy_balancing_negative!=0){
 					uint transaction_value=energy_bal[j].energy_balancing_negative*settlement_price.price_energy_balancing_negative;
 					Lb.LemLib.log_transaction memory transaction_log;
+
 					// credit supplier
 					transaction_log.id_user=supplier;
 					transaction_log.ts_delivery=list_ts_delivery[i];
