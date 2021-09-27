@@ -111,7 +111,7 @@ meter_reading_delta_column_dtypes = [BigInteger(), Text(), BigInteger(), BigInte
 
 market_result_column_names = [ID_USER_OFFER, PRICE_ENERGY_OFFER, NUMBER_POSITION_OFFER, TS_DELIVERY, ID_USER_BID,
                               PRICE_ENERGY_BID, NUMBER_POSITION_BID, PRICE_ENERGY_MARKET_ + "uniform",
-                              PRICE_ENERGY_MARKET_ + "discriminative", QTY_ENERGY_TRADED, SHARE_QUALITY_ + "NA",
+                              PRICE_ENERGY_MARKET_ + "discriminative", QTY_ENERGY_TRADED, SHARE_QUALITY_ + "na",
                               SHARE_QUALITY_ + "local", SHARE_QUALITY_ + "green", SHARE_QUALITY_ + "green_local",
                               T_CLEARED]
 
@@ -123,6 +123,15 @@ prices_settlement_column_names = [TS_DELIVERY, PRICE_ENERGY_BALANCING_POSITIVE, 
                                   PRICE_ENERGY_LEVIES_POSITIVE, PRICE_ENERGY_LEVIES_NEGATIVE]
 
 prices_settlement_column_dtypes = [BigInteger(), BigInteger, BigInteger(), BigInteger(), BigInteger()]
+
+logs_transactions_column_names = [ID_USER, TS_DELIVERY, PRICE_ENERGY_MARKET, TYPE_TRANSACTION, QTY_ENERGY,
+                                  DELTA_BALANCE, T_UPDATE_BALANCE, SHARE_QUALITY_OFFERS_CLEARED_ + "na",
+                                  SHARE_QUALITY_OFFERS_CLEARED_ + "local",
+                                  SHARE_QUALITY_OFFERS_CLEARED_ + "green",
+                                  SHARE_QUALITY_OFFERS_CLEARED_ + "green_local"]
+
+logs_transactions_column_dtypes = [Text(), BigInteger(), BigInteger(), Text(), BigInteger(), BigInteger(), BigInteger(),
+                                   BigInteger(), BigInteger(), BigInteger(), BigInteger()]
 
 
 def map_name_to_dtype(names_column, dtypes_column):

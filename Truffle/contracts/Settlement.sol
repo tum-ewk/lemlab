@@ -34,6 +34,8 @@ contract Settlement {
 	function clear_data() public{
 		delete meter_reading_deltas;
 		delete energy_balances;
+		delete prices_settlement;
+		delete logs_transaction;
 	}
 	function get_clearing_add() public view returns(address){
 		return clearing_add;
@@ -45,6 +47,8 @@ contract Settlement {
 				}
 				if(i+sec_half<lib.get_horizon()){
 	    			delete Settlement.energy_balances[i+sec_half];
+					delete Settlement.prices_settlement[i+sec_half];
+					delete Settlement.logs_transaction[i+sec_half];
 				}
 			}
 	}
@@ -141,6 +145,37 @@ contract Settlement {
 				}
 			}
 		return prices;
+		}
+	}
+	function get_logs_transactions_by_ts(uint ts) public view returns(Lb.LemLib.log_transaction[] memory){
+		uint index = lib.ts_delivery_to_index(ts);
+		return logs_transaction[index];
+	}
+	function get_logs_transactions() public view returns(Lb.LemLib.log_transaction[] memory){
+		uint count=0;
+		for(uint i=0; i<lib.get_horizon(); i++){
+			if(logs_transaction[i].length>0){
+				count+= logs_transaction[i].length;
+			}
+		}
+		// safe check, if there are no energy balances we cannot create an array with length 0
+		// so we create a single element array with the ts_delivery equal to -1, this will be later
+		// filtered out in the bc_connection python interface
+		if(count==0){
+			Lb.LemLib.log_transaction[] memory sample=new Lb.LemLib.log_transaction[](1);
+			sample[0].ts_delivery=uint(-1);
+			return sample;
+		}
+		else{
+			uint ind=0;
+			Lb.LemLib.log_transaction[] memory logs = new Lb.LemLib.log_transaction[](count);
+			for(uint i=0; i<lib.get_horizon(); i++){
+				for(uint j=0; j<logs_transaction[i].length; j++){
+					logs[ind]=logs_transaction[i][j];
+					ind++;
+				}
+			}
+		return logs;
 		}
 	}
 	// we get the total market results, as the temp list is empty

@@ -453,9 +453,11 @@ class BlockchainConnection:
                     list_ts_delivery), "Error, if given list, all parameters must be lists of the same size"
                 assert type(price_lev_neg) == list and len(price_lev_neg) == len(
                     list_ts_delivery), "Error, if given list, all parameters must be lists of the same size"
-                self.functions.set_prices_settlement_custom_list(tuple(list_ts_delivery), tuple(price_bal_pos),
-                                                                 tuple(price_bal_neg), tuple(price_lev_pos),
-                                                                 tuple(price_lev_neg)).transact({"from": self.coinbase})
+                tx_hash = self.functions.set_prices_settlement_custom_list(tuple(list_ts_delivery),
+                                                                           tuple(price_bal_pos),
+                                                                           tuple(price_bal_neg), tuple(price_lev_pos),
+                                                                           tuple(price_lev_neg)).transact(
+                    {"from": self.coinbase})
             else:
                 assert type(price_bal_pos) == float and type(price_bal_neg) == float and type(
                     price_lev_pos) == float and type(price_lev_neg) == float, "Error, all the parameters must be" \
@@ -466,16 +468,18 @@ class BlockchainConnection:
                 price_lev_pos = int(price_lev_pos * euro_kwh_to_sigma_wh)
                 price_lev_neg = int(price_lev_neg * euro_kwh_to_sigma_wh)
 
-                self.functions.set_prices_settlement_custom(tuple(list_ts_delivery), price_bal_pos,
-                                                            price_bal_neg, price_lev_pos,
-                                                            price_lev_neg).transact({"from": self.coinbase})
+                tx_hash = self.functions.set_prices_settlement_custom(tuple(list_ts_delivery), price_bal_pos,
+                                                                      price_bal_neg, price_lev_pos,
+                                                                      price_lev_neg).transact({"from": self.coinbase})
         else:
             # we set the parameters to their defaults values
             # price_bal_pos = 0.15
             # price_bal_neg = 0.15
             # price_lev_pos = 0
             # price_lev_neg = 0.18
-            self.functions.set_prices_settlement(tuple(list_ts_delivery)).transact({"from": self.coinbase})
+            tx_hash = self.functions.set_prices_settlement(tuple(list_ts_delivery)).transact({"from": self.coinbase})
+
+        self.wait_for_transact(tx_hash)
 
     def get_prices_settlement(self, ts_delivery=None, return_list=False):
         if ts_delivery is not None:
@@ -490,6 +494,25 @@ class BlockchainConnection:
             return list_prices_settlement
         else:
             return pd.DataFrame(list_prices_settlement, columns=bc_param.prices_settlement_column_names)
+
+    def update_balance_balancing_costs(self, list_ts_delivery, ts_now=round(time.time()), supplier_id="supplier01"):
+        tx_hash = self.functions.update_balance_balancing_costs(tuple(list_ts_delivery), ts_now, supplier_id).transact(
+            {"from": self.coinbase}
+        )
+        self.wait_for_transact(tx_hash)
+
+    def get_logs_transactions(self, ts_delivery=None, return_list=False):
+        if ts_delivery is not None:
+            list_logs_transactions = self.functions.get_logs_transactions_by_ts(ts_delivery).call()
+        else:
+            list_logs_transactions = self.functions.get_logs_transactions().call()
+
+        if len(list_logs_transactions) == 1 and list_logs_transactions[0][1] < 0:
+            return []
+        if return_list:
+            return list_logs_transactions
+        else:
+            return pd.DataFrame(list_logs_transactions, columns=bc_param.logs_transactions_column_names)
 
     ###################################################
     # Utility functions

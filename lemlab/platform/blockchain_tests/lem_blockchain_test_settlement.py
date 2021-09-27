@@ -131,7 +131,7 @@ def test_balancing_energy():
     balancing_energies_blockchain = balancing_energies_blockchain.reset_index(drop=True)
     print("Bal energies", balancing_energies_blockchain)
     print("Bal db", balancing_energies_db)
-    bc_obj_set.get_events()     # print the emited events
+    bc_obj_set.get_events()  # print the emited events
     assert len(balancing_energies_db) == len(balancing_energies_blockchain), \
         "Error, the len of both dataframes isnt equal"
     if balancing_energies_blockchain.empty:
@@ -141,3 +141,65 @@ def test_balancing_energy():
         pd.testing.assert_frame_equal(balancing_energies_db, balancing_energies_blockchain, check_dtype=False)
 
     print("Balancing energies test finished")
+
+
+def test_balancing_costs():
+    # this test compares the balancing costs for the db and the blockchain
+    print("Starting test for the balancing cost")
+    # for the DB
+    balancing_db = db_obj.get_energy_balancing()
+    list_ts_delivery = balancing_db["ts_delivery"].to_list()
+    list_ts_delivery = sorted(list(set(list_ts_delivery)))
+    sim_path = "C:/Users/ge93sut/PycharmProjects/lemlab/scenarios/"
+    files_path = "C:/Users/ge93sut/PycharmProjects/lemlab/input_data/"
+
+    lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path, files_path=files_path,
+                                         list_ts_delivery=list_ts_delivery)
+    settlement_prices_db = db_obj.get_prices_settlement()
+    settlement_prices_db = settlement_prices_db.sort_vallues(by=[db_obj.db_param.TS_DELIVERY,
+                                                                 db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE])
+    settlement_prices_db = settlement_prices_db.reset_index(drop=True)
+
+    # for the blockchain
+    settlement_dict = config['db_connections']['bc_dict']
+    settlement_dict["contract_name"] = "Settlement"
+    bc_obj_set = BlockchainConnection(settlement_dict)
+    bc_obj_set.set_prices_settlement(list_ts_delivery)
+    settlement_prices_blockchain = bc_obj_set.get_prices_settlement()
+    settlement_prices_blockchain = settlement_prices_blockchain.sort_values(by=[bc_obj_set.bc_param.TS_DELIVERY,
+                                                                                bc_obj_set.bc_param.PRICE_ENERGY_BALANCING_POSITIVE])
+    settlement_prices_blockchain = settlement_prices_blockchain.reset_index(drop=True)
+    # asserting of both
+    pd.testing.assert_frame_equal(settlement_prices_db, settlement_prices_blockchain)
+
+    # Now for the log transactions
+    ts_now = round(time.time())
+    supplier = "supplier01"
+    lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
+                                                  id_supplier=supplier)
+
+    log_transactions_db = db_obj.get_logs_transactions()
+    log_transactions_db = log_transactions_db.sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER,
+                                                              db_obj.db_param.QTY_ENERGY])
+    log_transactions_db = log_transactions_db.reset_index(drop=True)
+
+    bc_obj_set.update_balance_balancing_costs(list_ts_delivery=list_ts_delivery, ts_now=ts_now, supplier_id=supplier)
+    log_transactions_blockchain = bc_obj_set.get_logs_transactions()
+    log_transactions_blockchain = log_transactions_blockchain.sort_values(
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY])
+    log_transactions_blockchain = log_transactions_blockchain.reset_index(drop=True)
+    # testing of both transactions
+    pd.testing.assert_frame_equal(log_transactions_db, log_transactions_blockchain)
+
+    # Finally, for the updated balances
+    updated_user_balances_db = db_obj.get_list_all_users()
+    updated_user_balances_db = updated_user_balances_db.sort_values(
+        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    updated_user_balances_db.reset_index(drop=True)
+
+    updated_user_balances_blokchain = bc_obj.get_list_all_users()
+    updated_user_balances_blokchain = updated_user_balances_blokchain.sort_values(
+        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    updated_user_balances_blokchain = updated_user_balances_blokchain.reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(updated_user_balances_db, updated_user_balances_blokchain)
