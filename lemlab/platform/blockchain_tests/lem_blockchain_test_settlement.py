@@ -201,10 +201,10 @@ def test_balancing_costs():
     bc_obj_set.get_events()  # print the emited events
 
     # Finally, for the updated balances
-    updated_user_balances_db = db_obj.get_list_all_users()
+    updated_user_balances_db = db_obj.get_info_user()
     updated_user_balances_db = updated_user_balances_db.sort_values(
         by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
-    updated_user_balances_db.reset_index(drop=True)
+    updated_user_balances_db = updated_user_balances_db.reset_index(drop=True)
 
     updated_user_balances_blokchain = bc_obj.get_list_all_users()
     updated_user_balances_blokchain = updated_user_balances_blokchain.sort_values(

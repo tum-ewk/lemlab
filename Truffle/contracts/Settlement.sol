@@ -311,7 +311,7 @@ contract Settlement {
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
 					transaction_log.type_transaction="balancing";
 					// TODO: when qty energy is negative ?
-					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_positive);
+					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_positive);
 					transaction_log.delta_balance=int(transaction_value);
 					transaction_log.t_update_balance=ts_now;
 					transaction_log.share_quality_offers_cleared_na=uint64(0);
@@ -328,7 +328,7 @@ contract Settlement {
 					transaction_log.price_energy_market=settlement_price.price_energy_balancing_positive;
 					transaction_log.type_transaction="balancing";
 					// TODO: when qty energy is negative ?
-					transaction_log.qty_energy=int(-energy_bal[j].energy_balancing_positive);
+					transaction_log.qty_energy=int(energy_bal[j].energy_balancing_positive);
 					transaction_log.delta_balance=int(-transaction_value);
 					transaction_log.t_update_balance=ts_now;
 					transaction_log.share_quality_offers_cleared_na=uint64(0);
