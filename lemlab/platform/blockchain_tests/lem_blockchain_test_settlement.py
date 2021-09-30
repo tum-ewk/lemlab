@@ -150,7 +150,7 @@ def test_balancing_costs():
     balancing_db = db_obj.get_energy_balancing()
     list_ts_delivery = balancing_db["ts_delivery"].to_list()
     list_ts_delivery = sorted(list(set(list_ts_delivery)))
-    sim_path = "C:/Users/ge93sut/PycharmProjects/lemlab/scenarios/"
+    sim_path = "C:/Users/ga47num/PycharmProjects/lemlab/scenarios/"
     files_path = "C:/Users/ge93sut/PycharmProjects/lemlab/input_data/"
 
     lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path, files_path=files_path,
@@ -171,15 +171,19 @@ def test_balancing_costs():
                                                                                 bc_obj_set.bc_param.PRICE_ENERGY_BALANCING_POSITIVE])
     settlement_prices_blockchain = settlement_prices_blockchain.reset_index(drop=True)
     # asserting of both
+    print(f"db: {settlement_prices_db}")
+    print(f"bc: {settlement_prices_blockchain}")
     pd.testing.assert_frame_equal(settlement_prices_db, settlement_prices_blockchain)
 
     # Now for the log transactions
     ts_now = round(time.time())
     supplier = "supplier01"
     lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
-                                                  id_supplier=supplier, lem_config=config["lem"])
+                                                  id_retailer=supplier, lem_config=config["lem"])
 
     log_transactions_db = db_obj.get_logs_transactions()
+
+    log_transactions_db = log_transactions_db.loc[log_transactions_db[db_obj.db_param.TYPE_TRANSACTION] == "balancing"]
     log_transactions_db = log_transactions_db.sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER,
                                                               db_obj.db_param.QTY_ENERGY])
     log_transactions_db = log_transactions_db.reset_index(drop=True)

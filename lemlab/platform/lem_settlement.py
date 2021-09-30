@@ -146,7 +146,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
 def set_prices_settlement(db_obj, path_simulation, files_path, list_ts_delivery):
     # read platform config
     # with open(f"{path_simulation}/platform/config_account.json", "r") as read_file:
-    with open(f"{path_simulation}test_run_no_rts/lem/config_account.json", "r") as read_file:
+    with open(f"{path_simulation}test_sim/lem/config_account.json", "r") as read_file:
         config_dict = json.load(read_file)
     # currently EURO_TO_SIGMA = 1e9
     euro_kwh_to_sigma_wh = db_obj.db_param.EURO_TO_SIGMA / 1000
@@ -179,41 +179,54 @@ def set_prices_settlement(db_obj, path_simulation, files_path, list_ts_delivery)
         db_obj.set_prices_settlement(pd.DataFrame().from_dict(dict_settlement_prices))
 
 
-def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="supplier01"):
+    """
+    Determine balancing energy credits and debits and add transactions to database.
+
+    :param db_obj: instance of DatabaseConnection
+    :param t_now: integer, unix timestamp current time
+    :param lem_config: dictionary containing configuration of LEM
+    :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
+
+    :return None:
+
+    """
+    # get mapping from meters to users
     dict_map_to_user = db_obj.get_mapping_to_user()
+    # construct transaction dict including dynamic quality columns
+    dict_transactions = {
+        db_obj.db_param.ID_USER: [],
+        db_obj.db_param.TS_DELIVERY: [],
+        db_obj.db_param.PRICE_ENERGY_MARKET: [],
+        db_obj.db_param.TYPE_TRANSACTION: [],
+        db_obj.db_param.QTY_ENERGY: [],
+        db_obj.db_param.DELTA_BALANCE: [],
+        db_obj.db_param.T_UPDATE_BALANCE: [],
+    }
+    for quality in lem_config["types_quality"]:
+        dict_transactions.update({db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]: []})
 
     for ts_d in list_ts_delivery:
+        # return relevant settlement prices
         settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
-
         pos_bal_ener_price = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE])
         neg_bal_ener_price = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_BALANCING_NEGATIVE])
-
+        # return balancing energies
         balancing_energies = db_obj.get_energy_balancing(ts_delivery=ts_d)
 
-        # set transaction form
-        dict_transactions = {
-            db_obj.db_param.ID_USER: [],
-            db_obj.db_param.TS_DELIVERY: [],
-            db_obj.db_param.PRICE_ENERGY_MARKET: [],
-            db_obj.db_param.TYPE_TRANSACTION: [],
-            db_obj.db_param.QTY_ENERGY: [],
-            db_obj.db_param.DELTA_BALANCE: [],
-            db_obj.db_param.T_UPDATE_BALANCE: [],
-        }
-        for quality in lem_config["types_quality"]:
-            dict_transactions.update({db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]: []})
-
+        # repeat calculation for each balancing energy recorded
         for _, entry in balancing_energies.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] * pos_bal_ener_price
 
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(pos_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
                 dict_transactions[db_obj.db_param.QTY_ENERGY].append(
-                    entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
+                    -1 * entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE])
                 dict_transactions[db_obj.db_param.DELTA_BALANCE].append(transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
@@ -233,8 +246,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
 
             elif entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] * neg_bal_ener_price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(neg_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
@@ -252,13 +265,15 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(neg_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
                 dict_transactions[db_obj.db_param.QTY_ENERGY].append(
-                    entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE])
-                dict_transactions[db_obj.db_param.DELTA_BALANCE].append(-1 * transaction_value)
+                    -1 * entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE])
+                dict_transactions[db_obj.db_param.DELTA_BALANCE].append(
+                    -1 * transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
                     dict_transactions[db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]].append(0)
-    if len(list_ts_delivery) and len(dict_transactions[db_obj.db_param.ID_USER]):
-        print("Transacts",dict_transactions)
+
+    # if any balancing energy transactions recorded, post to DB
+    if len(dict_transactions[db_obj.db_param.ID_USER]):
         db_obj.log_transactions(pd.DataFrame.from_dict(dict_transactions))
         db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
 

@@ -16,7 +16,7 @@ contract ClearingExAnte {
 	Lb.LemLib.user_info[] user_infos;
 	Lb.LemLib.id_meter[] id_meters;
 	mapping(string=>string) id_meter2id_user;
-	bool mapping_created=false;
+	// bool mapping_created=false;
 	/*list of temporary offers stored. 
 	They are relative to each market clearing and for every market clearing they might be deleted. 
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
@@ -190,12 +190,12 @@ contract ClearingExAnte {
 	    return ClearingExAnte.temp_market_results;
 	}
 	function create_meter2user() private{
-		if(!mapping_created){
+		// if(!mapping_created){
 			for(uint i=0; i<id_meters.length; i++){
 				id_meter2id_user[id_meters[i].id_meter]=id_meters[i].id_user;
 			}
-			mapping_created=true;
-		}
+			// mapping_created=true;
+		//}
 	}
 	function get_meter2user(string memory id_meter) public returns(string memory){
 		return id_meter2id_user[id_meter];
