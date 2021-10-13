@@ -143,7 +143,7 @@ def test_balancing_energy():
     print("Balancing energies test finished")
 
 
-def test_balancing_costs():
+def test_balances():
     # this test compares the balancing costs for the db and the blockchain
     print("Starting test for the balancing cost")
     # for the DB
@@ -180,15 +180,18 @@ def test_balancing_costs():
     supplier = "supplier01"
     lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
                                                   id_retailer=supplier, lem_config=config["lem"])
+    lem_settlement.update_balance_levies(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
+                                         id_retailer=supplier, lem_config=config["lem"])
 
     log_transactions_db = db_obj.get_logs_transactions()
 
-    log_transactions_db = log_transactions_db.loc[log_transactions_db[db_obj.db_param.TYPE_TRANSACTION] == "balancing"]
+    log_transactions_db = log_transactions_db.loc[log_transactions_db[db_obj.db_param.TYPE_TRANSACTION].str.contains('balancing|levies')]
     log_transactions_db = log_transactions_db.sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER,
                                                               db_obj.db_param.QTY_ENERGY])
     log_transactions_db = log_transactions_db.reset_index(drop=True)
 
     bc_obj_set.update_balance_balancing_costs(list_ts_delivery=list_ts_delivery, ts_now=ts_now, supplier_id=supplier)
+    bc_obj_set.update_balance_levies(list_ts_delivery=list_ts_delivery, ts_now=ts_now, supplier_id=supplier)
     log_transactions_blockchain = bc_obj_set.get_logs_transactions()
     log_transactions_blockchain = log_transactions_blockchain.sort_values(
         by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY])

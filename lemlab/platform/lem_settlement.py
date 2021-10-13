@@ -278,9 +278,21 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
         db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
 
 
-def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="retailer01"):
+    """
+    Determine levy energy debit and credit and add transactions to database.
+
+    :param db_obj: instance of DatabaseConnection
+    :param t_now: integer, unix timestamp current time
+    :param lem_config: dictionary containing configuration of LEM
+    :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
+
+    :return None:
+    """
+    # get mapping from meter to user
     dict_map_to_user = db_obj.get_mapping_to_user()
-    # set transaction form
+    # construct transaction dict including dynamic quality columns
     dict_transactions = {
         db_obj.db_param.ID_USER: [],
         db_obj.db_param.TS_DELIVERY: [],
@@ -294,20 +306,21 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
         dict_transactions.update({db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]: []})
 
     for ts_d in list_ts_delivery:
-        meter_readings_delta = db_obj.get_main_meter_net_flow(ts_d)
-        settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d)
+        # get meter readings and levy prices
+        meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
+        settlement_prices = db_obj.get_prices_settlement(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
         levies_pos = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_LEVIES_POSITIVE])
         levies_neg = int(settlement_prices[db_obj.db_param.PRICE_ENERGY_LEVIES_NEGATIVE])
-
+        # for each main meter reading, construct transaction
         for _, entry in meter_readings_delta.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_OUT] != 0 and levies_pos != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_OUT] * levies_pos
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_pos)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
-                dict_transactions[db_obj.db_param.QTY_ENERGY].append(entry.loc[db_obj.db_param.ENERGY_OUT])
+                dict_transactions[db_obj.db_param.QTY_ENERGY].append(- 1 * entry.loc[db_obj.db_param.ENERGY_OUT])
                 dict_transactions[db_obj.db_param.DELTA_BALANCE].append(transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
@@ -326,8 +339,8 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
 
             elif int(entry.loc[db_obj.db_param.ENERGY_IN]) != 0 and levies_neg != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_IN] * levies_neg
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_neg)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
@@ -342,14 +355,16 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_neg)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
-                dict_transactions[db_obj.db_param.QTY_ENERGY].append(entry.loc[db_obj.db_param.ENERGY_IN])
+                dict_transactions[db_obj.db_param.QTY_ENERGY].append(-1 * entry.loc[db_obj.db_param.ENERGY_IN])
                 dict_transactions[db_obj.db_param.DELTA_BALANCE].append(-1 * transaction_value)
                 dict_transactions[db_obj.db_param.T_UPDATE_BALANCE].append(t_now)
                 for quality in lem_config["types_quality"]:
                     dict_transactions[db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]].append(0)
-    if len(list_ts_delivery) and len(dict_transactions[db_obj.db_param.ID_USER]):
+    # post transactions, if any
+    if len(dict_transactions[db_obj.db_param.ID_USER]):
         db_obj.log_transactions(pd.DataFrame.from_dict(dict_transactions))
         db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
+
 
 
 def determine_prices_ex_post_markets(db_obj_admin, path_simulation, lem_config, list_ts_delivery, t_now=None):
