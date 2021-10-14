@@ -379,6 +379,7 @@ class BlockchainConnection:
         print("Logging meter reading deltas")
         for _, row in tqdm(df_meter_deltas.iterrows(), total=df_meter_deltas.shape[0]):
             tx_hash = self.log_meter_reading_delta(row)
+        self.wait_for_transact(tx_hash)
 
         return tx_hash
 
@@ -497,6 +498,12 @@ class BlockchainConnection:
 
     def update_balance_balancing_costs(self, list_ts_delivery, ts_now=round(time.time()), supplier_id="supplier01"):
         tx_hash = self.functions.update_balance_balancing_costs(tuple(list_ts_delivery), ts_now, supplier_id).transact(
+            {"from": self.coinbase}
+        )
+        self.wait_for_transact(tx_hash)
+
+    def update_balance_levies(self, list_ts_delivery, ts_now=round(time.time()), id_retailer="retailer01"):
+        tx_hash = self.functions.update_balance_levies(tuple(list_ts_delivery), ts_now, id_retailer).transact(
             {"from": self.coinbase}
         )
         self.wait_for_transact(tx_hash)

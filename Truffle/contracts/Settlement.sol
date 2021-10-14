@@ -324,6 +324,7 @@ contract Settlement {
 			prices_settlement[ts]=price;
 		}
 	}
+
 	function update_balance_balancing_costs(uint[] memory list_ts_delivery, uint ts_now, string memory supplier) public{
 		if(list_ts_delivery.length==0){
 			return;
@@ -422,7 +423,6 @@ contract Settlement {
 		if(list_ts_delivery.length==0){
 			return;
 		}
-
 		for(uint i = 0; i < list_ts_delivery.length; i++){
 			Lb.LemLib.price_settlement memory settlement_price = get_prices_settlement_by_ts(list_ts_delivery[i]);
 			uint levies_pos = settlement_price.price_energy_levies_positive;
@@ -437,80 +437,84 @@ contract Settlement {
 			if(meter_readings_delta_ts.length < 1){
 				continue;
 			}
-			for(uint j = 0; j < meter_reading_deltas.length; j++){
-				if(meter_readings_delta_ts[j].energy_out != 0 && levies_pos != 0){
-					uint transaction_value = meter_readings_delta_ts[j].energy_out * levies_pos;
-					Lb.LemLib.log_transaction memory transaction_log;
-
-					// credit retailer
-					transaction_log.id_user = retailer;
-					transaction_log.ts_delivery = list_ts_delivery[i];
-					transaction_log.price_energy_market = levies_pos;
-					transaction_log.type_transaction = "levies";
-					transaction_log.qty_energy = int(-meter_readings_delta_ts[j].energy_out);
-					transaction_log.delta_balance = int(transaction_value);
-					transaction_log.t_update_balance = ts_now;
-					transaction_log.share_quality_offers_cleared_na = uint64(0);
-					transaction_log.share_quality_offers_cleared_local = uint64(0);
-					transaction_log.share_quality_offers_cleared_green = uint64(0);
-					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
-
-					logs_transaction[index].push(transaction_log);
-					clearing.update_user_balances(transaction_log);
-
-					// debit consumer
-					transaction_log.id_user = clearing.get_meter2user(meter_readings_delta_ts[j].id_meter);
-					transaction_log.ts_delivery = list_ts_delivery[i];
-					transaction_log.price_energy_market = levies_pos;
-					transaction_log.type_transaction = "levies";
-					transaction_log.qty_energy = int(meter_readings_delta_ts[j].energy_out);
-					transaction_log.delta_balance = int(-transaction_value);
-					transaction_log.t_update_balance = ts_now;
-					transaction_log.share_quality_offers_cleared_na = uint64(0);
-					transaction_log.share_quality_offers_cleared_local = uint64(0);
-					transaction_log.share_quality_offers_cleared_green = uint64(0);
-					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
-
-					logs_transaction[index].push(transaction_log);
-					clearing.update_user_balances(transaction_log);
-				}
-				else if(meter_readings_delta_ts[j].energy_in != 0 && levies_neg != 0){
-					uint transaction_value=meter_readings_delta_ts[j].energy_in * levies_neg;
-					Lb.LemLib.log_transaction memory transaction_log;
-
-					// credit retailer
-					transaction_log.id_user = retailer;
-					transaction_log.ts_delivery = list_ts_delivery[i];
-					transaction_log.price_energy_market = levies_neg;
-					transaction_log.type_transaction = "levies";
-					transaction_log.qty_energy = int(meter_readings_delta_ts[j].energy_in);
-					transaction_log.delta_balance = int(transaction_value);
-					transaction_log.t_update_balance = ts_now;
-					transaction_log.share_quality_offers_cleared_na = uint64(0);
-					transaction_log.share_quality_offers_cleared_local = uint64(0);
-					transaction_log.share_quality_offers_cleared_green = uint64(0);
-					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
-
-					logs_transaction[index].push(transaction_log);
-					clearing.update_user_balances(transaction_log);
-
-					// debit consumer
-					transaction_log.id_user = clearing.get_meter2user(meter_readings_delta_ts[j].id_meter);
-					transaction_log.ts_delivery = list_ts_delivery[i];
-					transaction_log.price_energy_market = levies_neg;
-					transaction_log.type_transaction = "levies";
-					transaction_log.qty_energy = int(-meter_readings_delta_ts[j].energy_in);
-					transaction_log.delta_balance = int(-transaction_value);
-					transaction_log.t_update_balance = ts_now;
-					transaction_log.share_quality_offers_cleared_na = uint64(0);
-					transaction_log.share_quality_offers_cleared_local = uint64(0);
-					transaction_log.share_quality_offers_cleared_green = uint64(0);
-					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
-
-					logs_transaction[index].push(transaction_log);
-					clearing.update_user_balances(transaction_log);
-				}
-			}
 		}
 	}
+
+
+//			for(uint j = 0; j < meter_reading_deltas.length; j++){
+//				if(meter_readings_delta_ts[j].energy_out != 0 && levies_pos != 0){
+//					uint transaction_value = meter_readings_delta_ts[j].energy_out * levies_pos;
+//					Lb.LemLib.log_transaction memory transaction_log;
+//
+//					// credit retailer
+//					transaction_log.id_user = retailer;
+//					transaction_log.ts_delivery = list_ts_delivery[i];
+//					transaction_log.price_energy_market = levies_pos;
+//					transaction_log.type_transaction = "levies";
+//					transaction_log.qty_energy = int(-meter_readings_delta_ts[j].energy_out);
+//					transaction_log.delta_balance = int(transaction_value);
+//					transaction_log.t_update_balance = ts_now;
+//					transaction_log.share_quality_offers_cleared_na = uint64(0);
+//					transaction_log.share_quality_offers_cleared_local = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
+//
+//					logs_transaction[index].push(transaction_log);
+//					clearing.update_user_balances(transaction_log);
+//
+//					// debit consumer
+//					transaction_log.id_user = clearing.get_meter2user(meter_readings_delta_ts[j].id_meter);
+//					transaction_log.ts_delivery = list_ts_delivery[i];
+//					transaction_log.price_energy_market = levies_pos;
+//					transaction_log.type_transaction = "levies";
+//					transaction_log.qty_energy = int(meter_readings_delta_ts[j].energy_out);
+//					transaction_log.delta_balance = int(-transaction_value);
+//					transaction_log.t_update_balance = ts_now;
+//					transaction_log.share_quality_offers_cleared_na = uint64(0);
+//					transaction_log.share_quality_offers_cleared_local = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
+//
+//					logs_transaction[index].push(transaction_log);
+//					clearing.update_user_balances(transaction_log);
+//				}
+//				else if(meter_readings_delta_ts[j].energy_in != 0 && levies_neg != 0){
+//					uint transaction_value=meter_readings_delta_ts[j].energy_in * levies_neg;
+//					Lb.LemLib.log_transaction memory transaction_log;
+//
+//					// credit retailer
+//					transaction_log.id_user = retailer;
+//					transaction_log.ts_delivery = list_ts_delivery[i];
+//					transaction_log.price_energy_market = levies_neg;
+//					transaction_log.type_transaction = "levies";
+//					transaction_log.qty_energy = int(meter_readings_delta_ts[j].energy_in);
+//					transaction_log.delta_balance = int(transaction_value);
+//					transaction_log.t_update_balance = ts_now;
+//					transaction_log.share_quality_offers_cleared_na = uint64(0);
+//					transaction_log.share_quality_offers_cleared_local = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
+//
+//					logs_transaction[index].push(transaction_log);
+//					clearing.update_user_balances(transaction_log);
+//
+//					// debit consumer
+//					transaction_log.id_user = clearing.get_meter2user(meter_readings_delta_ts[j].id_meter);
+//					transaction_log.ts_delivery = list_ts_delivery[i];
+//					transaction_log.price_energy_market = levies_neg;
+//					transaction_log.type_transaction = "levies";
+//					transaction_log.qty_energy = int(-meter_readings_delta_ts[j].energy_in);
+//					transaction_log.delta_balance = int(-transaction_value);
+//					transaction_log.t_update_balance = ts_now;
+//					transaction_log.share_quality_offers_cleared_na = uint64(0);
+//					transaction_log.share_quality_offers_cleared_local = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green = uint64(0);
+//					transaction_log.share_quality_offers_cleared_green_local = uint64(0);
+//
+//					logs_transaction[index].push(transaction_log);
+//					clearing.update_user_balances(transaction_log);
+//				}
+//			}
+//		}
+//	}
 }

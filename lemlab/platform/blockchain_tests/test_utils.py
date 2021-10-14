@@ -5,6 +5,7 @@ import pandas as pd
 import subprocess
 import random
 
+import lemlab.platform.lem_settlement
 from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import lem
 from lemlab.bc_connection.bc_connection import BlockchainConnection
@@ -146,12 +147,80 @@ def setUp_test(generate_bids_offer, timeout=600):
     open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, return_list=True)
 
     user_infos_blockchain = bc_obj.get_list_all_users(return_list=True)
-    id_meters_blockchain = bc_obj.get_list_all_meters(return_list=True)
+    id_meters_blockchain = bc_obj.get_list_all_meters(return_list=False)
 
     return offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
            offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
            id_meters_blockchain, id_meters_db, config, list(open_offers_db.keys()).index(db_param.QUALITY_ENERGY), \
            list(open_offers_db.keys()).index(db_param.PRICE_ENERGY), db_obj, bc_obj
+
+
+def setup_settlement_test(generate_bids_offer, timeout=600):
+    offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
+    open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, quality_energy, \
+    price_index, db_obj, bc_obj = setUp_test(generate_bids_offer)
+
+    print("Starting full market for settlement test")
+    # Set clearing time
+    t_clearing_start = round(time.time())
+
+    start = time.time()
+    verbose_bc = True
+    verbose_db = True
+    shuffle = False
+    market_results_db, _, _, _, market_results_bc = lem.market_clearing(db_obj=db_obj,
+                                                                        bc_obj=bc_obj,
+                                                                        config_lem=config['lem'],
+                                                                        t_override=t_clearing_start,
+                                                                        shuffle=shuffle,
+                                                                        verbose=verbose_db,
+                                                                        verbose_bc=verbose_bc,
+                                                                        bc_test=True)
+
+    market_results_db = market_results_db['da']
+
+    end = time.time()
+
+    print("Market clearing done in", (end - start) / 60, "minutes")
+
+    # simulate meter readings from market results with random errors
+    list_ts_delivery = simulate_meter_readings_from_market_results(db_obj=db_obj, rand_percent_var=15)
+    meter_readings_delta = db_obj.get_meter_readings_delta().sort_values(
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
+    meter_readings_delta = meter_readings_delta.reset_index(drop=True)
+    # create connection object for settlement contract
+    settlement_dict = config['db_connections']['bc_dict']
+    settlement_dict["contract_name"] = "Settlement"
+    bc_obj_settlement = BlockchainConnection(settlement_dict)
+    # set the meter readings and determine balancing energy
+    bc_obj_settlement.log_meter_readings_delta(meter_readings_delta)
+
+    # Calculate/determine balancing energies
+    bc_obj_settlement.determine_balancing_energy(list_ts_delivery)
+    lemlab.platform.lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
+
+    sim_path = "C:/Users/ga47num/PycharmProjects/lemlab/scenarios/"
+    files_path = "C:/Users/ga47num/PycharmProjects/lemlab/input_data/"
+
+    # Set settlement prices in db and bc
+    lemlab.platform.lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path,
+                                                         files_path=files_path, list_ts_delivery=list_ts_delivery)
+    bc_obj_settlement.set_prices_settlement(list_ts_delivery)
+
+    # Update balances according to balancing energies and levies on db and bc
+    ts_now = round(time.time())
+    id_retailer = "retailer01"
+    lemlab.platform.lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
+                                                                  id_retailer=id_retailer, lem_config=config["lem"])
+    # lemlab.platform.lem_settlement.update_balance_levies(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
+    #                                                      id_retailer=id_retailer, lem_config=config["lem"])
+    bc_obj_settlement.update_balance_balancing_costs(list_ts_delivery=list_ts_delivery,
+                                                     ts_now=ts_now, supplier_id=id_retailer)
+    # bc_obj_settlement.update_balance_levies(list_ts_delivery=list_ts_delivery, ts_now=ts_now, id_retailer=id_retailer)
+
+    return offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
+           open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, \
+           quality_energy, price_index, db_obj, bc_obj, list_ts_delivery, bc_obj_settlement
 
 
 def result_test(testname, passed):
@@ -169,7 +238,7 @@ def result_test(testname, passed):
             res.to_excel(writer)
 
 
-def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15):
+def simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15):
     """
     Read market results from data base
     Aggregate users with meters for each timestep
@@ -289,7 +358,6 @@ def test_simulate_meter_readings_from_market_results(db_obj=None, rand_percent_v
 
 
 def test_ts_uint(ts_delivery):
-
     timestep_size = int(15 * 60)
     horizon = int(7 * 24 * 60 * 60 / timestep_size)
     monday_00 = 1626040800  # reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone

@@ -2,7 +2,7 @@ pragma solidity >=0.5.0 <0.7.5;
 pragma experimental ABIEncoderV2;
 
 contract LemLib {
-    
+
     struct offer_bid {
             string id_user;
             uint qty_energy;
@@ -134,13 +134,13 @@ contract LemLib {
     uint constant horizon = 7*24*60*60/timestep_size;         // 7 days, divided in 15 minutes intervals
     uint euro_to_sigma=1e9;
     //functions for returning the variables
-    function get_horizon()public view returns(uint){
+    function get_horizon()public pure returns(uint){
         return horizon;
     }
-    function get_num_meters() public view returns(uint){
+    function get_num_meters() public pure returns(uint){
         return num_meters;
     }
-    function get_timestep() public view returns(uint){
+    function get_timestep() public pure returns(uint){
         return timestep_size;
     }
     //return true if a list of user infos has at least one user with id_user as the argument given in input
@@ -169,7 +169,7 @@ contract LemLib {
         if (tempEmptyStringTest.length == 0) {
             return 0x0;
         }
-    
+
         assembly {
             result := mload(add(source, 32))
         }
@@ -227,7 +227,7 @@ contract LemLib {
         for(uint i = start; i < arr.length; i++) {
             new_arr[i+1] = arr[i];
         }
-        
+
         return new_arr;
     }
     //sums the values of a uint array
@@ -245,7 +245,7 @@ contract LemLib {
     */
     function getEnergyCumulated(offer_bid[] memory offers_bids) public pure returns (uint[] memory) {
         uint[] memory energy_cumulated = new uint[](offers_bids.length);
-        
+
         for (uint i = 0; i < energy_cumulated.length; i++) {
             energy_cumulated[i] = sumArrIndices(0, i, arr_of_quantities_offerbids(offers_bids));
         }
@@ -308,12 +308,12 @@ contract LemLib {
         }
     }
     /*computes and return an array of differences of the lenght as the input array -1.
-    For every position of the new array, every element of the new array is equal to 
+    For every position of the new array, every element of the new array is equal to
     the difference between the element at the next position in the input array, and the element at the position in the input array
     */
     function computeDifferences(uint[] memory arr, uint start, uint end) public pure returns(uint[] memory) {
         uint[] memory differences = new uint[](end - start);
-        
+
         for(uint i = start; i < end;i++) {
             differences[i] = arr[i+1] - arr[i];
         }
@@ -392,7 +392,7 @@ contract LemLib {
     }
     //function to get the market results inside a ts_delivery, it first copies the results, then deletes the rest of
     //the entries not used, this is done because memory arrays cannot be dynamic and we dont need a storage array for this
-    function market_results_inside_ts_delivery(market_result_total[] memory results, uint ts_delivery) public returns(market_result_total[] memory){
+    function market_results_inside_ts_delivery(market_result_total[] memory results, uint ts_delivery) public pure returns(market_result_total[] memory){
         uint length_results=0;
         for(uint i=0; i<results.length; i++){
             if(results[i].ts_delivery==ts_delivery){
@@ -418,7 +418,7 @@ contract LemLib {
     //function to get the meter readings inside a ts_delivery, memory optimized. It needs to first read the amount of
     // meters that there are to create the array, since memory arrays are not allowed to be dynamically changed once
     // initialized
-    function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public returns(meter_reading_delta[] memory){
+    function meters_delta_inside_ts_delivery(meter_reading_delta[] memory meters, uint ts_delivery) public pure returns(meter_reading_delta[] memory){
         uint length_meters=0;
         for(uint i=0; i<meters.length; i++){
             if(meters[i].ts_delivery==ts_delivery){
@@ -440,7 +440,7 @@ contract LemLib {
         }
         return filtered_results;
     }
-    function ts_delivery_to_index(uint ts_delivery) public view returns(uint){
+    function ts_delivery_to_index(uint ts_delivery) public pure returns(uint){
         uint monday_00 = 1626040800;    //reference unix time from Monday 12th July 2021 at 00:00 at Berlin timezone
         uint dist=horizon*timestep_size+1;
         uint div=(ts_delivery-monday_00)/dist;
@@ -459,8 +459,8 @@ contract LemLib {
         uint highest = 0;
             for(uint i = 0; i < arr.length; i++){
                 if(arr[i] > highest) {
-                    highest = arr[i]; 
-                } 
+                    highest = arr[i];
+                }
             }
         return highest;
     }
@@ -469,8 +469,8 @@ contract LemLib {
         uint lowest = arr[0];
         for(uint i = 0; i < arr.length; i++){
             if(arr[i] < lowest) {
-                lowest = arr[i]; 
-            } 
+                lowest = arr[i];
+            }
         }
         return lowest;
     }
@@ -505,7 +505,7 @@ contract LemLib {
         }
         return cropped;
     }
-    /*returns an array of arrays of indices. This has the lenght of the data interval(eg [100,1000] = 901). 
+    /*returns an array of arrays of indices. This has the lenght of the data interval(eg [100,1000] = 901).
     For every position, it saves all the indices of the data where the element is equal to the value in the interval
     */
     function getCountIndices(uint[] memory count, uint[] memory data, uint[] memory indices, uint start, uint end) public pure returns(uint[][] memory) {
@@ -514,7 +514,7 @@ contract LemLib {
         //indices size = full data.length(no start/end)
         uint[] memory data_cropped = cropArray(data, start, end);
         uint min = minArray(data_cropped);
-        
+
         uint z;
         uint[][] memory count_indices = new uint[][](count.length);
         for (uint i = 0; i < count.length; i++) {
@@ -600,7 +600,7 @@ contract LemLib {
         for (uint i = 0; i < data.length; i++) {
             count[data[i] - min]++;
         }
-        
+
         return count;
     }
     //reorders a uint array from start to end index, accoording to new indices
@@ -614,7 +614,7 @@ contract LemLib {
     //shuffles an array of uint
     function shuffle_arr(uint[] memory arr) public view returns(uint[] memory) {
         for (uint i = 0; i < arr.length; i++) {
-            uint n = i + uint(keccak256(abi.encodePacked(now))) % (arr.length - i);
+            uint n = i + uint(keccak256(abi.encodePacked(block.timestamp))) % (arr.length - i);
             uint temp = arr[n];
             arr[n] = arr[i];
             arr[i] = temp;
@@ -661,5 +661,4 @@ contract LemLib {
         }
         return count;
     }
-
 }

@@ -17,12 +17,12 @@ contract ClearingExAnte {
 	Lb.LemLib.id_meter[] id_meters;
 	mapping(string=>string) id_meter2id_user;
 	// bool mapping_created=false;
-	/*list of temporary offers stored. 
-	They are relative to each market clearing and for every market clearing they might be deleted. 
+	/*list of temporary offers stored.
+	They are relative to each market clearing and for every market clearing they might be deleted.
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
 	Lb.LemLib.offer_bid[] temp_offers;
-	/*list of temporary bids stored. 
-	They are relative to each market clearing and for every market clearing they might be deleted. 
+	/*list of temporary bids stored.
+	They are relative to each market clearing and for every market clearing they might be deleted.
 	Now the deletion is performed via Web3.py in python before pushing new ones.*/
 	Lb.LemLib.offer_bid[] temp_bids;
 	Lb.LemLib.market_result[] temp_market_results;//market results for each single clearing(for each specific t_clearing_current)
@@ -45,13 +45,13 @@ contract ClearingExAnte {
 	function get_own_address() public view returns(address){
 		return address(this);
 	}
-	function clearTempData() public pure {//function that deletes objects from the contract storage
+	function clearTempData() public {//function that deletes objects from the contract storage
 	    delete ClearingExAnte.temp_offers;
 		delete ClearingExAnte.temp_bids;
 		delete ClearingExAnte.temp_market_results;
 		delete ClearingExAnte.market_results_total;
 	}
-	function clearPermanentData() public pure {//function that deletes objects from the contract storage
+	function clearPermanentData() public {//function that deletes objects from the contract storage
 		delete ClearingExAnte.user_infos;
 		delete ClearingExAnte.id_meters;
 		delete ClearingExAnte.offers;
@@ -64,16 +64,16 @@ contract ClearingExAnte {
 	function clearTempData_gas_limit(uint max_entries) public {
 	    for(uint i = 0; i < max_entries; i++){
 	    	if(ClearingExAnte.temp_offers.length > 0){
-	    		//delete ClearingExAnte.temp_offers[ClearingExAnte.temp_offers.length - 1];
-	    		ClearingExAnte.temp_offers.length--;
+	   // 		delete ClearingExAnte.temp_offers[ClearingExAnte.temp_offers.length-1];
+	    		ClearingExAnte.temp_offers.pop();
 	    	}
 	    	if(ClearingExAnte.temp_bids.length > 0){
-	    		//delete ClearingExAnte.temp_bids[ClearingExAnte.temp_bids.length - 1];
-	    		ClearingExAnte.temp_bids.length--;
+	   // 		delete ClearingExAnte.temp_bids[ClearingExAnte.temp_bids.length-1];
+	    		ClearingExAnte.temp_bids.pop();
 	    	}
 	    	if(ClearingExAnte.temp_market_results.length > 0){
-	    		//delete ClearingExAnte.temp_market_results[ClearingExAnte.temp_market_results.length - 1];
-	    		ClearingExAnte.temp_market_results.length--;
+	   // 		delete ClearingExAnte.temp_market_results[ClearingExAnte.temp_market_results.length-1];
+	    		ClearingExAnte.temp_market_results.pop();
 	    	}
 	    }
 	}
@@ -84,24 +84,24 @@ contract ClearingExAnte {
 	function clearPermanentData_gas_limit(uint max_entries) public {
 	    for(uint i = 0; i < max_entries; i++){
 	    	if(ClearingExAnte.offers.length > 0){
-	    		//delete ClearingExAnte.offers[ClearingExAnte.offers.length - 1];
-	    		ClearingExAnte.offers.length--;
+	   // 		delete ClearingExAnte.offers[ClearingExAnte.offers.length-1];
+	    		ClearingExAnte.offers.pop();
 	    	}
 	    	if(ClearingExAnte.bids.length > 0){
-	    		//delete ClearingExAnte.bids[ClearingExAnte.bids.length - 1];
-	    		ClearingExAnte.bids.length--;
+	   // 		delete ClearingExAnte.bids[ClearingExAnte.bids.length-1];
+	    		ClearingExAnte.bids.pop();
 	    	}
 	    	if(ClearingExAnte.market_results_total.length > 0){
-	    		//delete ClearingExAnte.market_results_total[ClearingExAnte.market_results_total.length - 1];
-	    		ClearingExAnte.market_results_total.length--;
+	   // 		delete ClearingExAnte.market_results_total[ClearingExAnte.market_results_total.length - 1];
+	    		ClearingExAnte.market_results_total.pop();
 	    	}
 	    	if(ClearingExAnte.user_infos.length > 0){
-	    		//delete ClearingExAnte.user_infos[ClearingExAnte.user_infos.length - 1];
-	    		ClearingExAnte.user_infos.length--;
+	   // 		delete ClearingExAnte.user_infos[ClearingExAnte.user_infos.length - 1];
+	    		ClearingExAnte.user_infos.pop();
 	    	}
 	    	if(ClearingExAnte.id_meters.length > 0){
-	    		//delete ClearingExAnte.id_meters[ClearingExAnte.id_meters.length - 1];
-	    		ClearingExAnte.id_meters.length--;
+	   // 		delete ClearingExAnte.id_meters[ClearingExAnte.id_meters.length - 1];
+	    		ClearingExAnte.id_meters.pop();
 	    	}
 	    }
 	}
@@ -145,8 +145,8 @@ contract ClearingExAnte {
 	function delete_user(Lb.LemLib.user_info memory user, bool del_meters) public {
 		for(uint i=0; i<ClearingExAnte.user_infos.length; i++){
 			if(lib.compareStrings(ClearingExAnte.user_infos[i].id_user, user.id_user)){
-				ClearingExAnte.user_infos[i]=ClearingExAnte.user_infos[ClearingExAnte.user_infos.length-1];
-				ClearingExAnte.user_infos.length--;
+				// ClearingExAnte.user_infos[i]=ClearingExAnte.user_infos[ClearingExAnte.user_infos.length-1];
+				ClearingExAnte.user_infos.pop();
 				break;
 			}
 		}
@@ -154,8 +154,8 @@ contract ClearingExAnte {
 			// same as delete_meter, but in this case we do not break, as there may be many meters for one user
 			for(uint j=0; j<ClearingExAnte.id_meters.length; j++){
 				if(lib.compareStrings(ClearingExAnte.id_meters[j].id_user, user.id_user)){
-					ClearingExAnte.id_meters[j]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
-					ClearingExAnte.id_meters.length--;
+				// 	ClearingExAnte.id_meters[j]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
+					ClearingExAnte.id_meters.pop();
 				}
 			}
 		}
@@ -164,8 +164,8 @@ contract ClearingExAnte {
 	function delete_meter(Lb.LemLib.id_meter memory meter) public{
 		for(uint i=0; i<ClearingExAnte.id_meters.length; i++){
 			if(lib.compareStrings(ClearingExAnte.id_meters[i].id_meter, meter.id_meter)){
-				ClearingExAnte.id_meters[i]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
-				ClearingExAnte.id_meters.length--;
+				// ClearingExAnte.id_meters[i]=ClearingExAnte.id_meters[ClearingExAnte.id_meters.length-1];
+				ClearingExAnte.id_meters.pop();
 				break;
 			}
 		}
@@ -197,7 +197,7 @@ contract ClearingExAnte {
 			// mapping_created=true;
 		//}
 	}
-	function get_meter2user(string memory id_meter) public returns(string memory){
+	function get_meter2user(string memory id_meter) public view returns(string memory){
 		return id_meter2id_user[id_meter];
 	}
 
@@ -326,15 +326,15 @@ contract ClearingExAnte {
 	//add one supplier bid and one supplier offer to the lists of offers and bids given in input. then it returns them.
 	function add_supplier_bids_memory(uint t_clearing_current, Lb.LemLib.offer_bid[] memory filtered_offers, Lb.LemLib.offer_bid[] memory filtered_bids) public view returns(Lb.LemLib.offer_bid[] memory, Lb.LemLib.offer_bid[] memory) {
 	    Lb.LemLib.offer_bid memory supOfferBid = Lb.LemLib.offer_bid({id_user:p.getIdSupplier(), qty_energy: p.getQtyOfferSupplier(), price_energy: p.getPriceOfferSupplier(), quality_energy:0, type_position:"0", premium_preference_quality:p.getPremium_preference_quality(), number_position:0, status_position:0, t_submission:t_clearing_current, ts_delivery:t_clearing_current});
-		
+
 		Lb.LemLib.offer_bid[] memory filtered_offers_sup = new Lb.LemLib.offer_bid[](filtered_offers.length+1);
 		filtered_offers_sup[0] = supOfferBid;
 		for(uint i=0; i<filtered_offers.length; i++) {
 		    filtered_offers_sup[i+1] = filtered_offers[i];
 		}
-		
+
 	    supOfferBid = Lb.LemLib.offer_bid({ts_delivery:t_clearing_current, price_energy: p.getPriceBidSupplier(), number_position:0, t_submission:t_clearing_current, id_user:p.getIdSupplier(), qty_energy: p.getQtyBidSupplier(), status_position:0, type_position:"1", quality_energy:0, premium_preference_quality:p.getPremium_preference_quality()});
-	    
+
 	    Lb.LemLib.offer_bid[] memory filtered_bids_sup = new Lb.LemLib.offer_bid[](filtered_bids.length+1);
 		filtered_bids_sup[0] = supOfferBid;
 		for(uint i=0; i<filtered_bids.length; i++) {
@@ -364,9 +364,9 @@ contract ClearingExAnte {
         if( filtered_offers.length == 0 || filtered_bids.length == 0 ) {
         	if(verbose) string_to_log = lib.concatenateStrings(string_to_log,"\tNo clearing - supply and/or bids are empty\n");
         }
-        
+
         else { //Offers and bids are not empty
-			
+
 			if(verbose) string_to_log = lib.concatenateStrings(string_to_log,"\tLength of offers and bids > 0. Starting clearing\n");
             if(shuffle) {//shuffling positions
 		    	filtered_offers = lib.shuffle_OfferBids(filtered_offers);
@@ -386,7 +386,7 @@ contract ClearingExAnte {
             //merging filtered offers and bids
             tmp_market_results = merge_offers_bids_memory(filtered_offers, filtered_bids);
             if(verbose) string_to_log = lib.concatenateStrings(lib.concatenateStrings(string_to_log,lib.concatenateStrings("\tMerge offers/bid length: ",lib.uintToString(tmp_market_results.length))),"\n");
-            
+
             //calculating uniform and discriminative pricing
             tmp_market_results = calc_market_clearing_prices(tmp_market_results, uniform_pricing, discriminative_pricing);
 
@@ -396,7 +396,7 @@ contract ClearingExAnte {
             	}
             }
             if(verbose) string_to_log = lib.concatenateStrings(string_to_log,"\tCalculated clearing prices\n");
-            
+
             //Check whether market has cleared a volume
             if(writeFinalMarketResult && tmp_market_results.length > 0) {
             	//time costly approach!
@@ -455,7 +455,7 @@ contract ClearingExAnte {
 	    	filtered_bids = srt.insertionSortOffersBidsPrice_Quality(filtered_bids, false, false, simulation_test, false);
 
             Lb.LemLib.market_result[] memory tmp_market_results = merge_offers_bids_memory(filtered_offers, filtered_bids);
-            
+
             tmp_market_results = calc_market_clearing_prices(tmp_market_results, uniform_pricing, discriminative_pricing);
 
             return temp_market_results;
@@ -467,9 +467,9 @@ contract ClearingExAnte {
 	    //Insert cumulated bid energy into tables
 	    uint[] memory energy_cumulated_offers = lib.getEnergyCumulated(filtered_offers);
 	    uint[] memory energy_cumulated_bids = lib.getEnergyCumulated(filtered_bids);
-	    
+
 	    //merge bids and offers
-	    
+
 	    uint i = 0;
 	    uint j = 0;
 	    uint z = 0;
@@ -515,7 +515,7 @@ contract ClearingExAnte {
 	                    share_quality_green:0,
 	                    share_quality_green_local:0
 	                });
-	       
+
 	        if (energy_cumulated_offers[i] == energy_cumulated_bids[j]) {
 	            i += 1;
 	            j += 1;
@@ -535,7 +535,7 @@ contract ClearingExAnte {
 	            z++;
 	        }
 	    }
-	    
+
 	    //z basically equals the length
 
 	   	if(z <= 0) {
@@ -549,7 +549,7 @@ contract ClearingExAnte {
 	    for(i = 1; i < qties_energy_traded.length; i++) {
 	    	qties_energy_traded[i] = qtys_difference[i-1];
 	    }
-	    
+
 	    //modify temp_market_results_m length
         Lb.LemLib.market_result[] memory temp_market_results_final = new Lb.LemLib.market_result[](z);
         for(i = 0; i < z; i++) {
@@ -685,5 +685,4 @@ contract ClearingExAnte {
     		emit logString(string_to_log);
     	}
 	}
-
 }
