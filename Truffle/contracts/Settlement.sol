@@ -223,7 +223,7 @@ contract Settlement {
 	// we get the total market results, as the temp list is empty
 	// this is just for utility to call it from the Settlement contract instance instead of the ClearingExAnte instance
 	function get_market_results_total() public view returns(Lb.LemLib.market_result_total[] memory){
-		return clearing.getMarketResultsTotal();
+		return clearing.get_market_results_total();
 	}
 
 	// function to determine the changes in energy for a given list of time steps

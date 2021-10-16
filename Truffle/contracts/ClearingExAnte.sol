@@ -182,7 +182,7 @@ contract ClearingExAnte {
 		else return ClearingExAnte.bids;
     }
     //gets the total market results
-	function getMarketResultsTotal() public view returns (Lb.LemLib.market_result_total[] memory) {
+	function get_market_results_total() public view returns (Lb.LemLib.market_result_total[] memory) {
 	    return ClearingExAnte.market_results_total;
 	}
 	//gets the temporary market results
@@ -630,7 +630,7 @@ contract ClearingExAnte {
 		return temp_balance_update;
 	}
 	//update the balances of the user infos in the storage, given the total market results on storage as well. It writes the results on storage
-	function updateBalances() public {
+	function update_balances_after_clearing_ex_ante() public {
 		for(uint i = 0; i < ClearingExAnte.market_results_total.length; i++) {
 			int delta = int(ClearingExAnte.market_results_total[i].price_energy_market_uniform * ClearingExAnte.market_results_total[i].qty_energy_traded);//I don't divide by 1000, since there is no float
 			for(uint j = 0; j < ClearingExAnte.user_infos.length; j++) {
@@ -678,7 +678,7 @@ contract ClearingExAnte {
         	single_clearing(t_clearing_current, add_supplier_bids, uniform_pricing, discriminative_pricing, t_clearing_start, false, true, verbose, shuffle, simulation_test);
     	}
     	//updating balances on storage
-    	if(update_balances) updateBalances();
+    	if(update_balances) update_balances_after_clearing_ex_ante();
 		create_meter2user();
     	if(verbose) {
     		string_to_log = lib.concatenateStrings(string_to_log, "Updated balances of users");

@@ -1,49 +1,24 @@
 import pytest
 import pandas as pd
-import time
-
-from tqdm import tqdm
 
 from lemlab.platform import lem, lem_settlement
 from lemlab.platform.blockchain_tests import test_utils
-from lemlab.platform.lem import _add_supplier_bids, clearing_da
-from lemlab.bc_connection.bc_connection import BlockchainConnection
 
-offers_bc_archive, bids_bc_archive = None, None
-open_offers_bc, open_bids_bc = None, None
-offers_db_archive, bids_db_archive = None, None
-open_offers_db, open_bids_db = None, None
-generate_bids_offer = True
-user_infos_bc = None
-user_infos_db = None
-id_meters_bc = None
-id_meters_db = None
 config = None
-quality_index = None
-price_index = None
 db_obj = None
-bc_obj = None
-verbose = True
-ts_delivery_list = None
+bc_obj_clearing_ex_ante = None
 bc_obj_settlement = None
 
 
 # this method is executed before all the others, to get useful global variables, needed for the tests
 @pytest.fixture(scope="session", autouse=True)
-def setUp():
-    global offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
-        open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, \
-        quality_energy, price_index, db_obj, bc_obj, ts_delivery_list, bc_obj_settlement
-    offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
-    open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, quality_energy, \
-    price_index, db_obj, bc_obj, ts_delivery_list, bc_obj_settlement \
-        = test_utils.setup_settlement_test(generate_bids_offer)
+def setup():
+    global config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement
+    config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement = \
+        test_utils.setup_settlement_test(generate_random_test_data=True)
 
 
 def test_meter_readings():
-    # Pre-check whether id on bc and db are equal
-    pd.testing.assert_frame_equal(id_meters_db, id_meters_bc, check_dtype=False)
-
     # Get meter readings delta
     meter_readings_delta_bc = bc_obj_settlement.get_meter_readings_delta().sort_values(
         by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
@@ -66,11 +41,11 @@ def test_balancing_energy():
     assert not balancing_energies_bc.empty, "Error: balancing energy is empty in bc"
 
     # Sort balancing energies by meter id and ts delivery
-    balancing_energies_db = balancing_energies_db.sort_values(by=[bc_obj.bc_param.ID_METER,
-                                                                  bc_obj.bc_param.TS_DELIVERY])
+    balancing_energies_db = balancing_energies_db.sort_values(by=[bc_obj_clearing_ex_ante.bc_param.ID_METER,
+                                                                  bc_obj_clearing_ex_ante.bc_param.TS_DELIVERY])
     balancing_energies_db = balancing_energies_db.reset_index(drop=True)
-    balancing_energies_bc = balancing_energies_bc.sort_values(by=[bc_obj.bc_param.ID_METER,
-                                                                  bc_obj.bc_param.TS_DELIVERY])
+    balancing_energies_bc = balancing_energies_bc.sort_values(by=[bc_obj_clearing_ex_ante.bc_param.ID_METER,
+                                                                  bc_obj_clearing_ex_ante.bc_param.TS_DELIVERY])
     balancing_energies_bc = balancing_energies_bc.reset_index(drop=True)
 
     # Check whether balancing energies are equal on bc and db
@@ -90,8 +65,8 @@ def test_prices_settlement():
                                                                 db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE])
     settlement_prices_db = settlement_prices_db.reset_index(drop=True)
     settlement_prices_bc = bc_obj_settlement.get_prices_settlement()
-    settlement_prices_bc = settlement_prices_bc.sort_values(by=[bc_obj.bc_param.TS_DELIVERY,
-                                                                bc_obj.bc_param.PRICE_ENERGY_BALANCING_POSITIVE])
+    settlement_prices_bc = settlement_prices_bc.sort_values(by=[bc_obj_clearing_ex_ante.bc_param.TS_DELIVERY,
+                                                                bc_obj_clearing_ex_ante.bc_param.PRICE_ENERGY_BALANCING_POSITIVE])
     settlement_prices_bc = settlement_prices_bc.reset_index(drop=True)
 
     # Check whether settlement prices are equal on db and bc
@@ -122,7 +97,7 @@ def test_user_info():
         by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
     info_user_db = info_user_db.reset_index(drop=True)
 
-    info_user_bc = bc_obj.get_list_all_users()
+    info_user_bc = bc_obj_clearing_ex_ante.get_list_all_users()
     info_user_bc = info_user_bc.sort_values(
         by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
     info_user_bc = info_user_bc.reset_index(drop=True)

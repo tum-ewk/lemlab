@@ -6,79 +6,48 @@ from lemlab.db_connection import db_param
 from lemlab.platform import lem
 from lemlab.platform.blockchain_tests import test_utils
 
-verbose_bc = True
-verbose_db = True
-shuffle = False
-
-offers_blockchain_archive, bids_blockchain_archive = None, None
-open_offers_blockchain, open_bids_blockchain = None, None
-offers_db_archive, bids_db_archive = None, None
-open_offers_db, open_bids_db = None, None
-generate_bids_offer = True
-user_infos_blockchain = None
-user_infos_db = None
-id_meters_blockchain = None
-id_meters_db = None
 config = None
-quality_index = None
-price_index = None
 db_obj = None
-bc_obj = None
+bc_obj_clearing_ex_ante = None
 
 
 # this method is executed before all the others, to get useful global variables, needed for the tests
 @pytest.fixture(scope="session", autouse=True)
-def setUp():
-    global offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
-        offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
-        id_meters_blockchain, id_meters_db, config, quality_energy, price_index, db_obj, bc_obj
-    offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
-    offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
-    id_meters_blockchain, id_meters_db, config, quality_energy, price_index, \
-    db_obj, bc_obj = test_utils.setUp_test(generate_bids_offer)
+def setup():
+    global config, db_obj, bc_obj_clearing_ex_ante
+    config, db_obj, bc_obj_clearing_ex_ante, _ = test_utils.setup_clearing_ex_ante_test(generate_random_test_data=True)
 
 
-# results of the full market clearing, the updated balances, on the blockchain and on python are compared
-def test_clearings():
-    # Set clearing time
-    t_clearing_start = round(time.time())
+def test_clearing_results_ex_ante():
+    # Get market results from db and bc
+    clearing_ex_ante_results_db, _ = db_obj.get_results_market_ex_ante()
+    clearing_ex_ante_results_bc = bc_obj_clearing_ex_ante.get_market_results()
 
-    tx_hash = bc_obj.functions.updateBalances().transact({'from': bc_obj.coinbase})
-    bc_obj.wait_for_transact(tx_hash)
-    user_infos_bc_df = bc_obj.get_list_all_users()
-    user_infos_db = pd.concat([db_obj.get_info_user(user_id) for user_id in db_obj.get_list_all_users()])
-    user_infos_db = user_infos_db.sort_values(by=[db_param.ID_USER], ascending=[True])
-    user_infos_bc_df = user_infos_bc_df.sort_values(by=[db_param.ID_USER], ascending=[True])
-    user_infos_db = user_infos_db.set_index(user_infos_bc_df.index)
+    # Sort market results and reset indices
+    clearing_ex_ante_results_bc = clearing_ex_ante_results_bc.sort_values(
+        by=[db_param.TS_DELIVERY, db_param.QTY_ENERGY_TRADED, db_param.PRICE_ENERGY_OFFER],
+        ascending=[True, True, True])
+    clearing_ex_ante_results_db = clearing_ex_ante_results_db.sort_values(
+        by=[db_param.TS_DELIVERY, db_param.QTY_ENERGY_TRADED, db_param.PRICE_ENERGY_OFFER],
+        ascending=[True, True, True])
+    clearing_ex_ante_results_bc = clearing_ex_ante_results_bc.reset_index(drop=True)
+    clearing_ex_ante_results_db = clearing_ex_ante_results_db.reset_index(drop=True)
+    clearing_ex_ante_results_bc = clearing_ex_ante_results_bc.reindex(sorted(clearing_ex_ante_results_bc.columns), axis=1)
+    clearing_ex_ante_results_db = clearing_ex_ante_results_db.reindex(sorted(clearing_ex_ante_results_db.columns), axis=1)
 
-    start = time.time()
-    market_results_python, _, _, _, market_results_blockchain = lem.market_clearing(db_obj=db_obj,
-                                                                                    bc_obj=bc_obj,
-                                                                                    config_lem=config['lem'],
-                                                                                    t_override=t_clearing_start,
-                                                                                    shuffle=shuffle,
-                                                                                    verbose=verbose_db,
-                                                                                    verbose_bc=verbose_bc,
-                                                                                    bc_test=True)
+    # Check whether market results are equal on db and bc
+    pd.testing.assert_frame_equal(clearing_ex_ante_results_bc, clearing_ex_ante_results_db, check_dtype=False)
 
-    market_results_python = market_results_python['da']
-    end = time.time()
-    print("Elapsed time market clearing", (end-start)/60.0, "minutes")
+    # Get user infos from db and bc
+    info_user_db = db_obj.get_info_user()
+    info_user_db = info_user_db.sort_values(
+        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    info_user_db = info_user_db.reset_index(drop=True)
 
-    if shuffle:
-        assert len(market_results_python) >= 0.1 * len(market_results_blockchain) or len(
-            market_results_blockchain) >= 0.1 * len(market_results_python)
-        try:
-            pd.testing.assert_frame_equal(market_results_python, market_results_blockchain, check_dtype=False)
-        except Exception as e:
-            print(e)
-    else:
-        if market_results_blockchain.empty and market_results_python.empty:
-            print("Both dataframes resulted empty")
-            assert True
-        else:
-            pd.testing.assert_frame_equal(market_results_blockchain, market_results_python, check_dtype=False)
-            assert True
+    info_user_bc = bc_obj_clearing_ex_ante.get_list_all_users()
+    info_user_bc = info_user_bc.sort_values(
+        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    info_user_bc = info_user_bc.reset_index(drop=True)
 
-    # Check market position equality
-    pd.testing.assert_frame_equal(user_infos_db, user_infos_bc_df)
+    # Check whether balances are equal after market clearing on db and bc
+    pd.testing.assert_frame_equal(info_user_db, info_user_bc)

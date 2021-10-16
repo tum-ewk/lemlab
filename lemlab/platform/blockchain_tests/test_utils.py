@@ -2,7 +2,6 @@ import os
 import time
 import yaml
 import pandas as pd
-import subprocess
 import random
 
 import lemlab.platform.lem_settlement
@@ -10,34 +9,49 @@ from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import lem
 from lemlab.bc_connection.bc_connection import BlockchainConnection
 from lemlab.platform.lem_settlement import determine_balancing_energy
-
 from current_scenario_file import scenario_file_path
 
 
-# this file initializes random data on the blockchain and on the database
-def init_random_data():
+def setup_test_general(generate_random_test_data=False):
     yaml_file = scenario_file_path
+
     # load configuration file
-    with open(yaml_file) as config_file:
+    with open(f"" + yaml_file) as config_file:
         config = yaml.load(config_file, Loader=yaml.FullLoader)
+
     # Create a db connection object
     db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
                                               lem_config=config['lem'])
-    # Initialize database
+    # Create bc connection objects to ClearingExAnte and Settlement contract
+    market_contract_dict = config['db_connections']['bc_dict']
+    market_contract_dict["contract_name"] = "ClearingExAnte"
+    bc_obj_clearing_ex_ante = BlockchainConnection(bc_dict=market_contract_dict)
+    settlement_contract_dict = config['db_connections']['bc_dict']
+    settlement_contract_dict["contract_name"] = "Settlement"
+    bc_obj_settlement = BlockchainConnection(settlement_contract_dict)
+
+    if generate_random_test_data:
+        init_random_data(db_obj=db_obj, bc_obj_market=bc_obj_clearing_ex_ante,
+                         config=config, bc_obj_settlement=bc_obj_settlement)
+
+    return config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement
+
+
+def init_random_data(db_obj, bc_obj_market, config, bc_obj_settlement):
+    # Clear data from db and bc
     db_obj.init_db(clear_tables=True, reformat_tables=True)
+    bc_obj_market.clear_temp_data()
+    bc_obj_market.clear_permanent_data()
+    bc_obj_settlement.clear_data()
 
     # Create list of random user ids and meter ids
     ids_users_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
     ids_meter_random = lem.create_user_ids(num=config['prosumer']['general_number_of'])
     ids_market_agents = lem.create_user_ids(num=config['prosumer']['general_number_of'])
 
-    bc_obj = BlockchainConnection(bc_dict=config['db_connections']['bc_dict'])  # connect to the platform contract
-    bc_obj.clear_temp_data()
-    bc_obj.clear_permanent_data()
-
+    tx_hash = None
     # Register meters and users on database
     for z in range(len(ids_users_random)):
-
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_USER, dtype=True)
         col_data = [ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]
         if any([type(data) != typ for data, typ in zip(col_data, types)]):
@@ -45,9 +59,10 @@ def init_random_data():
         df_insert = pd.DataFrame(
             data=[col_data],
             columns=cols)
-        db_obj.register_user(df_in=df_insert)
 
-        bc_obj.register_user(df_insert)
+        # Register users on bc and db
+        db_obj.register_user(df_in=df_insert)
+        bc_obj_market.register_user(df_user=df_insert)
 
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_METER, dtype=True)
         col_data = [ids_meter_random[z], ids_users_random[z], "0", "virtual grid meter", 'aggregator', 'green', 0, 0,
@@ -57,23 +72,12 @@ def init_random_data():
         df_insert = pd.DataFrame(
             data=[col_data],
             columns=cols)
+
+        # Register meters on db and bc
         db_obj.register_meter(df_in=df_insert)
+        tx_hash = bc_obj_market.register_meter(df_insert)
 
-        tx_hash = bc_obj.register_meter(df_insert)
-
-    bc_obj.wait_for_transact(tx_hash)
-
-    if len(bc_obj.get_list_all_users()) == len(db_obj.get_list_all_users()) and len(
-            bc_obj.get_list_main_meters()) == len(db_obj.get_list_main_meters()):
-        print("Pre-setting: successfully stored " + str(len(db_obj.get_list_all_users())) + " users and " + str(
-            len(db_obj.get_list_main_meters())) + " meters")
-    else:
-        print("Pre-setting: different number of user_infos and id_meters on blockchain and db")
-        print("Pre-setting: user_infos on db: " + str(len(db_obj.get_list_all_users())))
-        print("Pre-setting: user_infos on blockchain: " + str(len(bc_obj.get_list_all_users())))
-        print("Pre-setting: id_meters on db: " + str(len(db_obj.get_list_main_meters())))
-        print("Pre-setting: id_meters on blockchain: " + str(len(bc_obj.get_list_main_meters())))
-        raise Exception("Error in inserting user_infos and id_meters")
+    bc_obj_market.wait_for_transact(tx_hash)
 
     # Compute random market positions
     positions = lem.create_random_positions(db_obj=db_obj,
@@ -81,161 +85,69 @@ def init_random_data():
                                             ids_user=ids_users_random,
                                             n_positions=500,
                                             verbose=False)
-    # Post positions to market
+    # Post positions on db
     db_obj.post_positions(positions)
-
-    bids_db, offers_db = db_obj.get_open_positions()  # returns bids and offers from the database
-    print(f"Pre-setting: a total of {len(bids_db) + len(offers_db)} market positions are pushed.")
-
-    # for the blockchain, the quality of energy needs to be converted to int before storing it
-    # however, before, in the DB the quality is stored as a string
-    positions = lem._convert_qualities_to_int(db_obj, pd.concat([offers_db, bids_db]), config['lem']['types_quality'])
-
-    temp = True  # if we wanna save the offers and bids as temporal data
-    permt = False  # if we wanna save the offers and bids as permanent data
-
-    tx_hash = bc_obj.push_all_positions(positions, temp, permt)
-    bc_obj.wait_for_transact(tx_hash)
-
-    if len(bc_obj.get_open_positions(isOffer=True, return_list=True)) == len(offers_db) and \
-            len(bc_obj.get_open_positions(isOffer=False, return_list=True)) == len(bids_db):
-        print(f"Pre-setting: stored {len(offers_db)} offers and {len(bids_db)} bids successfully.")
-    else:
-        print("Pre-setting: different number of offers and bids on blockchain and db")
-        print("Pre-setting: offers on db: " + str(len(offers_db)))
-        print(
-            "Pre-setting: offers on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=True, return_list=True))))
-        print("Pre-setting: bids on db: " + str(len(bids_db)))
-        print(
-            "Pre-setting: bids on blockchain: " + str(len(bc_obj.get_open_positions(isOffer=False, return_list=True))))
-
-    # clearing for the settlement contract too
-    settlement_dict = config['db_connections']['bc_dict']
-    settlement_dict["contract_name"] = "Settlement"
-    bc_obj_set = BlockchainConnection(settlement_dict)
-    bc_obj_set.clear_data()
+    # on the bc, energy quality needs to be converted to int. In the db it is stored as a string
+    positions = lem._convert_qualities_to_int(db_obj, positions, config['lem']['types_quality'])
+    tx_hash = bc_obj_market.push_all_positions(positions, temporary=True, permanent=False)
+    bc_obj_market.wait_for_transact(tx_hash)
 
 
-# I get basic variables from the blockchain. these variables are then used in the tests
-def setUp_test(generate_bids_offer, timeout=600):
-    yaml_file = scenario_file_path
-    if generate_bids_offer:
-        init_random_data()
+def setup_clearing_ex_ante_test(generate_random_test_data):
+    config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement = setup_test_general(generate_random_test_data)
 
-    # load configuration file
-    with open(f"" + yaml_file) as config_file:
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
-
-    # Create a db connection object
-    db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
-                                              lem_config=config['lem'])
-    # Read offers and bids from db
-    bids_db_archive, offers_db_archive = db_obj.get_positions_archive()
-    open_bids_db, open_offers_db = db_obj.get_open_positions()
-    user_infos_db, id_meters_db = [db_obj.get_info_user(user_id) for user_id in
-                                   db_obj.get_list_all_users()], db_obj.get_info_meter()
-    db_obj.end_connection()
-    # print('Market archive contains', str(len(offers_db_archive)), 'valid offers and',
-    #       str(len(bids_db_archive)), 'valid bids.')
-
-    bc_obj = BlockchainConnection(bc_dict=config['db_connections']['bc_dict'])
-    # blockchain_utils.setUpBlockchain(timeout=timeout)
-
-    offers_blockchain_archive = bc_obj.get_open_positions(isOffer=True, temp=False, return_list=True)
-    bids_blockchain_archive = bc_obj.get_open_positions(isOffer=False, temp=False, return_list=True)
-    open_offers_blockchain = bc_obj.get_open_positions(isOffer=True, temp=True, return_list=True)
-    open_bids_blockchain = bc_obj.get_open_positions(isOffer=False, temp=True, return_list=True)
-
-    user_infos_blockchain = bc_obj.get_list_all_users(return_list=True)
-    id_meters_blockchain = bc_obj.get_list_all_meters(return_list=False)
-
-    return offers_blockchain_archive, bids_blockchain_archive, open_offers_blockchain, open_bids_blockchain, \
-           offers_db_archive, bids_db_archive, open_offers_db, open_bids_db, user_infos_blockchain, user_infos_db, \
-           id_meters_blockchain, id_meters_db, config, list(open_offers_db.keys()).index(db_param.QUALITY_ENERGY), \
-           list(open_offers_db.keys()).index(db_param.PRICE_ENERGY), db_obj, bc_obj
-
-
-def setup_settlement_test(generate_bids_offer, timeout=600):
-    offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
-    open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, quality_energy, \
-    price_index, db_obj, bc_obj = setUp_test(generate_bids_offer)
-
-    print("Starting full market for settlement test")
-    # Set clearing time
-    t_clearing_start = round(time.time())
-
-    start = time.time()
-    verbose_bc = True
-    verbose_db = True
+    # Initialize clearing parameters
+    config_supplier = None
+    t_override = round(time.time())
     shuffle = False
-    market_results_db, _, _, _, market_results_bc = lem.market_clearing(db_obj=db_obj,
-                                                                        bc_obj=bc_obj,
-                                                                        config_lem=config['lem'],
-                                                                        t_override=t_clearing_start,
-                                                                        shuffle=shuffle,
-                                                                        verbose=verbose_db,
-                                                                        verbose_bc=verbose_bc,
-                                                                        bc_test=True)
+    plotting = False
+    verbose = False
 
-    market_results_db = market_results_db['da']
+    # Clear market ex ante on db and bc
+    bc_obj_clearing_ex_ante.market_clearing_ex_ante(config["lem"], config_supplier=config_supplier,
+                                                    t_override=t_override, shuffle=shuffle, verbose=verbose)
+    lem.market_clearing(db_obj=db_obj, config_lem=config["lem"], config_supplier=config_supplier,
+                        t_override=t_override, shuffle=shuffle, plotting=plotting, verbose=verbose)
 
-    end = time.time()
+    return config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement
 
-    print("Market clearing done in", (end - start) / 60, "minutes")
 
-    # simulate meter readings from market results with random errors
-    list_ts_delivery = simulate_meter_readings_from_market_results(db_obj=db_obj, rand_percent_var=15)
-    meter_readings_delta = db_obj.get_meter_readings_delta().sort_values(
-        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
-    meter_readings_delta = meter_readings_delta.reset_index(drop=True)
-    # create connection object for settlement contract
-    settlement_dict = config['db_connections']['bc_dict']
-    settlement_dict["contract_name"] = "Settlement"
-    bc_obj_settlement = BlockchainConnection(settlement_dict)
-    # set the meter readings and determine balancing energy
-    bc_obj_settlement.log_meter_readings_delta(meter_readings_delta)
+def setup_settlement_test(generate_random_test_data):
+    config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement = setup_clearing_ex_ante_test(generate_random_test_data)
+
+    # Simulate meter readings from market results with random errors
+    simulated_meter_readings_delta, ts_delivery_list = simulate_meter_readings_from_market_results(
+        db_obj=db_obj, rand_percent_var=15)
+
+    # Log meter readings delta
+    bc_obj_settlement.log_meter_readings_delta(simulated_meter_readings_delta)
+    db_obj.log_readings_meter_delta(simulated_meter_readings_delta)
 
     # Calculate/determine balancing energies
-    bc_obj_settlement.determine_balancing_energy(list_ts_delivery)
-    lemlab.platform.lem_settlement.determine_balancing_energy(db_obj, list_ts_delivery)
+    bc_obj_settlement.determine_balancing_energy(ts_delivery_list)
+    determine_balancing_energy(db_obj, ts_delivery_list)
 
     sim_path = "C:/Users/ga47num/PycharmProjects/lemlab/scenarios/"
     files_path = "C:/Users/ga47num/PycharmProjects/lemlab/input_data/"
 
     # Set settlement prices in db and bc
     lemlab.platform.lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path,
-                                                         files_path=files_path, list_ts_delivery=list_ts_delivery)
-    bc_obj_settlement.set_prices_settlement(list_ts_delivery)
+                                                         files_path=files_path, list_ts_delivery=ts_delivery_list)
+    bc_obj_settlement.set_prices_settlement(ts_delivery_list)
 
     # Update balances according to balancing energies and levies on db and bc
     ts_now = round(time.time())
     id_retailer = "retailer01"
-    lemlab.platform.lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
+    lemlab.platform.lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now,
+                                                                  list_ts_delivery=ts_delivery_list,
                                                                   id_retailer=id_retailer, lem_config=config["lem"])
     # lemlab.platform.lem_settlement.update_balance_levies(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
     #                                                      id_retailer=id_retailer, lem_config=config["lem"])
-    bc_obj_settlement.update_balance_balancing_costs(list_ts_delivery=list_ts_delivery,
+    bc_obj_settlement.update_balance_balancing_costs(list_ts_delivery=ts_delivery_list,
                                                      ts_now=ts_now, supplier_id=id_retailer)
     # bc_obj_settlement.update_balance_levies(list_ts_delivery=list_ts_delivery, ts_now=ts_now, id_retailer=id_retailer)
 
-    return offers_bc_archive, bids_bc_archive, open_offers_bc, open_bids_bc, offers_db_archive, bids_db_archive, \
-           open_offers_db, open_bids_db, user_infos_bc, user_infos_db, id_meters_bc, id_meters_db, config, \
-           quality_energy, price_index, db_obj, bc_obj, list_ts_delivery, bc_obj_settlement
-
-
-def result_test(testname, passed):
-    testname = str(testname)
-    date = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    res = pd.DataFrame({"test_name": testname, "result": passed, "date": date}, index=[0])
-    outfile = "test_results.xlsx"
-    if os.path.isfile(outfile):
-        f = pd.read_excel(outfile)
-        f = pd.concat([f, res])
-        with pd.ExcelWriter(outfile) as writer:
-            f.to_excel(writer)
-    else:
-        with pd.ExcelWriter(outfile) as writer:
-            res.to_excel(writer)
+    return config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement
 
 
 def simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15):
@@ -333,7 +245,7 @@ def simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15
     assert list(meter2ts_qty.keys()) == list(user2meter.values()), "Meters do not match in market and meter tables"
 
     # we create the dataframe for the delta readings and append the information
-    delta_meter_readings = pd.DataFrame(columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER,
+    simulated_meter_readings_delta = pd.DataFrame(columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER,
                                                  db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
     for meter in meter2ts_qty:
         for ts in meter2ts_qty[meter]:
@@ -342,19 +254,20 @@ def simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15
             else:
                 rand_factor = 1
             if meter2ts_qty[meter][ts] > 0:
-                delta_meter_readings = delta_meter_readings.append(
+                simulated_meter_readings_delta = simulated_meter_readings_delta.append(
                     {db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
                      db_obj.db_param.ENERGY_IN: int(round(meter2ts_qty[meter][ts] * rand_factor)),
                      db_obj.db_param.ENERGY_OUT: 0}, ignore_index=True)
             else:
-                delta_meter_readings = delta_meter_readings.append(
+                simulated_meter_readings_delta = simulated_meter_readings_delta.append(
                     {db_obj.db_param.TS_DELIVERY: ts, db_obj.db_param.ID_METER: meter,
                      db_obj.db_param.ENERGY_IN: 0,
                      db_obj.db_param.ENERGY_OUT: -int(round(meter2ts_qty[meter][ts] * rand_factor))}, ignore_index=True)
 
-    db_obj.log_readings_meter_delta(delta_meter_readings)  # log into the database
+    simulated_meter_readings_delta.sort_values(by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER])
+    simulated_meter_readings_delta = simulated_meter_readings_delta.reset_index(drop=True)
 
-    return list_ts_delivery
+    return simulated_meter_readings_delta, list_ts_delivery
 
 
 def test_ts_uint(ts_delivery):
@@ -372,23 +285,4 @@ def test_ts_uint(ts_delivery):
 
 
 if __name__ == '__main__':
-    # init_random_data()
-    # test_simulate_meter_readings_from_market_results()
-    yaml_file = scenario_file_path
-    # load configuration file
-    with open(f"" + yaml_file) as config_file:
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
-
-    # Create a db connection object
-    db_obj = db_connection.DatabaseConnection(db_dict=config['db_connections']['database_connection_admin'],
-                                              lem_config=config['lem'])
-    # Initialize database
-    db_obj.init_db(clear_tables=False, reformat_tables=False)
-
-    delta_meters = db_obj.get_meter_readings_delta()
-    ts_delivery = delta_meters["ts_delivery"].tolist()
-    ts_delivery.append(1626040800 + 7 * 24 * 60 * 60)
-    ts_delivery = list(set(ts_delivery))
-    index = {ts: test_ts_uint(ts) for ts in ts_delivery}
-    print("Ts deliveries", ts_delivery)
-    print("Index", index)
+    setup_test_general(True)

@@ -42,7 +42,7 @@ lem:
                                             # is simulated
 
   "types_pricing_ex_ante": {0: "uniform",
-                            1: "discriminatory"}
+                            1: "discriminative"}
   "types_pricing_ex_post": {0: "standard"}  # which clearing price variants to be calculated
                                             # for each clearing type
                                             # settlement and prosumers observe the first

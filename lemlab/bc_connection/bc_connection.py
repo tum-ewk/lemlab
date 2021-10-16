@@ -295,17 +295,99 @@ class BlockchainConnection:
             return
         return tx_hash
 
-    def push_all_positions(self, df_positions, temp=True, permanent=False):
+    def push_all_positions(self, df_positions, temporary=True, permanent=False):
         for _, row in tqdm(df_positions.iterrows(), total=df_positions.shape[0]):
-            tx_hash = self.push_position(row, temp=temp, permament=permanent)
+            tx_hash = self.push_position(row, temp=temporary, permament=permanent)
 
         return tx_hash
 
     ###################################################
     # Functions for the market clearing of data
     # Market participants only
-    # clears temporal data from the blockchain
-    # temporal data are temp bids and offers and market results
+
+    def update_balances_after_clearing_ex_ante(self):
+        tx_hash = self.functions.update_balances_after_clearing_ex_ante().transact({'from': self.coinbase})
+        self.wait_for_transact(tx_hash)
+
+    def market_clearing_ex_ante(self,
+                                config_lem,
+                                config_supplier=None,
+                                t_override=None,
+                                shuffle=False,
+                                verbose=True):
+        # Get open positions from bc
+        open_positions = self.get_open_positions()
+        t_clearing_first = open_positions["ts_delivery"].min()
+        n_clearings = len(open_positions["ts_delivery"].unique())
+        t_clearing_current = t_clearing_first
+
+        interval_clearing = config_lem["interval_clearing"]
+        n_clearings_done = 0
+        simulation_test = True
+
+        if config_supplier is None:
+            supplier_bids = False
+        else:
+            supplier_bids = True
+
+        if "uniform" in config_lem["types_pricing_ex_ante"].values():
+            uniform_pricing = True
+        else:
+            uniform_pricing = False
+
+        if "discriminative" in config_lem["types_pricing_ex_ante"].values():
+            discriminative_pricing = True
+        else:
+            discriminative_pricing = False
+
+        if t_override is None:
+            t_clearing = round(time.time())
+        else:
+            t_clearing = t_override
+
+        # Check whether clearing for all ts_delivery can be performed in one block or must be split up
+        max_n_clearings_per_block = self.find_limit(n_clearings, t_clearing_first, supplier_bids,
+                                                    uniform_pricing, discriminative_pricing, t_clearing,
+                                                    gasThreshold=250000000,
+                                                    interval_clearing=interval_clearing,
+                                                    simulation_test=simulation_test,
+                                                    verbose_bc=verbose)
+        n_clearings_current = max_n_clearings_per_block
+
+        update_balances = False
+
+        while n_clearings_done < n_clearings:
+            if n_clearings - n_clearings_done <= n_clearings_current:  # last step
+                n_clearings_current = n_clearings - n_clearings_done
+                update_balances = False
+            try:
+                # Performing the market clearing for a number of clearings
+                tx_hash = self.functions.market_clearing(int(n_clearings_current),
+                                                         int(t_clearing_current),
+                                                         supplier_bids, uniform_pricing,
+                                                         discriminative_pricing,
+                                                         int(interval_clearing),
+                                                         int(t_clearing),
+                                                         shuffle,
+                                                         verbose, update_balances,
+                                                         simulation_test).transact(
+                    {'from': self.coinbase})
+                self.wait_for_transact(tx_hash)
+                if verbose:
+                    log = self.get_log(tx_hash=tx_hash)
+                    print(log)
+                n_clearings_done += n_clearings_current
+                t_clearing_current = t_clearing_first + interval_clearing * n_clearings_done
+                n_clearings_current = max_n_clearings_per_block
+            except ValueError as e:
+                print(e)
+                n_clearings_current = int(n_clearings_current * 0.75)
+                update_balances = False
+
+        # Update user balances after clearing
+        self.update_balances_after_clearing_ex_ante()
+
+    # clears temporal data (offers, bids, market results)
     def clear_temp_data(self):
         try:
             tx_hash = self.functions.clearTempData().transact({'from': self.coinbase})
@@ -323,8 +405,8 @@ class BlockchainConnection:
                 except:
                     limit_to_remove -= 50
 
-    # clears permanent data from the blockchain
-    # permanent data are permanent bids and offers and all the info from the users and meters
+                    # clears permanent data (offers, bids, user/meter infos)
+
     def clear_permanent_data(self):
         try:
             tx_hash = self.functions.clearPermanentData().transact({'from': self.coinbase})
@@ -343,6 +425,30 @@ class BlockchainConnection:
                     self.wait_for_transact(tx_hash)
                 except:
                     limit_to_remove -= 50
+
+    def find_limit(self, n_clearings_max, t_clearing_current, supplier_bids, uniform_pricing, discriminative_pricing,
+                   t_clearing_start, gasThreshold, interval_clearing, simulation_test, verbose_bc=False):
+        """
+            this method, find the maximum number of clearings that the blockchain manages to perform at once,
+            according to the gas limit
+
+        """
+        n_clearings_current = n_clearings_max
+        estimate = 10 * gasThreshold
+        while estimate > gasThreshold:
+            try:
+                estimate = self.functions.market_clearing(int(n_clearings_current), int(t_clearing_current),
+                                                          supplier_bids, uniform_pricing,
+                                                          discriminative_pricing,
+                                                          int(interval_clearing),
+                                                          int(t_clearing_start), False, verbose_bc,
+                                                          False, simulation_test).estimateGas()
+                n_clearings_current = int(n_clearings_current / (estimate / gasThreshold))
+            except Exception as e:
+                print(e)
+                n_clearings_current = int(n_clearings_current / 2)
+
+        return n_clearings_current
 
     """
     ######################################################################
@@ -429,10 +535,7 @@ class BlockchainConnection:
     # both contracts will return the same results
     def get_market_results(self, return_list=False):
         # returns a list of all the  market_results_total from the contract
-        if self.contract_name == "ClearingExAnte":
-            market_results_list = self.functions.getMarketResultsTotal().call()
-        else:
-            market_results_list = self.functions.get_market_results_total().call()
+        market_results_list = self.functions.get_market_results_total().call()
         if return_list:
             return market_results_list
         else:
