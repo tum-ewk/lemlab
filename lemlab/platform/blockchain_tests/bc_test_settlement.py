@@ -1,7 +1,5 @@
 import pytest
 import pandas as pd
-
-from lemlab.platform import lem, lem_settlement
 from lemlab.platform.blockchain_tests import test_utils
 
 config = None

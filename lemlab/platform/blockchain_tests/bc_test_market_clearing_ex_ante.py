@@ -1,9 +1,6 @@
 import pytest
 import pandas as pd
-import time
-
 from lemlab.db_connection import db_param
-from lemlab.platform import lem
 from lemlab.platform.blockchain_tests import test_utils
 
 config = None
