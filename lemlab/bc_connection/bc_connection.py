@@ -6,7 +6,6 @@ import re
 from web3 import Web3, HTTPProvider
 import pandas as pd
 from pathlib import Path
-from tqdm import tqdm
 
 
 class BlockchainConnection:
@@ -296,8 +295,10 @@ class BlockchainConnection:
         return tx_hash
 
     def push_all_positions(self, df_positions, temporary=True, permanent=False):
-        for _, row in tqdm(df_positions.iterrows(), total=df_positions.shape[0]):
+        for _, row in df_positions.iterrows():
             tx_hash = self.push_position(row, temp=temporary, permament=permanent)
+
+        self.wait_for_transact(tx_hash)
 
         return tx_hash
 
@@ -482,8 +483,7 @@ class BlockchainConnection:
         return tx_hash
 
     def log_meter_readings_delta(self, df_meter_deltas):
-        print("Logging meter reading deltas")
-        for _, row in tqdm(df_meter_deltas.iterrows(), total=df_meter_deltas.shape[0]):
+        for _, row in df_meter_deltas.iterrows():
             tx_hash = self.log_meter_reading_delta(row)
         self.wait_for_transact(tx_hash)
 

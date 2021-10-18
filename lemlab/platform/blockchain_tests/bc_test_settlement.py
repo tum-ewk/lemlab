@@ -76,13 +76,15 @@ def test_transaction_logs():
     log_transactions_db = db_obj.get_logs_transactions()
     log_transactions_db = log_transactions_db.loc[
         # log_transactions_db[db_obj.db_param.TYPE_TRANSACTION].str.contains('balancing|levies')]
-        log_transactions_db[db_obj.db_param.TYPE_TRANSACTION].str.contains('balancing')]
+        log_transactions_db[db_obj.db_param.TYPE_TRANSACTION].str.contains('balancing|levies')]
     log_transactions_db = log_transactions_db.sort_values(
-        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY])
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER,
+            db_obj.db_param.QTY_ENERGY, db_obj.db_param.DELTA_BALANCE])
     log_transactions_db = log_transactions_db.reset_index(drop=True)
     log_transactions_bc = bc_obj_settlement.get_logs_transactions()
     log_transactions_bc = log_transactions_bc.sort_values(
-        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY])
+        by=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_USER,
+            db_obj.db_param.QTY_ENERGY, db_obj.db_param.DELTA_BALANCE])
     log_transactions_bc = log_transactions_bc.reset_index(drop=True)
 
     # Check whether all transactions on bc and db are equal
@@ -91,13 +93,11 @@ def test_transaction_logs():
 
 def test_user_info():
     info_user_db = db_obj.get_info_user()
-    info_user_db = info_user_db.sort_values(
-        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    info_user_db = info_user_db.sort_values(by=[db_obj.db_param.ID_USER])
     info_user_db = info_user_db.reset_index(drop=True)
 
     info_user_bc = bc_obj_clearing_ex_ante.get_list_all_users()
-    info_user_bc = info_user_bc.sort_values(
-        by=[db_obj.db_param.BALANCE_ACCOUNT, db_obj.db_param.ID_USER, db_obj.db_param.T_UPDATE_BALANCE])
+    info_user_bc = info_user_bc.sort_values(by=[db_obj.db_param.ID_USER])
     info_user_bc = info_user_bc.reset_index(drop=True)
 
     pd.testing.assert_frame_equal(info_user_db, info_user_bc)

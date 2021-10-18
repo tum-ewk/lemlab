@@ -4,11 +4,10 @@ import yaml
 import pandas as pd
 import random
 
-import lemlab.platform.lem_settlement
 from lemlab.db_connection import db_connection, db_param
 from lemlab.platform import lem
 from lemlab.bc_connection.bc_connection import BlockchainConnection
-from lemlab.platform.lem_settlement import determine_balancing_energy
+from lemlab.platform import lem_settlement
 from current_scenario_file import scenario_file_path
 
 
@@ -53,7 +52,7 @@ def init_random_data(db_obj, bc_obj_market, config, bc_obj_settlement):
     # Register meters and users on database
     for z in range(len(ids_users_random)):
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_USER, dtype=True)
-        col_data = [ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 0]
+        col_data = [ids_users_random[z], 1000, 0, 10000, 100, 'green', 10, 'zi', 0, ids_market_agents[z], 0, 2147483648]
         if any([type(data) != typ for data, typ in zip(col_data, types)]):
             raise TypeError("The types of the data and the columns do not match for the info_user")
         df_insert = pd.DataFrame(
@@ -65,7 +64,7 @@ def init_random_data(db_obj, bc_obj_market, config, bc_obj_settlement):
         bc_obj_market.register_user(df_user=df_insert)
 
         cols, types = db_obj.get_table_columns(db_obj.db_param.NAME_TABLE_INFO_METER, dtype=True)
-        col_data = [ids_meter_random[z], ids_users_random[z], "0", "virtual grid meter", 'aggregator', 'green', 0, 0,
+        col_data = [ids_meter_random[z], ids_users_random[z], "0", "virtual grid meter", '0'*10, 'green', 0, 2147483648,
                     'test']
         if any([type(data) != typ for data, typ in zip(col_data, types)]):
             raise TypeError("The types of data and columns do not match for the id_meter")
@@ -89,8 +88,7 @@ def init_random_data(db_obj, bc_obj_market, config, bc_obj_settlement):
     db_obj.post_positions(positions)
     # on the bc, energy quality needs to be converted to int. In the db it is stored as a string
     positions = lem._convert_qualities_to_int(db_obj, positions, config['lem']['types_quality'])
-    tx_hash = bc_obj_market.push_all_positions(positions, temporary=True, permanent=False)
-    bc_obj_market.wait_for_transact(tx_hash)
+    bc_obj_market.push_all_positions(positions, temporary=True, permanent=False)
 
 
 def setup_clearing_ex_ante_test(generate_random_test_data):
@@ -125,27 +123,29 @@ def setup_settlement_test(generate_random_test_data):
 
     # Calculate/determine balancing energies
     bc_obj_settlement.determine_balancing_energy(ts_delivery_list)
-    determine_balancing_energy(db_obj, ts_delivery_list)
+    lem_settlement.determine_balancing_energy(db_obj, ts_delivery_list)
 
     sim_path = "C:/Users/ga47num/PycharmProjects/lemlab/scenarios/"
     files_path = "C:/Users/ga47num/PycharmProjects/lemlab/input_data/"
 
     # Set settlement prices in db and bc
-    lemlab.platform.lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path,
-                                                         files_path=files_path, list_ts_delivery=ts_delivery_list)
+    lem_settlement.set_prices_settlement(db_obj=db_obj, path_simulation=sim_path,
+                                         files_path=files_path, list_ts_delivery=ts_delivery_list)
     bc_obj_settlement.set_prices_settlement(ts_delivery_list)
 
-    # Update balances according to balancing energies and levies on db and bc
+    # Update balances according to balancing energies db and bc
     ts_now = round(time.time())
     id_retailer = "retailer01"
-    lemlab.platform.lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now,
-                                                                  list_ts_delivery=ts_delivery_list,
-                                                                  id_retailer=id_retailer, lem_config=config["lem"])
-    # lemlab.platform.lem_settlement.update_balance_levies(db_obj=db_obj, t_now=ts_now, list_ts_delivery=list_ts_delivery,
-    #                                                      id_retailer=id_retailer, lem_config=config["lem"])
+    lem_settlement.update_balance_balancing_costs(db_obj=db_obj, t_now=ts_now,
+                                                  list_ts_delivery=ts_delivery_list,
+                                                  id_retailer=id_retailer, lem_config=config["lem"])
     bc_obj_settlement.update_balance_balancing_costs(list_ts_delivery=ts_delivery_list,
                                                      ts_now=ts_now, supplier_id=id_retailer)
-    # bc_obj_settlement.update_balance_levies(list_ts_delivery=list_ts_delivery, ts_now=ts_now, id_retailer=id_retailer)
+
+    # Update balances with levies on db and bc
+    lem_settlement.update_balance_levies(db_obj=db_obj, t_now=ts_now, list_ts_delivery=ts_delivery_list,
+                                         id_retailer=id_retailer, lem_config=config["lem"])
+    bc_obj_settlement.update_balance_levies(list_ts_delivery=ts_delivery_list, ts_now=ts_now, id_retailer=id_retailer)
 
     return config, db_obj, bc_obj_clearing_ex_ante, bc_obj_settlement
 
@@ -246,7 +246,7 @@ def simulate_meter_readings_from_market_results(db_obj=None, rand_percent_var=15
 
     # we create the dataframe for the delta readings and append the information
     simulated_meter_readings_delta = pd.DataFrame(columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ID_METER,
-                                                 db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
+                                                           db_obj.db_param.ENERGY_IN, db_obj.db_param.ENERGY_OUT])
     for meter in meter2ts_qty:
         for ts in meter2ts_qty[meter]:
             if not rand_percent_var:  # not equal to 0
@@ -285,4 +285,6 @@ def test_ts_uint(ts_delivery):
 
 
 if __name__ == '__main__':
-    setup_test_general(True)
+    # setup_test_general(generate_random_test_data=True)
+    # setup_clearing_ex_ante_test(generate_random_test_data=True)
+    setup_settlement_test(generate_random_test_data=True)

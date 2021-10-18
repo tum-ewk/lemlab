@@ -366,7 +366,6 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_retail
         db_obj.update_balance_user(pd.DataFrame.from_dict(dict_transactions))
 
 
-
 def determine_prices_ex_post_markets(db_obj_admin, path_simulation, lem_config, list_ts_delivery, t_now=None):
     for type_clearing in lem_config["types_clearing_ex_post"]:
         if lem_config["types_clearing_ex_post"][type_clearing] == "community":
@@ -517,7 +516,6 @@ def _update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_co
 ########################################################################################################################
 # Internal methods and functions
 ########################################################################################################################
-
 def _get_list_ts_delivery_ready(db_obj):
     df_clearing_log = db_obj.get_status_settlement()
     list_ts_delivery_ready = \
