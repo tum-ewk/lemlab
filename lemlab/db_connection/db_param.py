@@ -94,7 +94,7 @@ T_UPDATE_BALANCE = 't_update_balance'
 
 # Column base names to be dynamically added
 PRICE_ENERGY_MARKET_ = PRICE_ENERGY_MARKET + '_'
-SHARE_QUALITY_ = 'share_quality_'
+SHARE_QUALITY_ = 'share_quality_offers_cleared_'
 
 SHARE_PREFERENCE_BIDS_ = 'share_preference_bids_'
 SHARE_QUALITY_OFFERS_ = 'share_quality_offers_'

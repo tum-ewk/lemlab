@@ -146,7 +146,7 @@ class DatabaseConnection:
         # select main meters
         # if t_d is used, only meters active at the selected t_d are returned
         sql = f"SELECT {self.db_param.ID_METER} FROM {self.db_param.NAME_TABLE_INFO_METER}" \
-              f" WHERE ({self.db_param.TYPE_METER} = 1 OR {self.db_param.TYPE_METER} = 2)"
+              f" WHERE {self.db_param.TYPE_METER} LIKE '%%grid%%' "
 
         if ts_delivery_active is not None:
             sql += f" AND {self.db_param.TS_DELIVERY_FIRST} <= {ts_delivery_active}" \
@@ -480,7 +480,7 @@ class DatabaseConnection:
     def get_prices_settlement(self, ts_delivery_first=None, ts_delivery_last=None):
 
         ts_delivery_first = ts_delivery_first if ts_delivery_first is not None else 0
-        ts_delivery_last = ts_delivery_last if ts_delivery_last is not None else ts_delivery_first
+        ts_delivery_last = ts_delivery_last if ts_delivery_last is not None else 2147483647
 
         sql = f"SELECT * FROM {self.db_param.NAME_TABLE_PRICES_SETTLEMENT} " \
               f"WHERE {self.db_param.TS_DELIVERY} " \
