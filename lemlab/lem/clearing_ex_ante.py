@@ -1178,6 +1178,7 @@ def clearing_cc(db_obj,
         bids_remaining = pd.DataFrame()
         counter = 0
         while bids_unsatisfied:
+            t_while_start = time.time()
             # Check whether remaining bids are empty and whether counter has exceeded maximum while executions
             if bids_remaining.empty and counter > 0 or counter > max_while_executions:
                 bids_uncleared = bids
@@ -1265,6 +1266,8 @@ def clearing_cc(db_obj,
 
             # Remove all bids with zero quantity
             bids_remaining = bids_remaining[bids_remaining[db_obj.db_param.QTY_ENERGY] > 0]
+
+            print(f"While loop iteration: {counter}, time: {time.time() - t_while_start}")
             counter = counter + 1
         # Append unsatisfied bids with uncleared bids
         bids_uncleared = bids_uncleared.append(bids_cld_q_all_unsatisfied_total)
@@ -1455,7 +1458,7 @@ def _aggregate_identical_positions(db_obj,
     @return: dataframe with non-identical positions
     """
     # Sort positions by price, quality and id
-    positions.sort_values(by=subset, ignore_index=True, inplace=True)
+    positions.sort_values(by=subset, ignore_index=True, inplace=True, kind="mergesort")
     # reset index to cumulated energy quantities
     positions.set_index(positions[db_obj.db_param.QTY_ENERGY].cumsum(), inplace=True)
     # Drop duplicates that contain the same price, quality and id and keep the last of duplicates
