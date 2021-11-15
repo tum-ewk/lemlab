@@ -72,16 +72,15 @@ class DatabaseConnection:
         list_columns_pk = self.get_table_columns(table_name=self.db_param.NAME_TABLE_INFO_USER, pk_only=True)
         list_columns_not_pk = list(set(list_columns_all) - set(list_columns_pk))
         sql = f"UPDATE {self.db_param.NAME_TABLE_INFO_USER} SET "
-        column = ""
         for column in list_columns_not_pk[:-1]:
             if type(df_user.loc[0, column]) is str:
                 sql += f"{column} = '{df_user.loc[0, column]}', "
             else:
                 sql += f"{column} = {df_user.loc[0, column]}, "
-        if type(df_user.loc[0, column]) is str:
-            sql += f"{list_columns_not_pk[-1]} = '{df_user.loc[0, list_columns_not_pk[-1]]}' "
+        if type(df_user.loc[0, list_columns_not_pk[-1]]) is str:
+            sql += f"{list_columns_not_pk[-1]} = '{df_user.loc[0, list_columns_not_pk[-1]]}'"
         else:
-            sql += f"{list_columns_not_pk[-1]} = {df_user.loc[0, list_columns_not_pk[-1]]} "
+            sql += f"{list_columns_not_pk[-1]} = {df_user.loc[0, list_columns_not_pk[-1]]}"
         sql += f" WHERE {self.db_param.ID_USER} = '{df_user.loc[0, self.db_param.ID_USER]}';"
         self.engine.execute(sql)
 
@@ -185,13 +184,12 @@ class DatabaseConnection:
         list_columns_pk = self.get_table_columns(table_name=self.db_param.NAME_TABLE_INFO_METER, pk_only=True)
         list_columns_not_pk = list(set(list_columns_all) - set(list_columns_pk))
         sql = f"UPDATE {self.db_param.NAME_TABLE_INFO_METER} SET "
-        column = ""
         for column in list_columns_not_pk[:-1]:
             if type(df_meter.loc[0, column]) is str:
                 sql += f"{column} = '{df_meter.loc[0, column]}', "
             else:
                 sql += f"{column} = {df_meter.loc[0, column]}, "
-        if type(df_meter.loc[0, column]) is str:
+        if type(df_meter.loc[0, list_columns_not_pk[-1]]) is str:
             sql += f"{list_columns_not_pk[-1]} = '{df_meter.loc[0, list_columns_not_pk[-1]]}' "
         else:
             sql += f"{list_columns_not_pk[-1]} = {df_meter.loc[0, list_columns_not_pk[-1]]} "
@@ -324,12 +322,16 @@ class DatabaseConnection:
                 [[ts_d, 0] for ts_d in range(ts_delivery_first, ts_delivery_last + 1, 900)],
                 columns=[self.db_param.TS_DELIVERY, "net_bids"]).set_index(self.db_param.TS_DELIVERY)
 
-            # summate query results
-            for index, row in matched_bids.iterrows():
-                if row[self.db_param.ID_USER_OFFER] == str(id_user):
-                    matched_bids_by_timestep.loc[row[self.db_param.TS_DELIVERY]] += row[self.db_param.QTY_ENERGY_TRADED]
-                if row[self.db_param.ID_USER_BID] == str(id_user):
-                    matched_bids_by_timestep.loc[row[self.db_param.TS_DELIVERY]] -= row[self.db_param.QTY_ENERGY_TRADED]
+            temp_matched_bids_by_timestep = matched_bids
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep[
+                temp_matched_bids_by_timestep[self.db_param.ID_USER_BID] == id_user][self.db_param.QTY_ENERGY_TRADED]
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep["qty_energy_bid"].fillna(0)
+            temp_matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep[self.db_param.QTY_ENERGY_TRADED] \
+                - 2 * temp_matched_bids_by_timestep["qty_energy_bid"]
+            matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep.groupby(self.db_param.TS_DELIVERY).sum()["net_bids"]
+            matched_bids_by_timestep = matched_bids_by_timestep.fillna(0)
         return matched_bids, matched_bids_by_timestep
 
     # Admins only

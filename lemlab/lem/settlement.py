@@ -40,11 +40,12 @@ def update_complete_meter_readings(db_obj):
         # immediately BEFORE AND AFTER the ts_delivery under consideration
         list_meters_logged = sorted(_get_list_meters_logged(db_obj, ts_delivery))
         # proceed only if all meters have logged values
-        if list_meters == list_meters_logged:
-            # get cumulative meter readings, before and after
-            df_metering_logs_cumulative = db_obj.get_meter_readings_cumulative(
-                t_reading_first=ts_delivery,
-                t_reading_last=ts_delivery+900)
+        # get cumulative meter readings, before and after
+        df_metering_logs_cumulative = db_obj.get_meter_readings_cumulative(
+            t_reading_first=ts_delivery,
+            t_reading_last=ts_delivery + 900)
+
+        if set(list_meters).issubset(set(list_meters_logged)):
             df_metering_logs_cumulative_prev = \
                 df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery
                                             ].set_index(db_obj.db_param.ID_METER)
@@ -66,9 +67,32 @@ def update_complete_meter_readings(db_obj):
                 db_obj.db_param.STATUS_METER_READINGS_PROCESSED: [1],
                 db_obj.db_param.STATUS_SETTLEMENT_COMPLETE: [0]
             }))
+            calculate_virtual_submeters(db_obj=db_obj, list_ts_delivery=[ts_delivery])
         else:
-            # print(f"    {ts_delivery} cannot be settled yet as not all smart meters have logged their readings yet.")
-            break
+            df_metering_logs_cumulative_prev = \
+                df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery
+                                            ].set_index(db_obj.db_param.ID_METER)
+            df_metering_logs_cumulative_now = \
+                df_metering_logs_cumulative[df_metering_logs_cumulative["t_reading"] == ts_delivery + 900
+                                            ].set_index(db_obj.db_param.ID_METER)
+
+            ix_prev = df_metering_logs_cumulative_prev.index
+            ix_now = df_metering_logs_cumulative_now.index
+            ix_intersection = ix_prev.intersection(ix_now)
+
+            df_metering_logs_cumulative_prev = df_metering_logs_cumulative_prev.loc[ix_intersection]
+            df_metering_logs_cumulative_now = df_metering_logs_cumulative_now.loc[ix_intersection]
+
+            # calculate energy delta, log deltas to database
+            if len(ix_intersection):
+                df_meter_reading_delta = df_metering_logs_cumulative_now - df_metering_logs_cumulative_prev
+                df_meter_reading_delta["t_reading"] = ts_delivery
+                df_meter_reading_delta = df_meter_reading_delta.rename(columns={
+                    db_obj.db_param.T_READING: db_obj.db_param.TS_DELIVERY,
+                    db_obj.db_param.ENERGY_IN_CUM: db_obj.db_param.ENERGY_IN,
+                    db_obj.db_param.ENERGY_OUT_CUM: db_obj.db_param.ENERGY_OUT}).reset_index()
+                db_obj.log_readings_meter_delta(df_meter_reading_delta)
+                calculate_virtual_submeters(db_obj=db_obj, list_ts_delivery=[ts_delivery])
 
 
 def calculate_virtual_submeters(db_obj, list_ts_delivery):
@@ -80,55 +104,75 @@ def calculate_virtual_submeters(db_obj, list_ts_delivery):
 
     :return None:
     """
+    # get list of meter readings
+    df_readings_meter_delta = db_obj.get_meter_readings_delta(ts_delivery_first=list_ts_delivery[0],
+                                                              ts_delivery_last=list_ts_delivery[-1])
+    list_readings_meter_delta = []
     for ts_delivery in list_ts_delivery:
-        # get a list of virtual meters active at the ts_delivery under consideration
+        # loop through all ts deliveries
+        # get list of all meters currently active
         df_info_meter = db_obj.get_info_meter(ts_delivery_active=ts_delivery)
+        # extract the list of virtual meters
         list_virtual_meters = list(df_info_meter[df_info_meter["type_meter"].str.contains("virtual")]["id_meter"])
-
-        df_readings_meter_delta = db_obj.get_meter_readings_delta(ts_delivery_first=list_ts_delivery[0],
-                                                                  ts_delivery_last=list_ts_delivery[-1])
-        list_readings_meter_delta = []
-        # for all main meters under consideration
+        # init list of VM readings to be logged
+        # for all virtual meters under consideration
         for virtual_meter in list_virtual_meters:
-            # list of submeters @ same level
+            # get the associated supermeter
             supermeter = df_info_meter.set_index("id_meter").loc[virtual_meter, "id_meter_super"]
+            # if the VM is not a grid meter (top level meter)
             if supermeter != "0000000000":
+                # return list of associated submeters
                 df_submeters = df_info_meter[(df_info_meter["id_meter_super"] == supermeter)
                                              & (df_info_meter["id_meter"] != virtual_meter)]
                 list_submeters = list(df_submeters["id_meter"])
+                set_readings = set(df_readings_meter_delta[(df_readings_meter_delta["id_meter"].isin(list_submeters))
+                                                           & (df_readings_meter_delta["ts_delivery"] == ts_delivery)
+                                                           ]["id_meter"])
+                mm_reading = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == supermeter) &
+                                                     (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                if set(list_submeters).issubset(set_readings) and len(set_readings) and len(mm_reading):
+                    # determine "missing" energy
+                    # "missing" energy is attributed to the VM
+                    cum_energy = 0
+                    for meter in list(set_readings):
+                        cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
+                                                           (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                        cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
 
-                cum_energy = 0
-                # determine missing energy flow
-                for meter in list_submeters:
-                    cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
-                                                       (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
-                    cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
-
-                mm_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == supermeter) &
-                                                  (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
-
-                mm_energy = int(mm_temp["energy_out"]) - int(mm_temp["energy_in"])
-                vm_energy = mm_energy - cum_energy
+                    mm_energy = int(mm_reading["energy_out"]) - int(mm_reading["energy_in"])
+                    vm_energy = mm_energy - cum_energy
+                    # append result to list of VM readings to be logged
+                    list_readings_meter_delta.append([ts_delivery,
+                                                      _decomp_float(vm_energy, "neg"),
+                                                      _decomp_float(vm_energy, "pos"),
+                                                      virtual_meter])
+            # if the VM is a supermeter
             else:
+                # sum the flows of all submeters to find VM (supermeter) flow
                 supermeter = virtual_meter
                 df_submeters = df_info_meter[df_info_meter["id_meter_super"] == supermeter]
                 list_submeters = list(df_submeters["id_meter"])
+                set_readings = set(df_readings_meter_delta[(df_readings_meter_delta["id_meter"].isin(list_submeters))
+                                                           & (df_readings_meter_delta["ts_delivery"] == ts_delivery)
+                                                           ]["id_meter"])
+                if set(list_submeters).issubset(set_readings) and len(set_readings):
+                    cum_energy = 0
+                    # determine missing energy flow
+                    for meter in list(set_readings):
+                        cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
+                                                           (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
+                        cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
+                    vm_energy = cum_energy
+                    # append result to list of VM readings to be logged
+                    list_readings_meter_delta.append([ts_delivery,
+                                                      _decomp_float(vm_energy, "neg"),
+                                                      _decomp_float(vm_energy, "pos"),
+                                                      virtual_meter])
+        # end VM for loop
+    # end ts_d for loop
 
-                cum_energy = 0
-                # determine missing energy flow
-                for meter in list_submeters:
-                    cum_temp = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == meter) &
-                                                       (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
-                    cum_energy += int(cum_temp["energy_out"]) - int(cum_temp["energy_in"])
-
-                vm_energy = cum_energy
-
-            list_readings_meter_delta.append([ts_delivery,
-                                              _decomp_float(vm_energy, "neg"),
-                                              _decomp_float(vm_energy, "pos"),
-                                              virtual_meter])
-
-        # log virtual meter deltas to database
+    # log virtual meter deltas to database
+    if len(list_readings_meter_delta):
         df_meter_reading_delta = pd.DataFrame(list_readings_meter_delta,
                                               columns=[db_obj.db_param.TS_DELIVERY, db_obj.db_param.ENERGY_IN,
                                                        db_obj.db_param.ENERGY_OUT, db_obj.db_param.ID_METER])
@@ -153,27 +197,32 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
         db_obj.db_param.ENERGY_BALANCING_POSITIVE: [],
         db_obj.db_param.ENERGY_BALANCING_NEGATIVE: []
     }
-
+    list_ts_delivery = sorted(list_ts_delivery)
+    ts_d_first = list_ts_delivery[0] if len(list_ts_delivery) else 0
+    ts_d_last = list_ts_delivery[-1] if len(list_ts_delivery) else 0
+    market_results_all, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d_first,
+                                                               ts_delivery_last=ts_d_last)
     for ts_d in list_ts_delivery:
         # return MAIN meter reading deltas and ex-ante market results
         main_meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
-        market_results, _, = db_obj.get_results_market_ex_ante(ts_delivery_first=ts_d, ts_delivery_last=ts_d)
+        main_meter_readings_delta["energy_net"] = main_meter_readings_delta[db_obj.db_param.ENERGY_OUT] \
+            - main_meter_readings_delta[db_obj.db_param.ENERGY_IN]
 
+        market_results = market_results_all[market_results_all[db_obj.db_param.TS_DELIVERY] == ts_d]
         # relabel market results by main meters, so comparison to energy flows can be made
         market_results = market_results.replace({db_obj.db_param.ID_USER_BID: map_id_ma_to_main_meter,
                                                  db_obj.db_param.ID_USER_OFFER: map_id_ma_to_main_meter})
         # determine balancing energy per meter
         for _, entry in main_meter_readings_delta.iterrows():
-            current_actual_energy = entry.loc[db_obj.db_param.ENERGY_OUT] - entry.loc[db_obj.db_param.ENERGY_IN]
             current_market_energy = 0
+            current_market_energy -= \
+                market_results[market_results[db_obj.db_param.ID_USER_BID] == entry.loc[db_obj.db_param.ID_METER]
+                               ][db_obj.db_param.QTY_ENERGY_TRADED].sum()
+            current_market_energy += \
+                market_results[market_results[db_obj.db_param.ID_USER_OFFER] == entry.loc[db_obj.db_param.ID_METER]
+                               ][db_obj.db_param.QTY_ENERGY_TRADED].sum()
 
-            for _, result in market_results.iterrows():
-                if result.loc[db_obj.db_param.ID_USER_BID] == entry.loc[db_obj.db_param.ID_METER]:
-                    current_market_energy -= result.loc[db_obj.db_param.QTY_ENERGY_TRADED]
-                elif result.loc[db_obj.db_param.ID_USER_OFFER] == entry.loc[db_obj.db_param.ID_METER]:
-                    current_market_energy += result.loc[db_obj.db_param.QTY_ENERGY_TRADED]
-
-            current_balancing_energy = current_market_energy - current_actual_energy
+            current_balancing_energy = -1 * (current_market_energy - entry.loc["energy_net"])
             # append result to dict
             dict_bal_ener[db_obj.db_param.ID_METER].append(entry.loc[db_obj.db_param.ID_METER])
             dict_bal_ener[db_obj.db_param.TS_DELIVERY].append(ts_d)
@@ -186,7 +235,7 @@ def determine_balancing_energy(db_obj, list_ts_delivery):
         db_obj.log_energy_balancing(pd.DataFrame().from_dict(dict_bal_ener))
 
 
-def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="retailer01"):
     """
     Determine balancing energy credits and debits and add transactions to database.
 
@@ -194,7 +243,7 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
 
@@ -227,8 +276,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
             if entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_POSITIVE] * pos_bal_ener_price
 
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(pos_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
@@ -253,8 +302,8 @@ def update_balance_balancing_costs(db_obj, t_now, lem_config, list_ts_delivery, 
 
             elif entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_BALANCING_NEGATIVE] * neg_bal_ener_price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(neg_bal_ener_price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("balancing")
@@ -330,7 +379,7 @@ def set_prices_settlement(db_obj, path_simulation, list_ts_delivery):
         db_obj.set_prices_settlement(pd.DataFrame().from_dict(dict_settlement_prices))
 
 
-def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_supplier="supplier01"):
+def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_retailer="retailer01"):
     """
     Determine levy energy debit and credit and add transactions to database.
 
@@ -338,7 +387,7 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
     """
@@ -367,8 +416,8 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
         for _, entry in meter_readings_delta.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_OUT] != 0 and levies_pos != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_OUT] * levies_pos
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_pos)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
@@ -391,8 +440,8 @@ def update_balance_levies(db_obj, t_now, lem_config, list_ts_delivery, id_suppli
 
             elif int(entry.loc[db_obj.db_param.ENERGY_IN]) != 0 and levies_neg != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_IN] * levies_neg
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(levies_neg)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("levies")
@@ -466,7 +515,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
 
     # get required mappings
     info_meter = db_obj.get_info_meter()
-    map_submeter_to_main = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter_main"])])
+    map_submeter_to_main = dict([(i, a) for i, a in zip(info_meter["id_meter"], info_meter["id_meter_super"])])
     map_quality = db_obj.get_map_meter_to_quality()
 
     for ts_d in list_ts_delivery:
@@ -496,6 +545,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
                 submeter_flows["quality"] == lem_config["types_quality"][quality],
                 db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]] =\
                 submeter_flows["energy_out"]
+
         # add column containing main meter ids
         submeter_flows["id_meter_main"] = submeter_flows["id_meter"]
         submeter_flows = submeter_flows.replace({"id_meter_main": map_submeter_to_main})
@@ -506,6 +556,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         map_meter_main_to_energy_out = dict([(i, a) for i, a in zip(main_meter_flows[db_obj.db_param.ID_METER],
                                                                     main_meter_flows[db_obj.db_param.ENERGY_OUT])])
         submeter_flows = submeter_flows.replace({"energy_out_main_meter": map_meter_main_to_energy_out})
+
         # make quality flows percentages
         for quality in lem_config["types_quality"]:
             submeter_flows[db_obj.db_param.SHARE_QUALITY_ + lem_config["types_quality"][quality]] = \
@@ -515,6 +566,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
         final_qualities = submeter_flows.fillna(0).copy()
         final_qualities["temp"] = 1
         final_qualities = final_qualities.groupby("temp").sum()
+
         if len(final_qualities):
             final_qualities.loc[1, "share_quality_na"] += outside_flow
             final_qualities.loc[1, "energy_out_main_meter"] += outside_flow
@@ -528,6 +580,7 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             else:
                 quality = 0
             dict_results_ex_post[q].append(quality)
+
         ###
         # Determine community price
         ###
@@ -542,12 +595,11 @@ def set_community_price(db_obj, path_simulation, lem_config, list_ts_delivery):
             price = _lookup(local_share, lookup_supply_ratio, lookup_price) * euro_kwh_to_sigma_wh
             dict_results_ex_post[db_obj.db_param.PRICE_ENERGY_MARKET_
                                  + lem_config['types_pricing_ex_post'][type_pricing]].append(price)
-
     if len(list_ts_delivery) and len(dict_results_ex_post[db_obj.db_param.TS_DELIVERY]):
         db_obj.log_results_market_ex_post(pd.DataFrame(dict_results_ex_post))
 
 
-def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_config):
+def update_balance_ex_post(db_obj, id_retailer, t_now, list_ts_delivery, lem_config):
     """
     Update balance based on energy flows and ex-post prices. Only executed if ex-post is the main market to be settled.
 
@@ -555,7 +607,7 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
     :param t_now: integer, unix timestamp current time
     :param lem_config: dictionary containing configuration of LEM
     :param list_ts_delivery: list of integers, unix timestamps of ts_deliveries to be processed
-    :param id_supplier: string, supplier id, number, as supplier needs to be credited/debited
+    :param id_retailer: string, retailer id, number, as retailer needs to be credited/debited
 
     :return None:
     """
@@ -590,8 +642,8 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
         for _, entry in meter_readings_delta.iterrows():
             if entry.loc[db_obj.db_param.ENERGY_OUT] != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_OUT] * price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("market")
@@ -618,8 +670,8 @@ def update_balance_ex_post(db_obj, id_supplier, t_now, list_ts_delivery, lem_con
 
             elif int(entry.loc[db_obj.db_param.ENERGY_IN]) != 0:
                 transaction_value = entry.loc[db_obj.db_param.ENERGY_IN] * price
-                # credit supplier
-                dict_transactions[db_obj.db_param.ID_USER].append(id_supplier)
+                # credit retailer
+                dict_transactions[db_obj.db_param.ID_USER].append(id_retailer)
                 dict_transactions[db_obj.db_param.TS_DELIVERY].append(ts_d)
                 dict_transactions[db_obj.db_param.PRICE_ENERGY_MARKET].append(price)
                 dict_transactions[db_obj.db_param.TYPE_TRANSACTION].append("market")
@@ -735,4 +787,20 @@ def _decomp_float(float_in, return_val="pos", dec_places=0):
 
 
 if __name__ == "__main__":
-    pass
+    from ruamel.yaml import YAML
+    from lemlab.db_connection.db_connection import DatabaseConnection
+    with open(f"./scenario_config.yaml") as config_file:
+        config_example = YAML().load(config_file)
+    # Create a db connection object
+    db_obj_feldtest = DatabaseConnection(
+        db_dict=config_example['db_connections']['database_connection_admin'],
+        lem_config=config_example['lem'])
+    determine_prices_ex_post_markets(
+        db_obj_feldtest,
+        path_simulation="C:/Users/ga59zah/PycharmProjects/lemlab/simulation_results/test_sim",
+        lem_config=config_example["lem"],
+        list_ts_delivery=[1623919500 + 5 * 900,
+                          1623919500 + 6 * 900,
+                          1623919500 + 7 * 900,
+                          1623919500 + 8 * 900
+                          ])

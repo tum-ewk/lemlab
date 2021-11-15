@@ -8,17 +8,17 @@ import pandas as pd
 import json
 
 
-class Supplier:
-    """Supplier defines objects and functions to simulate an electricity supplier participating in
+class Retailer:
+    """Retailer defines objects and functions to simulate an electricity retailer participating in
        a local energy market.
 
-       The main tasks of the Supplier in the local energy market are:
+       The main tasks of the Retailer in the local energy market are:
                         - purchasing surplus energy and covering excess demand to ensure security of supply in the
                            local energy market
 
         Public methods:
 
-        __init__ :              Create an Supplier instance from a configuration folder created
+        __init__ :              Create an Retailer instance from a configuration folder created
                                 using the ScenarioExecutor class.
 
         pre_clearing_activity: Executes all activities required before the market is cleared:
@@ -30,9 +30,9 @@ class Supplier:
 
     def __init__(self, path, t_override=None):
         """
-        Create an instance of the Supplier class from a configuration folder created using the ScenarioExecutor class.
+        Create an instance of the Retailer class from a configuration folder created using the ScenarioExecutor class.
 
-        :param path:        String, path to the configuration directory of the supplier to be initialized
+        :param path:        String, path to the configuration directory of the retailer to be initialized
         :param t_override:  Integer, unix timestamp, specifies the current simulation time. If None, current time used
 
         :return None:

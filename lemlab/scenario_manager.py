@@ -84,8 +84,8 @@ class Scenario:
                 get all paths and folders set up for the scenario
             __create_lem() (optional)
                 set up local energy market platform
-            __create_supplier() (optional)
-                create supplier that balances the system
+            __create_retailer() (optional)
+                create retailer that balances the system
             __create_prosumers()
                 creates the initial setup for the creation of prosumers and hands it over to __create_prosumer()
                 to create the individual prosumers
@@ -99,7 +99,7 @@ class Scenario:
         # Only execute when LEM is active
         if self.config["simulation"]["lem_active"]:
             self.__create_lem()
-            self.__create_supplier()
+            self.__create_retailer()
 
         if self.config["simulation"]["agents_active"]:
             self.__create_prosumers()
@@ -149,7 +149,7 @@ class Scenario:
 
         # Lists that results in different actions for the categories
         list_no_action = ["simulation", "db_connections"]  # categories that require no action
-        list_new = ["lem", "supplier", "aggregator"]  # categories that require new files
+        list_new = ["lem", "retailer", "aggregator"]  # categories that require new files
         list_individual = ["prosumer", "producer"]  # categories that require individual edits
 
         # Loop through the old config file and compare it to the new one to find the differences
@@ -216,7 +216,7 @@ class Scenario:
         # Create scenario directory tree (if scenario exists, delete and recreate)
         self.__create_folders([(f"{self.path_scenario}", True),
                                (f"{self.path_scenario}/lem", True),
-                               (f"{self.path_scenario}/supplier", True),
+                               (f"{self.path_scenario}/retailer", True),
                                (f"{self.path_scenario}/prosumer", True),
                                (f"{self.path_scenario}/aggregator", True),
                                (f"{self.path_scenario}/weather", True),
@@ -231,7 +231,8 @@ class Scenario:
         ft.write_dataframe(df_weather.reset_index(), f"{self.path_scenario}/weather/weather.ft")
         for file in os.listdir(f"{self.path_input_data}/weather/forecast"):
             df_forecast = pd.read_csv(f"{self.path_input_data}/weather/forecast/{file}").set_index("timestamp")
-            ft.write_dataframe(df_forecast.reset_index(), f"{self.path_scenario}/weather/forecast/{file.split('.')[0]}")
+            ft.write_dataframe(df_forecast.reset_index(),
+                               f"{self.path_scenario}/weather/forecast/{file.split('.')[0]}.ft")
 
     def __create_folders(self, list_paths: list) -> None:
         """creates new or replaces existing folders specified in the list of paths
@@ -308,8 +309,8 @@ class Scenario:
         with open(f"{self.path_scenario}/lem/config_account.json", "w+") as write_file:
             json.dump(self.config["lem"], write_file)
 
-    def __create_supplier(self) -> None:
-        """creates the files for the supplier
+    def __create_retailer(self) -> None:
+        """creates the files for the retailer
 
         Args:
 
@@ -321,10 +322,10 @@ class Scenario:
         # Check if file needs to be created
         if not self.config["simulation"]["lem_active"]:  # exit function if lem is inactive
             return
-        self.config["supplier"]["id_market_agent"] = self.config["supplier"]["id_user"]
-        # Save config file to supplier specification directory
-        with open(f"{self.path_scenario}/supplier/config_account.json", "w+") as write_file:
-            json.dump(self.config["supplier"], write_file)
+        self.config["retailer"]["id_market_agent"] = self.config["retailer"]["id_user"]
+        # Save config file to retailer specification directory
+        with open(f"{self.path_scenario}/retailer/config_account.json", "w+") as write_file:
+            json.dump(self.config["retailer"], write_file)
 
     def __create_prosumers(self) -> None:
         """creates the general setup for the prosumers to pass the information on to create the individual prosumers
@@ -777,7 +778,7 @@ class Scenario:
 
         # Add new information to account dict
         account.update({"id_user": id_user,
-                        "id_meter_main": self.__gen_rand_id(id_len),
+                        "id_meter_grid": self.__gen_rand_id(id_len),
                         "list_plants": list_plant_ids,
                         "id_market_agent": id_user})
 
@@ -790,7 +791,7 @@ class Scenario:
             plant_dict[list_plant_ids[i]] = plant
 
         # Initialize prosumer's main meter
-        self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_main'),
+        self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_grid'),
                           init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
 
         # Initialize all other meters and create device-dependent files
@@ -1378,8 +1379,8 @@ class Scenario:
 
         if category == "lem":
             self.__create_lem()
-        elif category == "supplier":
-            self.__create_supplier()
+        elif category == "retailer":
+            self.__create_retailer()
         elif category == "aggregator":
             self.__create_aggregator()
         else:

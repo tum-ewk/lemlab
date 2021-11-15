@@ -25,7 +25,7 @@ simulation:
 
 lem:
   ################# market settings #####################
-  "types_clearing_ex_ante": {0: "da"}
+  "types_clearing_ex_ante": {0: "pda"}
   "types_clearing_ex_post": {0: "community"}
                                             # market types to be calculated
                                             # settlement and prosumers observe the first
@@ -92,6 +92,14 @@ lem:
   "prices_settlement_in_advance": 0         # how many steps in advance are settlement prices
                                             # posted to the platform; currently only 0 possible
 
+  "types_meter": {0: "plant submeter",      # types of meter defined
+                  1: "virtual plant submeter",
+                  2: "dividing meter",
+                  3: "virtual dividing meter",
+                  4: "grid meter",
+                  5: "virtual grid meter"
+                  }
+
   # defining balancing energy pricing
   "bal_energy_pricing_mechanism": "fixed"   # how should balancing energy prices be set?
                                             #      "fixed" - dual prices as defined below
@@ -121,21 +129,21 @@ lem:
   "price_energy_levies_positive": 0
 
 ########################################################################################################################
-########################################### supplier configuration #####################################################
+########################################### retailer configuration #####################################################
 ########################################################################################################################
 
-supplier:
-  # for the supplier's role in the market, please see the docs
+retailer:
+  # for the retailer's role in the market, please see the docs
 
-  "price_sell": 0.08                        # supplier market ceiling offer one step before delivery
-  "price_buy": 0.02                         # supplier market floor offer one step before delivery
+  "price_sell": 0.08                        # retailer market ceiling offer one step before delivery
+  "price_buy": 0.02                         # retailer market floor offer one step before delivery
 
-  "qty_energy_bid": 1000000                 # energy quantity of supplier bid in wh
-  "qty_energy_offer": 1000000               # energy quantity of supplier offer in wh
+  "qty_energy_bid": 1000000                 # energy quantity of retailer bid in wh
+  "qty_energy_offer": 1000000               # energy quantity of retailer offer in wh
 
   "quality": "na"                           # quality that the generated energy should be labelled with on the lem
 
-  "id_user": "supplier01"                   # supplier market id
+  "id_user": "retailer01"                   # retailer market id
 
 ########################################################################################################################
 ########################################### prosumer configuration #####################################################
@@ -363,7 +371,7 @@ producer:
 
   ################################ large-scale pv generation settings ####################################
 
-  "pv_active": False                        # is there a large-scale pv producer?
+  "pv_active": false                        # is there a large-scale pv producer?
 
   "pv_power": 60000                         # peak power of photovoltaic plant in w
 
@@ -374,7 +382,6 @@ producer:
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
                                             #   "file_nn" - forecast based on weather forecast file (coming soon)
-
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
