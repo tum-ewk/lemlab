@@ -587,9 +587,9 @@ class DatabaseConnection:
 
     def _init_table(self, table, clear_table=False, reformat_table=False):
         try:
-            table_exists = self.engine.dialect.has_table(self.engine, table.name)
+            # table_exists = self.engine.dialect.has_table(self.engine, table.name)
             # on some linux systems, the above line does not work. Use the following line instead
-            # table_exists = db.inspect(self.engine).has_table(table.name)
+            table_exists = db.inspect(self.engine).has_table(table.name)
 
             if not table_exists:  # If table does not exist, create new table.
                 self._create_table(table)
