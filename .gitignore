@@ -130,6 +130,8 @@ dmypy.json
 .pyre/
 lem_analysis/monte_carlo/simulations/
 
-#lem_analysis/
+lem_analysis/
+
+scripts_case_study_1/
 
 lem_analysis/time_complexity/simulations/
