@@ -1,0 +1,496 @@
+########################################################################################################################
+########################################### simulation configuration ###################################################
+########################################################################################################################
+
+simulation:
+  "rts": false                              # do you want to run a real-time simulation (rts)
+                                            # or a normal, full-speed simulation (sim)?
+  # rts only
+  "lem_active": true                        # should the lem be simulated? always true in sim
+  "agents_active": true                     # should agents be simulated? always true in sim
+  "rts_start_steps": 6                      # when beginning an rts, this many steps will be
+                                            # simulated at an accelerated rate, before the rts commences
+
+  # sim only
+  "sim_start": "2021-03-23 00:00"           # simulation start as unix timestamp
+  "sim_start_tz": "europe/berlin"           # timezone of simulation
+  "sim_length": 1                           # length of the simulation in days
+
+  "path_input_data": "../input_data"        # path relative to the lemlab repository
+  "path_scenarios": "../scenarios"          # path relative to the lemlab repository
+
+########################################################################################################################
+######################################### lem platform configuration ###################################################
+########################################################################################################################
+
+lem:
+#  ################# market settings #####################
+  "types_clearing_ex_ante": {0: "pda",
+                             1: "sep",
+                             2: "h2l",
+                             3: "l2h",
+                             4: "cc",
+                             5: "cc_h2l",
+                             6: "cc_h2l_pda"}
+  "types_clearing_ex_post": {0: "community"}
+                                            # market types to be calculated
+                                            # settlement and prosumers observe the first
+                                            # listed result, other choices are merely
+                                            # calculated for comparison
+
+                                            # for currently implemented choices, see the
+                                            # documentation
+
+                                            # the ex_post_pricing ex-post solution is always
+                                            # calculated in parallel. if no ex-ante clearing
+                                            # type is listed, the ex_post_pricing will be
+                                            # used for settlement and no ex-ante trading
+                                            # is simulated
+
+  "types_pricing_ex_ante": {0: "uniform",
+                            1: "discriminatory"}
+  "types_pricing_ex_post": {0: "standard"}  # which clearing price variants to be calculated
+                                            # for each clearing type
+                                            # settlement and prosumers observe the first
+                                            # listed variation, other choices are merely
+                                            # calculated for comparison
+
+                                            # for currently implemented choices, see the
+                                            # documentation
+
+  share_quality_logging_extended: true      # in ex-ante trading, market results can be labelled in
+                                            # simply (quality of cleared generation) or more
+                                            # extensively (quality of cleared generation, consumption
+                                            # as well as offered generation and consumption bids)
+                                            # for more information, see the documentation
+
+  ################# advanced market settings #####################
+
+  "types_quality": {0: "na",                # energy quality types used for trading and labelling
+                    1: "local",
+                    2: "local_green"}
+
+  "types_position": {0: 'offer',
+                     1: 'bid'}
+
+  "types_transaction": {0: "market",        # what types of transactions exist (qualities are
+                        1: "balancing",     # subcategories of 0: market)
+                        2: "levy_prices"}
+
+  "positions_delete": true                  # true -> submitted positions are deleted from the market
+                                            # positions table after being processed
+
+  "positions_archive": true                 # true -> all submitted positions are archived before
+                                            # deletion
+
+  "horizon_clearing": 900                 # seconds, how far into the future is the market cleared?
+
+  "cc_max_while_exec": 100                  # Maximum number of while loop executions. After this
+                                            # amount of executions the clearing will be aborted.
+
+  # these two parameters are currently not implemented
+  "interval_clearing": 900                  # seconds, length of one energy delivery period (ts_delivery)
+  "frequency_clearing": 900                 # seconds, how often is ex-ante market clearing executed?
+
+  ################# settlement settings #####################
+
+  "calculate_virtual_submeters": true       # sometimes users don't have submeters on all plants
+                                            # if this is the case, a virtual meter is generated and this remaining
+                                            # internal load/generation is assigned to the virtual meter
+
+  "prices_settlement_in_advance": 0         # how many steps in advance are settlement prices
+                                            # posted to the platform; currently only 0 possible
+
+  "types_meter": {0: "plant submeter",      # types of meter defined
+                  1: "virtual plant submeter",
+                  2: "dividing meter",
+                  3: "virtual dividing meter",
+                  4: "grid meter",
+                  5: "virtual grid meter"
+                  }
+
+  # defining balancing energy pricing
+  "bal_energy_pricing_mechanism": "fixed"   # how should balancing energy prices be set?
+                                            #      "fixed" - dual prices as defined below
+                                            #      "file" - prices are given as time series in input file below
+                                            # balancing energy is the market participants deviation from the market
+                                            # result. the balancing price is the incentive for the agent to stick
+                                            # to the market result, or to assist the system in restoring
+                                            # its balance
+
+  "path_bal_prices": "balancing_prices_1.csv"
+
+  "price_energy_balancing_positive": 0.10   # fixed balancing prices in c/kwh
+  "price_energy_balancing_negative": 0.10
+
+  # defining electricity levy_prices
+
+  "levy_pricing_mechanism": "fixed"         # how should levy prices be determined?
+                                            # levies are those fees added to the market price of electricity
+                                            # to account for grid fees, taxes, etc. often levied as a volumetric
+                                            # tariff.
+                                            #      "fixed" - dual prices as defined below
+                                            #      "file" - prices are given as time series in input file below
+
+  "path_levy_prices": "levy_prices_1.csv"
+
+  "price_energy_levies_negative": 0.18      # "fixed" levy price if desired
+  "price_energy_levies_positive": 0
+
+########################################################################################################################
+########################################### retailer configuration #####################################################
+########################################################################################################################
+
+retailer:
+  # for the retailer's role in the market, please see the docs
+
+  "price_sell": 0.08                        # retailer market ceiling offer one step before delivery
+  "price_buy": 0.02                         # retailer market floor offer one step before delivery
+
+  "qty_energy_bid": 1000000                 # energy quantity of retailer bid in wh
+  "qty_energy_offer": 1000000               # energy quantity of retailer offer in wh
+
+  "quality": "na"                           # quality that the generated energy should be labelled with on the lem
+
+  "id_user": "retailer01"                   # retailer market id
+
+#########################################################################################################################
+######################################## time complexity analysis config ################################################
+#########################################################################################################################
+
+time_complexity:
+  "min_positions": 10
+  "max_positions": 1020
+  "step_size": 500
+  "n_samples": 4
+
+
+########################################################################################################################
+########################################### prosumer configuration #####################################################
+########################################################################################################################
+
+prosumer:
+
+  ################################ general settings ################################
+
+  "general_number_of": 1000                   # number of prosumers (single family homes) to simulate
+
+  "general_solver": "gurobi"                # installed pyomo compatible solver
+                                            # preferably miqp capable, e.g. "gurobi" and "cplex"
+                                            # glpk is possible, for limitations see documentation
+
+  "general_fcast_retraining_frequency": 96  # user forecast models retrained every n steps
+                                            #     recommended range: >= 96
+
+  ################################ household load settings ####################################
+
+  "hh_has_submeter": false                  # does the household load have a physical submeter or must a virtual meter
+                                            # be created?
+                                            # Please note that if this value is true, calculate_virtual_submeters in
+                                            # "lem" should be set to true, as the settlement algorithm needs to
+                                            # calculate the residual meter readings in order for settlement to commence
+
+  "hh_sizing": "uniform"                    # type of household load
+                                            # "uniform" - all households have the same total power consumption
+                                            #             specified in hh_load_uniform the load curve still differs
+                                            # "distribution" - households have different total power consumption and
+                                            #                  load curve. the distribution of the total power
+                                            #                  consumption is specified in hh_distribution for the
+                                            #                  respective shares and hh_intervals for the various ranges
+                                            #                  the shares represent
+
+  "hh_sizing_uniform": 3500                 # uniform power consumption for all households +-500
+                                            # (hh_load_type = "uniform")
+
+  "hh_sizing_distribution": [0.1, 0.2,      # distribution of the total power consumption of the households.
+                             0.2, 0.2,      # values need not sum to 1
+                             0.2, 0.1]
+
+  "hh_sizing_distribution_intervals": [1000, 2000, 3000, 4000, 5000]
+                                            # intervals that the distribution is applied to. all values
+                                            #     represent the maximum value for that interval except for
+                                            #     the last one which is used as both min and max value for
+                                            #     the second to last and last value
+                                            #     example:
+                                            #         hh_distribution:  [0.2, 0.6, 0.2]
+                                            #         hh_intervals:     [2000, 4000]
+                                            #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
+
+  "hh_fcast": "naive_average"               # household load forecasting method
+                                            #   "perfect" - perfect knowledge of the future
+                                            #   "naive"   - today will be the same as yesterday
+                                            #   "naive_average" - today will be the same as
+                                            #                     the average the last 2 days
+                                            #   "smoothed" - prediction value is a moving mean
+                                            #                of the future values. window width of
+                                            #                9 timesteps
+                                            #   "sarma"   - full sarma model of order below
+
+                                            # order of double seasonal arma model
+  "hh_fcast_sarma_order": [2, 0, 2,         # [ar,    0, ma,
+                           2, 0, 0, 96,     #  s1_ar, 0, s1_ma, s1,
+                           2, 0, 0, 672]    #  s2_ar, 0, s2_ma, s2]
+
+  ################################ small-scale photovoltaic settings ####################################
+
+  "pv_fraction": 0.7                        # fraction of prosumers with pv plants
+
+  "pv_sizing_power": 1.5                    # sizing of pv plant
+                                            # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
+
+  "pv_sizing_power_deviation": 0.2          # random positive/negative deviation from pv_sizing_power
+
+  "pv_controllable": true                   # can the pv inverter be controlled? true or false
+
+  "pv_fcast": "smoothed"                    # pv production forecasting method
+                                            #   "perfect" - perfect knowledge of the future
+                                            #   "smoothed" - prediction value is a moving mean of the future values.
+                                            #                window width of 9 time steps
+                                            #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
+
+  "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
+
+  ################################ small-scale wind settings ####################################
+  ################################ wind power is coming soon
+
+  "wind_fraction": 0                        # fraction of prosumers with wind power plants
+
+  "wind_sizing_power": 0.7                  # sizing of wind power plant
+                                            # 1 = 1000 w of wind for every 1000 kwh/a of household consumption
+
+  "wind_sizing_power_deviation": 0.2        # random positive/negative deviation from wind_sizing_power
+
+  "wind_controllable": true                 # can the wind inverter be controlled? true or false
+
+  "wind_fcast": "perfect"                   # wind production forecasting method
+                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
+                                            #                           and turbine model
+                                            #   "wind_lookup_file_fcast" - weather forecast from file used with
+                                            #                              turbine model
+
+  "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
+
+  ################################ battery settings ####################################
+
+  "bat_fraction": 0.75                      # fraction of prosumers with batteries
+
+  "bat_fraction_dependent_on_pv": true      # True: bat_fraction is only applied to pv owners
+                                            # False: any prosumer may own a battery
+
+  "bat_sizing_power": 1                     # battery power sizing (w)
+                                            #   if household has pv system:
+                                            #       battery power = bat_sizing_power * peak pv power
+                                            #   else:
+                                            #       battery power = bat_sizing_power * hh consumption p.a. / 1000
+
+  "bat_sizing_capacity": 1                  # battery capacity sizing
+                                            #   battery capacity = battery power * bat_sizing_capacity
+
+  "bat_efficiency": 0.95                    # one way charging efficiency of the battery
+
+  "bat_soc_init": 0.1                       # initial soc of the battery (0-1)
+
+  "bat_charge_from_grid": false             # can the battery charge off the grid?
+
+  "bat_quality": "local"                    # quality that the generated energy should be labelled with on the lem
+
+  ################################ heat pump settings ####################################
+  ################################ heat pumps are coming soon
+
+  "hp_fraction": 0                          # fraction of prosumers with heat pumps
+
+  "hp_fcast": "nn"                          # heating demand forecasting technique
+                                            #   "nn" - neural network based on the included weather data
+
+  ################################ electric vehicle settings ####################################
+
+  "ev_fraction": 0.15                       # fraction of prosumers with evs
+
+  "ev_efficiency": 0.9                      # one way charging efficiency of the vehicle
+
+  "ev_v2g": false                           # ev v2g charging, "y" or "n"
+
+  "ev_charging_power": [3700, 7200, 11000]  # ev max charging power in w
+                                            # each ev owner selects a random value off this list
+
+  "ev_capacity": [40000, 60000, 80000]      # ev battery size in wh, random val selected from list
+                                            # each ev owner selects a random value off this list
+
+  "ev_consumption": [15000, 20000,          # ev consumption in wh/100km
+                     25000, 30000]          # each ev owner selects a random value off this list
+
+  "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
+
+  "ev_fcast": "ev_close"                    # ev availability forecasting technique
+                                            #   "ev_perfect" - perfect knowledge of the future
+                                            #   "ev_close" - perfect knowledge of the current
+                                            #                availability cycle once the vehicle arrives
+
+  "ev_quality": "local"                     # quality that generated energy (v2g) should be labelled with on the lem
+
+  ################################ fixed generator settings ####################################
+
+  "fixedgen_fraction": 0                    # fraction of prosumers with constant power generators
+                                            # (p.u. power read from file)
+
+  "fixedgen_power": 1                       # peak power of constant power generator
+
+  "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
+
+  "fixedgen_quality": "local"               # quality that the generated energy should be labelled with on the lem
+
+
+  ################################ model predictive controller settings ####################################
+
+  "mpc_price_fcast": "naive"                # forecast model to be used for the lem market price
+                                            #     "flat" - no meaningful forecasting, flat price assumed
+                                            #     "naive" - expected price same as previous day (initialized flat)
+
+  "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
+
+  ################################ market agent settings ####################################
+
+  "ma_strategy": ["linear"]                 # prosumer market agent trading strategy,
+                                            #   "linear" - see docs
+                                            #   "zi" - zero intelligence, random bid and offer prices
+                                            #                           in market price range
+                                            #   none - called if only ex-post markets are being simulated, as no active
+                                            #          trading is possible
+                                            # each prosumer selects a random value off this list
+
+  "ma_horizon": [12, 24, 36, 48, 60]        # market agent trading horizon,
+                                            #     possible range : 1 - (mpc_horizon - reopt_step
+                                            # each prosumer selects a random value off this list
+
+  "ma_preference_quality": ["green_local"]  # some ex-ante markets can consider user preferences
+                                            # each prosumer selects a random value off this list
+
+  "ma_premium_preference_quality": [0, 0, 10, 20, 30]
+                                            # percentage premium the agent is willing to pay for preference satisfaction
+                                            # each prosumer selects a random value off this list
+
+
+  ################################ metering settings ####################################
+
+  "meter_prob_late": 0                      # probability that any given meter reading will be communicated late (0-1)
+
+  "meter_prob_late_95": 3600                # late meter readings are normally distributed, this is the 2 sigma value
+                                            # (seconds) of the lateness i.e. 95% of late meter readings will be
+                                            # less than this late
+
+  "meter_prob_missing": 0                   # probability that any given meter reading will fail to be communicated
+                                            # at all (0-1)
+
+########################################################################################################################
+########################################### producer configuration #####################################################
+########################################################################################################################
+# The producer is a sub-class of the prosumer and is therefore modeled as a prosumer without consumption. All settings
+# that cannot be set here are inherited from the prosumer class.
+
+producer:
+
+  ################################ large-scale pv generation settings ####################################
+
+  "pv_active": false                        # is there a large-scale pv producer?
+
+  "pv_power": 60000                         # peak power of photovoltaic plant in w
+
+  "pv_controllable": false                  # can the generator be controlled? (can power be decreased?)
+
+  "pv_fcast": "perfect"                     # pv production forecasting method
+                                            #   "perfect" - perfect knowledge of the future
+                                            #   "smoothed" - prediction value is a moving mean of the future values.
+                                            #                window width of 9 time steps
+                                            #   "file_nn" - forecast based on weather forecast file (coming soon)
+
+  "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
+
+  ################################ large-scale wind generation settings ####################################
+  ################################ wind power is coming soon
+
+  "wind_active": false                      # is there a large-scale wind producer?
+
+  "wind_power": 30000                       # peak power of wind power generator in w
+
+  "wind_controllable": false                # can the generator be controlled? (can power be decreased?)
+
+  "wind_fcast": "perfect"                   # wind production forecasting method
+                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
+                                            #                           and turbine model
+                                            #   "wind_lookup_file_forecast" - weather forecast from file used with
+                                            #                                 turbine model
+
+  "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
+
+  ################################ large-scale fixed generator settings ####################################
+
+  "fixedgen_active": True                   # is there a large-scale fixed generation producer?
+
+  "fixedgen_power": 3000                    # peak power of fixed power generator in w
+                                            # (p.u. power read from file)
+
+  "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
+
+  "fixedgen_quality": "local"               # quality that the generated energy should be labelled with on the lem
+
+########################################################################################################################
+########################################## aggregator configuration ####################################################
+########################################################################################################################
+
+aggregator:
+
+  "active": false                           # if the aggregator is active, the aggregated prosumers ignore their
+                                            # household load and predict/control only their flexible plants
+                                            # the aggregator can only be active during ex-ante trading and is deactivated
+                                            # for ex-post trading
+
+  "id_user": "aggreg0001"
+
+  "prosumers_wo_plants_only": true          # aggregate those prosumers with no flexible plants (only hh)
+  "prosumers_wo_battery_only": true         # aggregate those prosumers without batteries
+
+  ################################ market agent settings ####################################
+
+  "ma_strategy": "linear"                   # aggregator market agent trading strategy
+                                            # choices are:
+                                            #   linear - see docs
+                                            #   zi - zero intelligence, random bid and offer prices
+                                            #                           in market price range
+
+  "ma_horizon": 32                          # market agent trading horizon,
+                                            #     possible range : 1 - (mpc_horizon - reopt_steps)
+
+  "preference_quality": "green_local"       # some ex-ante markets can consider user preferences
+
+  "premium_preference_quality": 10          # percentage premium the agent is willing to offer for preference satisfaction
+
+  ################################ forecast settings ####################################
+
+  "fcast": "sarma"                          # aggregator load forecasting method
+                                            #     "perfect" - perfect knowledge of the future
+                                            #     "naive"   - today will be the same as yesterday
+                                            #     "naive_average" - today will be the same as
+                                            #       the last 2 days
+                                            #     "sarma"   - full sarma model of order below
+
+                                            # order of double seasonal arma model
+  "fcast_sarma_order": [2, 0, 2,            # [ar,    0, ma,
+                        2, 0, 0, 96,        #  s1_ar, 0, s1_ma, s1,
+                        2, 0, 0, 672]       #  s2_ar, 0, s2_ma, s2]
+
+########################################################################################################################
+############################################### database configuration #################################################
+########################################################################################################################
+
+db_connections:
+  "database_connection_admin": { "user": "admin_lem",
+                                 "pw": "admin",
+                                 "host": "127.0.0.1",
+                                 "port": "5432",
+                                 "db": "postgres" }
+
+  "database_connection_user": { "user": "market_participant",
+                                "pw": "user",
+                                "host": "127.0.0.1",
+                                "port": "5432",
+                                "db": "postgres" }
