@@ -4,7 +4,7 @@ __license__ = ""
 __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
 
-from sqlalchemy import Text, BigInteger, Boolean
+from sqlalchemy import Text, BigInteger
 import dataclasses
 from dataclasses import field
 
