@@ -63,8 +63,8 @@ def market_clearing(db_obj,
             print('All offers and/or bids are empty. No clearing possible')
         return
 
-    bids = _convert_qualities_to_int(db_obj, bids, config_lem['types_quality'])
-    offers = _convert_qualities_to_int(db_obj, offers, config_lem['types_quality'])
+    bids = convert_qualities_to_int(db_obj, bids, config_lem['types_quality'])
+    offers = convert_qualities_to_int(db_obj, offers, config_lem['types_quality'])
     results_clearing_all = {}
     time_clearing_execution = {}
 
@@ -1579,7 +1579,7 @@ def _update_user_balances(db_obj, df_transactions):
     db_obj.update_balance_user(balance_update_df)
 
 
-def _convert_qualities_to_int(db_obj, positions, dict_types):
+def convert_qualities_to_int(db_obj, positions, dict_types):
     dict_types_inverted = {v: k for k, v in dict_types.items()}
     positions = positions.assign(**{db_obj.db_param.QUALITY_ENERGY: [dict_types_inverted[i] for i in
                                                                      positions[db_obj.db_param.QUALITY_ENERGY]]})
