@@ -130,7 +130,7 @@ def calculate_virtual_submeters(db_obj, list_ts_delivery):
                                                            ]["id_meter"])
                 mm_reading = df_readings_meter_delta[(df_readings_meter_delta["id_meter"] == supermeter) &
                                                      (df_readings_meter_delta["ts_delivery"] == ts_delivery)]
-                if set(list_submeters).issubset(set_readings) and len(mm_reading):
+                if set(list_submeters).issubset(set_readings) and len(set_readings) and len(mm_reading):
                     # determine "missing" energy
                     # "missing" energy is attributed to the VM
                     cum_energy = 0
@@ -629,7 +629,7 @@ def update_balance_ex_post(db_obj, id_retailer, t_now, list_ts_delivery, lem_con
 
     for ts_d in list_ts_delivery:
         # get energy flows and ex-post prices
-        meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, types_meters=[4, 5])
+        meter_readings_delta = db_obj.get_meter_readings_by_type(ts_delivery=ts_d, type_meter="main")
         ex_post_prices = db_obj.get_results_market_ex_post(ts_delivery_first=ts_d)
         price = int(ex_post_prices[db_obj.db_param.PRICE_ENERGY_MARKET_
                                    + lem_config['types_pricing_ex_post'][0]])

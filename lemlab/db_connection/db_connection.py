@@ -315,35 +315,23 @@ class DatabaseConnection:
             f"AND '{t_cleared_last}' "
             f"ORDER BY {self.db_param.TS_DELIVERY}")
 
-        if id_user != "%%" and len(matched_bids):
-            # summate matched market bids for id_user for the market trading horizon
+        if id_user != "%%":
+            # summate matched market bids for the mp for the market trading horizon
             # initialize dataframe
             matched_bids_by_timestep = pd.DataFrame(
                 [[ts_d, 0] for ts_d in range(ts_delivery_first, ts_delivery_last + 1, 900)],
                 columns=[self.db_param.TS_DELIVERY, "net_bids"]).set_index(self.db_param.TS_DELIVERY)
 
-            # calc qty energy bid by
-            matched_bids["qty_energy_bid"] = \
-                matched_bids[matched_bids[self.db_param.ID_USER_BID] == id_user]["qty_energy_traded"]
-
-            # calc qty energy offered by user
-            matched_bids["qty_energy_offered"] = matched_bids[matched_bids["id_user_offer"] == id_user][
-                "qty_energy_traded"]
-
-            matched_bids = matched_bids.fillna(0)
-            matched_bids["net_bids"] = matched_bids["qty_energy_offered"] - matched_bids["qty_energy_bid"]
-
-            if len(matched_bids):
-                matched_bids_by_timestep["net_bids"] = matched_bids.groupby(self.db_param.TS_DELIVERY).sum()["net_bids"]
-            else:
-                pass
+            temp_matched_bids_by_timestep = matched_bids
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep[
+                temp_matched_bids_by_timestep[self.db_param.ID_USER_BID] == id_user][self.db_param.QTY_ENERGY_TRADED]
+            temp_matched_bids_by_timestep["qty_energy_bid"] = temp_matched_bids_by_timestep["qty_energy_bid"].fillna(0)
+            temp_matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep[self.db_param.QTY_ENERGY_TRADED] \
+                - 2 * temp_matched_bids_by_timestep["qty_energy_bid"]
+            matched_bids_by_timestep["net_bids"] = \
+                temp_matched_bids_by_timestep.groupby(self.db_param.TS_DELIVERY).sum()["net_bids"]
             matched_bids_by_timestep = matched_bids_by_timestep.fillna(0)
-
-        elif id_user != "%%":
-            matched_bids_by_timestep = pd.DataFrame(
-                [[ts_d, 0] for ts_d in range(ts_delivery_first, ts_delivery_last + 1, 900)],
-                columns=[self.db_param.TS_DELIVERY, "net_bids"]).set_index(self.db_param.TS_DELIVERY)
-
         return matched_bids, matched_bids_by_timestep
 
     # Admins only
@@ -419,9 +407,7 @@ class DatabaseConnection:
             f"ORDER BY {self.db_param.TS_DELIVERY}")
         return readings_meter_delta
 
-    def get_meter_readings_by_type(self, ts_delivery, types_meters=None):
-        if types_meters is None:
-            types_meters = []
+    def get_meter_readings_by_type(self, ts_delivery, types_meters=[]):
         if len(types_meters) == 0:
             types_meters = [0, 1, 2, 3, 4, 5]
 
@@ -599,9 +585,9 @@ class DatabaseConnection:
 
     def _init_table(self, table, clear_table=False, reformat_table=False):
         try:
-            # table_exists = self.engine.dialect.has_table(self.engine, table.name)
+            table_exists = self.engine.dialect.has_table(self.engine, table.name)
             # on some linux systems, the above line does not work. Use the following line instead
-            table_exists = db.inspect(self.engine).has_table(table.name)
+            # table_exists = db.inspect(self.engine).has_table(table.name)
 
             if not table_exists:  # If table does not exist, create new table.
                 self._create_table(table)
