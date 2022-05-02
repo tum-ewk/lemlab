@@ -1,14 +1,14 @@
 import time
 import pandas as pd
-import numpy as np
+
 from ruamel.yaml import YAML
 from pathlib import Path
 from matplotlib import pyplot as plt
 
-from lem_analysis.random_lem_fcts import create_random_positions, create_user_ids
+from random_lem_fcts import create_random_positions, create_user_ids
 from lemlab.db_connection.db_connection import DatabaseConnection
 from lemlab.lem.clearing_ex_ante import clearing_pda, clearing_pp, clearing_cc, calc_market_position_shares, \
-     _convert_qualities_to_int
+     convert_qualities_to_int
 
 
 def run_clearings(db_obj,
@@ -134,9 +134,8 @@ def run_clearings(db_obj,
 
 def run_time_complexity_analysis(config_file_name):
     # load configuration file
-    yaml = YAML()
     with open(f"{config_file_name}") as config_file:
-        config_tc = yaml.load(config_file)
+        config_tc = YAML().load(config_file)
 
     db_obj = DatabaseConnection(db_dict=config_tc["db_connections"]["database_connection_user"],
                                 lem_config=config_tc['lem'])
@@ -172,8 +171,8 @@ def run_time_complexity_analysis(config_file_name):
             # Extract bids and offers
             bids = positions[positions['type_position'] == 'bid']
             offers = positions[positions['type_position'] == 'offer']
-            bids = _convert_qualities_to_int(db_obj, bids, config_tc['lem']['types_quality'])
-            offers = _convert_qualities_to_int(db_obj, offers, config_tc['lem']['types_quality'])
+            bids = convert_qualities_to_int(db_obj, bids, config_tc['lem']['types_quality'])
+            offers = convert_qualities_to_int(db_obj, offers, config_tc['lem']['types_quality'])
             for type_clearing in config_tc['lem']['types_clearing_ex_ante'].values():
                 print(f"Clearing type: {type_clearing}")
 

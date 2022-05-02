@@ -1,23 +1,21 @@
-import multiprocessing as mp
 import os
 import pickle
 import shutil
 import time
 import traceback
-import tikzplotlib
-from pathlib import Path
 import random
-
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
-import yaml
-from matplotlib import pyplot as plt
-from tqdm import tqdm
 
-from lem_analysis.random_lem_fcts import create_random_positions, create_user_ids
+from ruamel.yaml import YAML
+from matplotlib import pyplot as plt
+from pathlib import Path
+
+from random_lem_fcts import create_random_positions, create_user_ids
 from lemlab.db_connection.db_connection import DatabaseConnection
 from lemlab.lem.clearing_ex_ante import clearing_pda, clearing_pp, clearing_cc, calc_market_position_shares, \
-    _convert_qualities_to_int
+    convert_qualities_to_int
 
 
 def run_clearings(db_obj,
@@ -205,9 +203,9 @@ def single_lem_simulation(test_case_number):
         # Extract bids and offers
         bids = positions[positions['type_position'] == 'bid']
         offers = positions[positions['type_position'] == 'offer']
-        bids = _convert_qualities_to_int(single_lem_simulation.db_obj,
+        bids = convert_qualities_to_int(single_lem_simulation.db_obj,
                                          bids, single_lem_simulation.config['lem']['types_quality'])
-        offers = _convert_qualities_to_int(single_lem_simulation.db_obj,
+        offers = convert_qualities_to_int(single_lem_simulation.db_obj,
                                            offers, single_lem_simulation.config['lem']['types_quality'])
         for clearing in single_lem_simulation.config['lem']['types_clearing_ex_ante'].values():
             # run clearings and save to files
@@ -309,10 +307,14 @@ def extract_relevant_data(config_mc, positions_cleared, positions_placed):
                     data_dict['shares_bids_cleared_all_' + type_quality] = share_preference_bids_cleared_all
                     # Share preference bids satisfied by offers in cleared positions
                     if share_preference_bids_cleared > 0:
-                        data_dict['shares_bids_satis_' + type_quality] = (
-                                                                                 share_quality_offers_cleared + share_quality_offers_cleared_excess) / share_preference_bids_cleared
-                        if share_quality_offers_cleared + share_quality_offers_cleared_excess - share_preference_bids_cleared > 0:
-                            share_quality_offers_cleared_excess = share_quality_offers_cleared_excess + share_quality_offers_cleared - share_preference_bids_cleared
+                        data_dict['shares_bids_satis_' + type_quality] = \
+                            (share_quality_offers_cleared + share_quality_offers_cleared_excess)\
+                            / share_preference_bids_cleared
+                        if share_quality_offers_cleared \
+                                + share_quality_offers_cleared_excess - share_preference_bids_cleared > 0:
+                            share_quality_offers_cleared_excess = \
+                                share_quality_offers_cleared_excess \
+                                + share_quality_offers_cleared - share_preference_bids_cleared
                         else:
                             share_quality_offers_cleared_excess = 0
 
@@ -591,7 +593,7 @@ def plot_mc_results_placed_positions_95(config,
     fig.subplots_adjust(wspace=0.2, top=0.95, bottom=0.1, left=0.08, right=.98)
     handles, labels = axs01.get_legend_handles_labels()
     fig.legend(handles, labels, bbox_to_anchor=(0.5, .03), loc='lower center', frameon=False, ncol=5)
-    #tikzplotlib.save(f'{path_figure}/mc_results_placed_positions_95.tex')
+    # tikzplotlib.save(f'{path_figure}/mc_results_placed_positions_95.tex')
     plt.savefig(f'{path_figure}/mc_results_placed_positions_95.png')
     plt.show()
 
@@ -695,7 +697,8 @@ def plot_mc_results_prices_wavg_95(config,
     #     for j in range(len(config['lem']['types_quality'])):
     #         type_quality = config['lem']['types_quality'][j]
     #         if j == 0:
-    #             axs02.errorbar(x=results_dict[type_clearing]['df_mean']['prices_quality_' + type_quality] / 1e9 * 1000,
+    #             axs02.errorbar(x=results_dict[type_clearing]['df_mean'][
+    #             'prices_quality_' + type_quality] / 1e9 * 1000,
     #                            y=j,
     #                            xerr=results_dict[type_clearing]['df_std'][
     #                                     'prices_quality_' + type_quality] / 1e9 * 1000 * 2,
@@ -707,7 +710,8 @@ def plot_mc_results_prices_wavg_95(config,
     #                            capthick=0.5,
     #                            color=dict_plot[type_clearing]['color'], label=type_clearing)
     #         else:
-    #             axs02.errorbar(x=results_dict[type_clearing]['df_mean']['prices_quality_' + type_quality] / 1e9 * 1000,
+    #             axs02.errorbar(x=results_dict[type_clearing]['df_mean'][
+    #             'prices_quality_' + type_quality] / 1e9 * 1000,
     #                            y=j,
     #                            xerr=results_dict[type_clearing]['df_std'][
     #                                     'prices_quality_' + type_quality] / 1e9 * 1000 * 2,
@@ -848,7 +852,7 @@ if __name__ == '__main__':
     # Run simulations ####################################
     # load configuration file
     with open(f"monte_carlo_config.yaml") as config_file:
-        config_mc = yaml.load(config_file, Loader=yaml.FullLoader)
+        config_mc = YAML().load(config_file)
     # Create simulation directory
     t_current = pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')
     path_sim, path_input, path_output, path_results, path_figures = create_simulation_folder(
