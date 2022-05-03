@@ -393,7 +393,6 @@ class Prosumer:
         # save calculated values to .json file so that results can be used by later methods in case of parallelization
         with open(f"{self.path}/controller_rtc.json", "w") as write_file:
             json.dump(self.meas_val, write_file)
-
     def log_meter_readings(self, db_obj):
         """Log the result of the controller_real_time method to the database as metering data.
 
@@ -405,7 +404,6 @@ class Prosumer:
 
         df_meas_local = ft.read_dataframe(f"{self.path}/log_ems.ft")
         df_meas_local.set_index("timestamp", inplace=True)
-
         # define local lists for containing new measurement values, once for local logging, once for database logging
         factor_w_to_wh = 1 / 4
 
@@ -429,7 +427,9 @@ class Prosumer:
         self._set_new_meter_reading_local(dict_new_readings_local)
 
         # log measurement values to local df and overwrite local logging file
+
         df_meas_local.loc[self.ts_delivery_prev] = log_ems
+        df_meas_local.index.name = "timestamp"
         ft.write_dataframe(df_meas_local.round().reset_index(),
                            f"{self.path}/log_ems.ft")
 
