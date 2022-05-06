@@ -14,7 +14,7 @@ simulation:
   # sim only
   "sim_start": "2021-03-23 00:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
-  "sim_length": 1                           # length of the simulation in days
+  "sim_length": 0.2                       # length of the simulation in days
 
   "path_input_data": "../input_data"        # path relative to the lemlab repository
   "path_scenarios": "../scenarios"          # path relative to the lemlab repository
@@ -153,14 +153,17 @@ prosumer:
 
   ################################ general settings ################################
 
-  "general_number_of": 20                   # number of prosumers (single family homes) to simulate
+  "general_number_of": 1                    # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
                                             # glpk is possible, for limitations see documentation
 
-  "general_fcast_retraining_frequency": 96  # user forecast models retrained every n steps
-                                            #     recommended range: >= 96
+  ################################ weather settings ####################################
+
+  "weather_fcast": "weather_perfect"        # weather forecasting method
+                                            #   "weather_perfect" - perfect knowledge of the future
+                                            #   "weather_file"    - weather forecasts extracted from file
 
   ################################ household load settings ####################################
 
@@ -194,9 +197,9 @@ prosumer:
                                             #     example:
                                             #         hh_distribution:  [0.2, 0.6, 0.2]
                                             #         hh_intervals:     [2000, 4000]
-                                            #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
+                                            #         --> 20% <= 2000, 2000 < 60% <= 4000, 20% > 4000
 
-  "hh_fcast": "naive_average"               # household load forecasting method
+  "hh_fcast": "perfect"                     # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
@@ -211,9 +214,17 @@ prosumer:
                            2, 0, 0, 96,     #  s1_ar, 0, s1_ma, s1,
                            2, 0, 0, 672]    #  s2_ar, 0, s2_ma, s2]
 
+  "hh_fcast_retraining_period": 3600        # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "hh_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
+
   ################################ small-scale photovoltaic settings ####################################
 
-  "pv_fraction": 0.7                        # fraction of prosumers with pv plants
+  "pv_fraction": 1                        # fraction of prosumers with pv plants
 
   "pv_sizing_power": 1.5                    # sizing of pv plant
                                             # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
@@ -222,13 +233,20 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production forecasting method
-                                            #   "perfect" - perfect knowledge of the future
+  "pv_fcast": "nn"                          # pv production forecasting method
+                                            #   "perfect"  - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
-                                            #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
+                                            #   "nn"       - forecast based on weather fcast file (coming soon)
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
+
+  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "pv_fcast_update_frequency": 3600         # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   ################################ small-scale wind settings ####################################
   ################################ wind power is coming soon
@@ -250,9 +268,16 @@ prosumer:
 
   "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
+  "wind_fcast_retraining_period": 86400     # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "wind_fcast_update_frequency": 900        # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
   ################################ battery settings ####################################
 
-  "bat_fraction": 0.75                      # fraction of prosumers with batteries
+  "bat_fraction": 1                      # fraction of prosumers with batteries
 
   "bat_fraction_dependent_on_pv": true      # True: bat_fraction is only applied to pv owners
                                             # False: any prosumer may own a battery
@@ -282,9 +307,16 @@ prosumer:
   "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
 
+  "hp_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "hp_fcast_update_frequency": 900          # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
   ################################ electric vehicle settings ####################################
 
-  "ev_fraction": 0.15                       # fraction of prosumers with evs
+  "ev_fraction": 1                          # fraction of prosumers with evs
 
   "ev_efficiency": 0.9                      # one way charging efficiency of the vehicle
 
@@ -301,10 +333,17 @@ prosumer:
 
   "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
 
-  "ev_fcast": "ev_close"                    # ev availability forecasting technique
-                                            #   "ev_perfect" - perfect knowledge of the future
+  "ev_fcast": "perfect"                     # ev availability forecasting technique
+                                            #   "perfect" - perfect knowledge of the future
                                             #   "ev_close" - perfect knowledge of the current
                                             #                availability cycle once the vehicle arrives
+
+  "ev_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "ev_fcast_update_frequency": 900          # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "ev_quality": "local"                     # quality that generated energy (v2g) should be labelled with on the lem
 
@@ -322,11 +361,19 @@ prosumer:
 
   ################################ model predictive controller settings ####################################
 
+  "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
+
   "mpc_price_fcast": "naive"                # forecast model to be used for the lem market price
                                             #     "flat" - no meaningful forecasting, flat price assumed
                                             #     "naive" - expected price same as previous day (initialized flat)
 
-  "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
+
+  "mpc_price_fcast_retraining_period": 86400    # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "mpc_price_fcast_update_frequency": 900       # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   ################################ market agent settings ####################################
 
@@ -341,6 +388,10 @@ prosumer:
   "ma_horizon": [12, 24, 36, 48, 60]        # market agent trading horizon,
                                             #     possible range : 1 - (mpc_horizon - reopt_step
                                             # each prosumer selects a random value off this list
+
+  ma_offer_min: 0.01                      # prosumer minimum buy/sell offer
+
+  ma_bid_max: 0.10                        # prosumer maximal buy/sell offer
 
   "ma_preference_quality": ["green_local"]  # some ex-ante markets can consider user preferences
                                             # each prosumer selects a random value off this list
@@ -385,6 +436,13 @@ producer:
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
+  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "pv_fcast_update_frequency": 900          # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
   ################################ large-scale wind generation settings ####################################
   ################################ wind power is coming soon
 
@@ -402,9 +460,16 @@ producer:
 
   "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
+  "wind_fcast_retraining_period": 86400     # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "wind_fcast_update_frequency": 900        # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
   ################################ large-scale fixed generator settings ####################################
 
-  "fixedgen_active": True                   # is there a large-scale fixed generation producer?
+  "fixedgen_active": false                  # is there a large-scale fixed generation producer?
 
   "fixedgen_power": 3000                    # peak power of fixed power generator in w
                                             # (p.u. power read from file)
@@ -457,6 +522,14 @@ aggregator:
   "fcast_sarma_order": [2, 0, 2,            # [ar,    0, ma,
                         2, 0, 0, 96,        #  s1_ar, 0, s1_ma, s1,
                         2, 0, 0, 672]       #  s2_ar, 0, s2_ma, s2]
+
+  "fcast_retraining_period": 86400    # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "fcast_update_frequency": 900       # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
 
 ########################################################################################################################
 ############################################### database configuration #################################################

@@ -214,12 +214,14 @@ class Scenario:
         self.path_input_data = f"{self.config['simulation']['path_input_data']}"
 
         # Create scenario directory tree (if scenario exists, delete and recreate)
-        self.__create_folders([(f"{self.path_scenario}", True),
+        self.__create_folders([(f"{self.config['simulation']['path_scenarios']}", False),
+                               (f"{self.path_scenario}", True),
                                (f"{self.path_scenario}/lem", True),
                                (f"{self.path_scenario}/retailer", True),
                                (f"{self.path_scenario}/prosumer", True),
                                (f"{self.path_scenario}/aggregator", True),
-                               (f"{self.path_scenario}/weather", True)])
+                               (f"{self.path_scenario}/weather", True),
+                               ])
 
         # Copy config file to scenario directory
         with open(f"{self.path_scenario}/config.yaml", 'w') as file:
@@ -343,6 +345,7 @@ class Scenario:
         prosumer_info = {
             "mpc_horizon": self.config["prosumer"]["mpc_horizon"],
             "mpc_price_fcast": self.config["prosumer"]["mpc_price_fcast"],
+            "weather_fcast": self.config["prosumer"]["weather_fcast"],
             "solver": self.config["prosumer"]["general_solver"],
             "meter_prob_late": self.config["prosumer"]["meter_prob_late"],
             "meter_prob_late_95": self.config["prosumer"]["meter_prob_late_95"],
@@ -361,13 +364,30 @@ class Scenario:
                     for _ in range(prosumers_devices[key][idx]):
                         self.__gen_plants(key=key, list_plant_specs=list_plant_specs)
 
+            # TODO: this is a hotfix/hack for issue #17
+            # this should be fixed so that each plant is assigned these parameters according to the scenario config
+
+            for i, _ in enumerate(list_plant_specs):
+                if list_plant_specs[i]["type"] != "hh":
+                    list_plant_specs[i].update({"fcast_last_retrain": 0,
+                                                "fcast_last_update": 0,
+                                                "fcast_period_retrain": 86400,
+                                                "fcast_period_update": 900,
+                                                })
+
             # Update individual prosumer info in dict
             prosumer_info.update({
                 "list_plant_specs": list_plant_specs,
-                "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
+                "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                 "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
+                "ma_bid_max": self.config["prosumer"]["ma_bid_max"],
+                "ma_offer_min": self.config["prosumer"]["ma_offer_min"],
+                "mpc_price_fcast_last_retrain": 0,
+                "mpc_price_fcast_last_update": 0,
+                "mpc_price_fcast_period_retrain": 86400,
+                "mpc_price_fcast_period_update": 900,
             })
 
             # Create individual prosumer
@@ -922,7 +942,7 @@ class Scenario:
 
         # Read respective household time series from input data directory
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filenames_hh[idx]}"
-        df_hh = pd.read_csv(filename_hh, usecols=["timestamp", "power"]).set_index("timestamp") * (-1)
+        df_hh = pd.read_csv(filename_hh).set_index("timestamp") * (-1)
 
         # Update consumption information to actual consumption
         account["list_plant_specs"][0]["annual_consumption"] = consumptions_hh[idx]

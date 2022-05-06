@@ -8,7 +8,7 @@ import json
 import numpy as np
 import pandas as pd
 from random import random
-import lemlab.forecasting.forecasting as fcast
+import lemlab.utilities.forecasting as fcast
 import warnings
 
 
@@ -16,7 +16,7 @@ class Aggregator:
     """Aggregator defines objects and functions to simulate an aggregator operating in a local energy market.
 
        The main tasks of the Aggregator in the local energy market are:
-                        - forecasting and purchasing energy for the fixed household loads of their customers
+                        - utilities and purchasing energy for the fixed household loads of their customers
 
         Public methods:
 
@@ -231,11 +231,11 @@ class Aggregator:
 
     def get_predictions(self):
         """
-        Performs forecasting on aggregated load profile according the forecast algorithms specified in the user config.
+        Performs utilities on aggregated load profile according the forecast algorithms specified in the user config.
 
         :return None:
         """
-        # get forecasts using forecasting.py
+        # get forecasts using utilities.py
         agg_pred = fcast.get_forecast(fcast=self.config_dict["fcast"],
                                       fcast_horizon=self.config_dict["ma_horizon"],
                                       fcast_order=self.config_dict["fcast_sarma_order"],

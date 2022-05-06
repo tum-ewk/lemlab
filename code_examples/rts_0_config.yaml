@@ -196,7 +196,7 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "naive_average"               # household load forecasting method
+  "hh_fcast": "naive_average"               # household load utilities method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
@@ -222,7 +222,7 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production forecasting method
+  "pv_fcast": "smoothed"                    # pv production utilities method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -242,7 +242,7 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "perfect"                   # wind production forecasting method
+  "wind_fcast": "perfect"                   # wind production utilities method
                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
                                             #                           and turbine model
                                             #   "wind_lookup_file_fcast" - weather forecast from file used with
@@ -279,7 +279,7 @@ prosumer:
 
   "hp_fraction": 0                          # fraction of prosumers with heat pumps
 
-  "hp_fcast": "nn"                          # heating demand forecasting technique
+  "hp_fcast": "nn"                          # heating demand utilities technique
                                             #   "nn" - neural network based on the included weather data
 
   ################################ electric vehicle settings ####################################
@@ -301,7 +301,7 @@ prosumer:
 
   "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
 
-  "ev_fcast": "ev_close"                    # ev availability forecasting technique
+  "ev_fcast": "ev_close"                    # ev availability utilities technique
                                             #   "ev_perfect" - perfect knowledge of the future
                                             #   "ev_close" - perfect knowledge of the current
                                             #                availability cycle once the vehicle arrives
@@ -323,7 +323,7 @@ prosumer:
   ################################ model predictive controller settings ####################################
 
   "mpc_price_fcast": "naive"                # forecast model to be used for the lem market price
-                                            #     "flat" - no meaningful forecasting, flat price assumed
+                                            #     "flat" - no meaningful utilities, flat price assumed
                                             #     "naive" - expected price same as previous day (initialized flat)
 
   "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
@@ -377,7 +377,7 @@ producer:
 
   "pv_controllable": false                  # can the generator be controlled? (can power be decreased?)
 
-  "pv_fcast": "perfect"                     # pv production forecasting method
+  "pv_fcast": "perfect"                     # pv production utilities method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -394,7 +394,7 @@ producer:
 
   "wind_controllable": false                # can the generator be controlled? (can power be decreased?)
 
-  "wind_fcast": "perfect"                   # wind production forecasting method
+  "wind_fcast": "perfect"                   # wind production utilities method
                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
                                             #                           and turbine model
                                             #   "wind_lookup_file_forecast" - weather forecast from file used with
@@ -446,7 +446,7 @@ aggregator:
 
   ################################ forecast settings ####################################
 
-  "fcast": "sarma"                          # aggregator load forecasting method
+  "fcast": "sarma"                          # aggregator load utilities method
                                             #     "perfect" - perfect knowledge of the future
                                             #     "naive"   - today will be the same as yesterday
                                             #     "naive_average" - today will be the same as
