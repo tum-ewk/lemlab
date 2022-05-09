@@ -1031,8 +1031,6 @@ class Scenario:
         # Read necessary keyword arguments
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
-        print(account)
-        exit()
 
         # Find out the annual consumption to identify the correct household heat demand time series
         hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
