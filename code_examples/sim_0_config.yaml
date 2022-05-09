@@ -279,6 +279,15 @@ prosumer:
 
   "hp_fraction": 0                          # fraction of prosumers with heat pumps
 
+  "hp_type": ["ground", "air", "air"]       # type of heat pump
+                                            #   "ground" - ground-water heat pump
+                                            #   "air" - air-water heat pump
+                                            #   "water" - water-water heat pump
+                                            # each prosumer selects a random value off this list
+
+  "hp_storage": [2, 3]                      # storage capacity in hours of installed heat pump capacity
+                                            # note: heat pump capacity is ceiled maximum heating demand of household
+
   "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
 

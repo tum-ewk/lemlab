@@ -667,6 +667,8 @@ class Scenario:
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
                    "has_submeter": True,
+                   "hp_type": choice(self.config["prosumer"]["hp_type"]),
+                   "storage": choice(self.config["prosumer"]["hp_storage"]) * 3600,
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
@@ -1029,6 +1031,8 @@ class Scenario:
         # Read necessary keyword arguments
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
+        print(account)
+        exit()
 
         # Find out the annual consumption to identify the correct household heat demand time series
         hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
@@ -1038,15 +1042,21 @@ class Scenario:
         filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
-        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", "heat"]).set_index("timestamp") * (-1)
+        # TODO: replace "power" column with "heat" column once it is implemented
+        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", "power"]).set_index("timestamp") * (-1)
 
         # Write heat demand time series to prosumer specifications directory
         ft.write_dataframe(df_heat.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
 
-        # Read random heat pump file from input data directory and copy to prosumer specifications directory
-        filename_hp = choice(os.listdir(f'{self.path_input_data}/prosumers/hp/'))
+        # Read random heat pump file that fits the heat pump type from input data directory and copy to
+        # prosumer specifications directory
+        hp_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hp")
+        input_files = [file for file in os.listdir(f'{self.path_input_data}/prosumers/hp/')
+                       if os.path.isfile(os.path.join(f'{self.path_input_data}/prosumers/hp/', file))
+                       and file.split("_")[-1].split(".")[0] == hp_plant["hp_type"]]
+        filename_hp = choice(input_files)
         shutil.copyfile(f"{self.path_input_data}/prosumers/hp/{filename_hp}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/hp_{plant_id}.json")
 
