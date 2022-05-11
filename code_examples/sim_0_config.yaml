@@ -285,8 +285,10 @@ prosumer:
                                             #   "water" - water-water heat pump
                                             # each prosumer selects a random value off this list
 
-  "hp_storage": [2, 3]                      # storage capacity in hours of installed heat pump capacity
-                                            # note: heat pump capacity is ceiled maximum heating demand of household
+  "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
+                                            # maximum power, which is the ceiled maximum heat demand from file
+
+  "hp_soc_init": 0.1                       # initial soc of the storage (0-1)
 
   "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
