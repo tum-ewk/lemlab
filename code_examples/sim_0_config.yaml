@@ -285,6 +285,9 @@ prosumer:
                                             #   "water" - water-water heat pump
                                             # each prosumer selects a random value off this list
 
+  hp_temperature: 35                        # supply temperature of the heating system
+                                            # needs to match value in heat pump specification file
+
   "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
                                             # maximum power, which is the ceiled maximum heat demand from file
 

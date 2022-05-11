@@ -669,6 +669,7 @@ class Scenario:
         dict_hp = {"type": "hp",
                    "has_submeter": True,
                    "hp_type": choice(self.config["prosumer"]["hp_type"]),
+                   "temperature": self.config["prosumer"]["hp_temperature"],
                    "power": 0,
                    "capacity": choice(self.config["prosumer"]["hp_capacity"]),
                    "fcast": self.config["prosumer"]["hp_fcast"],
