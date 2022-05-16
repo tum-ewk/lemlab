@@ -196,7 +196,7 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "smoothed"               # household load forecasting method
+  "hh_fcast": "naive_average"               # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
