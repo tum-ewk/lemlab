@@ -502,6 +502,13 @@ aggregator:
                                             #       the last 2 days
                                             #     "sarma"   - full sarma model of order below
 
+  "fcast_retraining_period": 86400          # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "fcast_update_period": 3600               # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
                                             # order of double seasonal arma model
   "fcast_sarma_order": [2, 0, 2,            # [ar,    0, ma,
                         2, 0, 0, 96,        #  s1_ar, 0, s1_ma, s1,
