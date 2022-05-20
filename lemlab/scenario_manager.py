@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 from typing import Tuple
 import pandas as pd
 import feather as ft
+import math
 
 
 class Scenario:
@@ -580,7 +581,7 @@ class Scenario:
             raise Warning(f"The value of participant_type '{participant_type}' does not exist.")
 
         # Update the dict and append the PV specifications to the list of plant specs
-        dict_pv.update({"power": pv_power,
+        dict_pv.update({"power": round(pv_power),
                         "controllable": self.config[participant_type]["pv_controllable"],
                         "fcast": self.config[participant_type]["pv_fcast"],
                         "fcast_order": [],
@@ -610,13 +611,13 @@ class Scenario:
         # Check if prosumer has PV system otherwise size according to household consumption
         pv_power = next((item["power"] for item in list_plant_specs if item["type"] == "pv"), None)
         if pv_power:
-            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * pv_power, 1)
+            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * pv_power)
         else:
             hh_consumption = next(item["annual_consumption"] for item in list_plant_specs if item["type"] == "hh")
-            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * hh_consumption, 1)
+            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * hh_consumption)
 
         # Update the dict and append the battery specifications to the list of plant specs
-        dict_bat.update({"capacity": dict_bat["power"] * self.config["prosumer"]["bat_sizing_capacity"],
+        dict_bat.update({"capacity": round(dict_bat["power"] * self.config["prosumer"]["bat_sizing_capacity"]),
                          "efficiency": self.config["prosumer"]["bat_efficiency"],
                          "charge_from_grid": self.config["prosumer"]["bat_charge_from_grid"],
                          "quality": self.config["prosumer"]["bat_quality"],
@@ -667,6 +668,10 @@ class Scenario:
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
                    "has_submeter": True,
+                   "hp_type": choice(self.config["prosumer"]["hp_type"]),
+                   "temperature": self.config["prosumer"]["hp_temperature"],
+                   "power": 0,
+                   "capacity": choice(self.config["prosumer"]["hp_capacity"]),
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
@@ -973,8 +978,8 @@ class Scenario:
         plant_id = kwargs["plant_id"]
         plant_dict = kwargs["plant_dict"]
 
-        # Calculate absolute initial battery SoC in kWh
-        soc_init = plant_dict[plant_id].get('capacity') * self.config["prosumer"]["bat_soc_init"]
+        # Calculate absolute initial battery SoC in Wh
+        soc_init = round(plant_dict[plant_id].get('capacity') * self.config["prosumer"]["bat_soc_init"])
 
         # Write SoC to prosumer specifications directory
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
@@ -1038,15 +1043,38 @@ class Scenario:
         filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
-        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", "heat"]).set_index("timestamp") * (-1)
+        # TODO: replace "power" column with "heat" column once it is implemented
+        column = "power"
+        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp") * (-1)
+        df_heat.rename(columns={column: "heat"}, inplace=True)
+
+        # Update power and storage capacity information based on peak heat demand
+        max_heat = max(abs(df_heat["heat"]))
+        hp_power = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)
+        hp_idx = next(idx for idx, plant in enumerate(account["list_plant_specs"]) if plant["type"] == "hp")
+        account["list_plant_specs"][hp_idx]["power"] = hp_power
+        account["list_plant_specs"][hp_idx]["capacity"] *= hp_power
+
+        # Calculate absolute initial battery SoC in Wh
+        soc_init = account["list_plant_specs"][hp_idx]["capacity"] * self.config["prosumer"]["hp_soc_init"]
 
         # Write heat demand time series to prosumer specifications directory
         ft.write_dataframe(df_heat.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
 
-        # Read random heat pump file from input data directory and copy to prosumer specifications directory
-        filename_hp = choice(os.listdir(f'{self.path_input_data}/prosumers/hp/'))
+        # Write SoC to prosumer specifications directory
+        with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
+                as write_file:
+            json.dump(soc_init, write_file)
+
+        # Read random heat pump file that fits the heat pump type from input data directory and copy to
+        # prosumer specifications directory
+        hp_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hp")
+        input_files = [file for file in os.listdir(f'{self.path_input_data}/prosumers/hp/')
+                       if os.path.isfile(os.path.join(f'{self.path_input_data}/prosumers/hp/', file))
+                       and file.split("_")[-1].split(".")[0] == hp_plant["hp_type"]]
+        filename_hp = choice(input_files)
         shutil.copyfile(f"{self.path_input_data}/prosumers/hp/{filename_hp}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/hp_{plant_id}.json")
 

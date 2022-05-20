@@ -1,0 +1,8 @@
+{
+  "_comment": "Based on NIBE F1245-12 (12 kW) (p. 78). Value for cop_w55 guessed. Ground systems are independent of ambient temperatures.",
+  "ambient_temp": [-25, 15],
+  "cop_w35": [4.57, 4.57],
+  "cop_w45": [3.64, 3.64],
+  "cop_w55": [2.90, 2.90],
+  "link": "https://www.aircon.panasonic.eu/DE_de/ranges/aquarea/high-performance/"
+}

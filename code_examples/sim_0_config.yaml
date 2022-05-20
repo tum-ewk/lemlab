@@ -277,10 +277,25 @@ prosumer:
   ################################ heat pump settings ####################################
   ################################ heat pumps are coming soon
 
-  "hp_fraction": 0                          # fraction of prosumers with heat pumps
+  "hp_fraction": 1                          # fraction of prosumers with heat pumps
+
+  "hp_type": ["ground", "air", "air"]       # type of heat pump
+                                            #   "ground" - ground-water heat pump
+                                            #   "air" - air-water heat pump
+                                            #   "water" - water-water heat pump
+                                            # each prosumer selects a random value off this list
+
+  hp_temperature: 35                        # supply temperature of the heating system
+                                            # needs to match value in heat pump specification file
+
+  "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
+                                            # maximum power, which is the ceiled maximum heat demand from file
+
+  "hp_soc_init": 0.1                        # initial soc of the storage (0-1)
 
   "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
+                                            #   "mr" - multiple regression based on the included weather data
 
   ################################ electric vehicle settings ####################################
 
