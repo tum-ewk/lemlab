@@ -237,7 +237,7 @@ prosumer:
                                             #   "perfect"  - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
-                                            #   "nn"       - forecast based on weather fcast file (coming soon)
+                                            #   "nn"       - forecast based on weather fcast file
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
@@ -428,7 +428,7 @@ producer:
 
   "pv_controllable": false                  # can the generator be controlled? (can power be decreased?)
 
-  "pv_fcast": "perfect"                     # pv production forecasting method
+  "pv_fcast": "nn"                     # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
