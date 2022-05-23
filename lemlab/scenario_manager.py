@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 from typing import Tuple
 import pandas as pd
 import feather as ft
+import math
 
 
 class Scenario:
@@ -214,14 +215,12 @@ class Scenario:
         self.path_input_data = f"{self.config['simulation']['path_input_data']}"
 
         # Create scenario directory tree (if scenario exists, delete and recreate)
-        self.__create_folders([(f"{self.config['simulation']['path_scenarios']}", False),
-                               (f"{self.path_scenario}", True),
+        self.__create_folders([(f"{self.path_scenario}", True),
                                (f"{self.path_scenario}/lem", True),
                                (f"{self.path_scenario}/retailer", True),
                                (f"{self.path_scenario}/prosumer", True),
                                (f"{self.path_scenario}/aggregator", True),
-                               (f"{self.path_scenario}/weather", True),
-                               ])
+                               (f"{self.path_scenario}/weather", True)])
 
         # Copy config file to scenario directory
         with open(f"{self.path_scenario}/config.yaml", 'w') as file:
@@ -345,7 +344,8 @@ class Scenario:
         prosumer_info = {
             "mpc_horizon": self.config["prosumer"]["mpc_horizon"],
             "mpc_price_fcast": self.config["prosumer"]["mpc_price_fcast"],
-            "weather_fcast": self.config["prosumer"]["weather_fcast"],
+            "mpc_price_fcast_retraining_period": self.config["prosumer"]["mpc_price_fcast_retraining_period"],
+            "mpc_price_fcast_update_period": self.config["prosumer"]["mpc_price_fcast_update_period"],
             "solver": self.config["prosumer"]["general_solver"],
             "meter_prob_late": self.config["prosumer"]["meter_prob_late"],
             "meter_prob_late_95": self.config["prosumer"]["meter_prob_late_95"],
@@ -364,30 +364,15 @@ class Scenario:
                     for _ in range(prosumers_devices[key][idx]):
                         self.__gen_plants(key=key, list_plant_specs=list_plant_specs)
 
-            # TODO: this is a hotfix/hack for issue #17
-            # this should be fixed so that each plant is assigned these parameters according to the scenario config
-
-            for i, _ in enumerate(list_plant_specs):
-                if list_plant_specs[i]["type"] != "hh":
-                    list_plant_specs[i].update({"fcast_last_retrain": 0,
-                                                "fcast_last_update": 0,
-                                                "fcast_period_retrain": 86400,
-                                                "fcast_period_update": 900,
-                                                })
-
             # Update individual prosumer info in dict
             prosumer_info.update({
                 "list_plant_specs": list_plant_specs,
-                "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
                 "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
+                "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
+                "ma_bid_max": self.config["retailer"]["price_sell"],
+                "ma_offer_min":self.config["retailer"]["price_buy"],
                 "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                 "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
-                "ma_bid_max": self.config["prosumer"]["ma_bid_max"],
-                "ma_offer_min": self.config["prosumer"]["ma_offer_min"],
-                "mpc_price_fcast_last_retrain": 0,
-                "mpc_price_fcast_last_update": 0,
-                "mpc_price_fcast_period_retrain": 86400,
-                "mpc_price_fcast_period_update": 900,
             })
 
             # Create individual prosumer
@@ -405,6 +390,8 @@ class Scenario:
                     "list_plant_specs": list_plant_specs,
                     "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                     "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
+                    "ma_bid_max": self.config["retailer"]["price_sell"],
+                    "ma_offer_min":self.config["retailer"]["price_buy"],
                     "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                     "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
                 })
@@ -493,28 +480,20 @@ class Scenario:
         # Dict containing all specifications of the household
         dict_hh = {"type": "hh",
                    "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                   "fcast": self.config["prosumer"]["hh_fcast"],
+                   "fcast_order": [],
+                   "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["hh_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["hh_fcast_update_period"],
                    }
 
-        # Add the corresponding forecast method to dict
-        if self.config["prosumer"]["hh_fcast"] == "sarma":
-            fcast_order = self.config["prosumer"]["hh_fcast_sarma_order"]
-            num_param = sum(fcast_order) - fcast_order[6] - fcast_order[10]
-            fcast_param = [1 / num_param] * num_param
-            params = {"fcast": "sarma",
-                      "fcast_order": fcast_order,
-                      "fcast_param": fcast_param,
-                      }
-        elif self.config["prosumer"]["hh_fcast"] == "smoothed":
-            params = {"fcast": self.config["prosumer"]["hh_fcast"],
-                      "fcast_order": [],
-                      "fcast_param": 9,
-                      }
-        else:
-            params = {"fcast": self.config["prosumer"]["hh_fcast"],
-                      "fcast_order": [],
-                      "fcast_param": [],
-                      }
-        dict_hh.update(params)
+        # Change the forecast parameters based on the method
+        if dict_hh["fcast"] == "sarma":
+            dict_hh["fcast_order"] = self.config["prosumer"]["hh_fcast_sarma_order"]
+            num_param = sum(dict_hh["fcast_order"]) - dict_hh["fcast_order"][6] - dict_hh["fcast_order"][10]
+            dict_hh["fcast_param"] = [1 / num_param] * num_param
+        elif dict_hh["fcast"] == "smoothed":
+            dict_hh["fcast_param"] = 9
 
         # Add the corresponding preliminary consumption to dict that is used for the dimensioning of pv, bat and hp
         if self.config["prosumer"]["hh_sizing"] == "uniform":
@@ -600,11 +579,13 @@ class Scenario:
             raise Warning(f"The value of participant_type '{participant_type}' does not exist.")
 
         # Update the dict and append the PV specifications to the list of plant specs
-        dict_pv.update({"power": pv_power,
+        dict_pv.update({"power": round(pv_power),
                         "controllable": self.config[participant_type]["pv_controllable"],
                         "fcast": self.config[participant_type]["pv_fcast"],
                         "fcast_order": [],
                         "fcast_param": 9,
+                        "fcast_retraining_period": self.config["prosumer"]["pv_fcast_retraining_period"],
+                        "fcast_update_period": self.config["prosumer"]["pv_fcast_update_period"],
                         "quality": self.config[participant_type]["pv_quality"],
                         })
 
@@ -630,13 +611,13 @@ class Scenario:
         # Check if prosumer has PV system otherwise size according to household consumption
         pv_power = next((item["power"] for item in list_plant_specs if item["type"] == "pv"), None)
         if pv_power:
-            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * pv_power, 1)
+            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * pv_power)
         else:
             hh_consumption = next(item["annual_consumption"] for item in list_plant_specs if item["type"] == "hh")
-            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * hh_consumption, 1)
+            dict_bat["power"] = round(self.config["prosumer"]["bat_sizing_power"] * hh_consumption)
 
         # Update the dict and append the battery specifications to the list of plant specs
-        dict_bat.update({"capacity": dict_bat["power"] * self.config["prosumer"]["bat_sizing_capacity"],
+        dict_bat.update({"capacity": round(dict_bat["power"] * self.config["prosumer"]["bat_sizing_capacity"]),
                          "efficiency": self.config["prosumer"]["bat_efficiency"],
                          "charge_from_grid": self.config["prosumer"]["bat_charge_from_grid"],
                          "quality": self.config["prosumer"]["bat_quality"],
@@ -667,6 +648,8 @@ class Scenario:
                    "fcast": self.config["prosumer"]["ev_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["ev_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["ev_fcast_update_period"],
                    "quality": self.config["prosumer"]["ev_quality"],
                    }
 
@@ -687,9 +670,15 @@ class Scenario:
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
                    "has_submeter": True,
+                   "hp_type": choice(self.config["prosumer"]["hp_type"]),
+                   "temperature": self.config["prosumer"]["hp_temperature"],
+                   "power": 0,
+                   "capacity": choice(self.config["prosumer"]["hp_capacity"]),
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["hp_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["hp_fcast_update_period"],
                    }
 
         list_plant_specs.append(dict_hp)
@@ -733,6 +722,8 @@ class Scenario:
                           "fcast": self.config[participant_type]["wind_fcast"],
                           "fcast_order": [],
                           "fcast_param": 9,
+                          "fcast_retraining_period": self.config["prosumer"]["wind_fcast_retraining_period"],
+                          "fcast_update_period": self.config["prosumer"]["wind_fcast_update_period"],
                           "quality": self.config[participant_type]["wind_quality"],
                           })
 
@@ -942,7 +933,7 @@ class Scenario:
 
         # Read respective household time series from input data directory
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filenames_hh[idx]}"
-        df_hh = pd.read_csv(filename_hh).set_index("timestamp") * (-1)
+        df_hh = pd.read_csv(filename_hh, usecols=["timestamp", "power"]).set_index("timestamp") * (-1)
 
         # Update consumption information to actual consumption
         account["list_plant_specs"][0]["annual_consumption"] = consumptions_hh[idx]
@@ -993,8 +984,8 @@ class Scenario:
         plant_id = kwargs["plant_id"]
         plant_dict = kwargs["plant_dict"]
 
-        # Calculate absolute initial battery SoC in kWh
-        soc_init = plant_dict[plant_id].get('capacity') * self.config["prosumer"]["bat_soc_init"]
+        # Calculate absolute initial battery SoC in Wh
+        soc_init = round(plant_dict[plant_id].get('capacity') * self.config["prosumer"]["bat_soc_init"])
 
         # Write SoC to prosumer specifications directory
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
@@ -1058,15 +1049,38 @@ class Scenario:
         filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
-        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", "heat"]).set_index("timestamp") * (-1)
+        # TODO: replace "power" column with "heat" column once it is implemented
+        column = "power"
+        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp") * (-1)
+        df_heat.rename(columns={column: "heat"}, inplace=True)
+
+        # Update power and storage capacity information based on peak heat demand
+        max_heat = max(abs(df_heat["heat"]))
+        hp_power = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)
+        hp_idx = next(idx for idx, plant in enumerate(account["list_plant_specs"]) if plant["type"] == "hp")
+        account["list_plant_specs"][hp_idx]["power"] = hp_power
+        account["list_plant_specs"][hp_idx]["capacity"] *= hp_power
+
+        # Calculate absolute initial battery SoC in Wh
+        soc_init = account["list_plant_specs"][hp_idx]["capacity"] * self.config["prosumer"]["hp_soc_init"]
 
         # Write heat demand time series to prosumer specifications directory
         ft.write_dataframe(df_heat.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
 
-        # Read random heat pump file from input data directory and copy to prosumer specifications directory
-        filename_hp = choice(os.listdir(f'{self.path_input_data}/prosumers/hp/'))
+        # Write SoC to prosumer specifications directory
+        with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
+                as write_file:
+            json.dump(soc_init, write_file)
+
+        # Read random heat pump file that fits the heat pump type from input data directory and copy to
+        # prosumer specifications directory
+        hp_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hp")
+        input_files = [file for file in os.listdir(f'{self.path_input_data}/prosumers/hp/')
+                       if os.path.isfile(os.path.join(f'{self.path_input_data}/prosumers/hp/', file))
+                       and file.split("_")[-1].split(".")[0] == hp_plant["hp_type"]]
+        filename_hp = choice(input_files)
         shutil.copyfile(f"{self.path_input_data}/prosumers/hp/{filename_hp}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/hp_{plant_id}.json")
 
@@ -1556,7 +1570,6 @@ class Scenario:
                 "general": {
                     "general_number_of": (["forbidden"], [None]),
                     "general_solver": (["account"], ["overwrite"], "setting.split('_', 1)[1]"),
-                    "general_fcast_retraining_frequency": ([None], [None]),
                 },
                 "hh": {
                     "hh_has_submeter": (["plants"], ["overwrite"], "setting.split('_', 1)[1]"),

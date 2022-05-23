@@ -86,9 +86,8 @@ class ForecastManager:
 
     def _retrain_forecasts(self):
         for plant in self.plant_dict:
-
-            last_retrain = self.plant_dict[plant].get("fcast_last_retrain")
-            period_retrain = self.plant_dict[plant].get("fcast_period_retrain")
+            last_retrain = self.plant_dict[plant].get("fcast_last_retrain", 0)
+            period_retrain = self.plant_dict[plant].get("fcast_retraining_period", 900)
 
             if self.ts_delivery_current - last_retrain >= period_retrain:
                 if self.plant_dict[plant].get("fcast") == "sarma":
@@ -370,7 +369,7 @@ class ForecastManager:
             # get forecasts for physical plants
             for plant in self.plant_dict:
                 last_update = self.plant_dict[plant].get("fcast_last_update", 0)
-                period_update = self.plant_dict[plant].get("fcast_period_update", 900)
+                period_update = self.plant_dict[plant].get("fcast_update_period", 900)
                 if self.ts_delivery_current - last_update >= period_update:
                     if self.plant_dict[plant].get("type") in ["pv", "fixedgen"]:
                         df_temp = self._update_forecast(id_plant=plant)
@@ -411,8 +410,9 @@ class ForecastManager:
 
             # get forecasts for lem prices
             if self.config_dict["mpc_price_fcast"] != "flat":
-                last_update = self.config_dict["mpc_price_fcast_last_update"]
-                period_update = self.config_dict["mpc_price_fcast_period_update"]
+                last_update = self.config_dict.get("mpc_price_fcast_last_update", 0)
+                period_update = self.config_dict.get("mpc_price_fcast_update_period")
+
                 if self.ts_delivery_current - last_update >= period_update:
                     # return all predicted values in one list
                     df_temp = self._update_forecast(
@@ -423,6 +423,10 @@ class ForecastManager:
                     )
                     df_temp.rename(columns={'weighted_average_price': f'price'}, inplace=True)
                     self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
+
+                    self.config_dict["mpc_price_fcast_last_update"] = self.ts_delivery_current
+                    with open(f"{self.path_prosumer}/config_account.json", "w") as write_file:
+                        json.dump(self.config_dict, write_file)
             else:
                 self.fcast_table[f'price'] = \
                     (self.config_dict["max_bid"] - self.config_dict["min_offer"]) / 2 * self.config_dict["mpc_horizon"]
@@ -473,7 +477,7 @@ class ForecastManager:
         if fcast is None:
             fcast = self.plant_dict[id_plant].get("fcast")
         if fcast_horizon is None:
-            fcast_horizon = self.config_dict["mpc_horizon"] + self.plant_dict[id_plant].get("fcast_period_update") // 900
+            fcast_horizon = self.config_dict["mpc_horizon"] + self.plant_dict[id_plant].get("fcast_update_period", 900) // 900
         if id_plant is not None:
             fcast_param = self.plant_dict[id_plant].get("fcast_param")
             fcast_order = self.plant_dict[id_plant].get("fcast_order")
@@ -635,23 +639,18 @@ class ForecastManager:
             return df_y_hat
 
         elif fcast == "ev_close":
-            # "realistic" forecast for electric vehicles. As soon as the vehicle arrives, we know the SOC and for how long
-            # the vehicle will be available. Nothing is knows beyond the current charging cycle
+            # "realistic" forecast for electric vehicles. As soon as the vehicle arrives, we know the SOC and for
+            # how long the vehicle will be available. Nothing is knows beyond the current charging cycle
             df_in = ft.read_dataframe(filepath)
             df_in.set_index("timestamp", inplace=True)
-
-            y_hat = [list(df_in[(self.ts_delivery_current <= df_in.index)
-                                & (df_in.index <= self.ts_delivery_current + 900 * fcast_horizon - 1)][column])]
-
-            val_known = y_hat[0][0]
-            ts_pt = self.ts_delivery_current
-            for i in range(fcast_horizon):
-                if y_hat[0][i] == 0:
-                    val_known = 0
-                y_hat[ts_pt][i] = y_hat[ts_pt][i] * val_known
-                ts_pt += 900
-
-            df_y_hat = pd.DataFrame(y_hat, columns=("timestamp", column)).set_index("timestamp")
+            df_in = df_in[(self.ts_delivery_current <= df_in.index)
+                          & (df_in.index <= self.ts_delivery_current + 900 * fcast_horizon - 1)]
+            df_y_hat = df_in
+            state_vehicle = 1
+            for ix, row in df_in.iterrows():
+                if row["availability"] == 0:
+                    state_vehicle = 0
+                df_y_hat.loc[ix, column] = row[column] * state_vehicle
             return df_y_hat
 
         elif fcast == "nn":
@@ -661,7 +660,8 @@ class ForecastManager:
             # set forecasting timeframe
             ts_d_start = self.ts_delivery_current
             ts_d_end = self.ts_delivery_current + 900 * (1 + self.config_dict["mpc_horizon"]
-                                                         + self.plant_dict[id_plant].get("fcast_period_update") // 900)
+                                                         + self.plant_dict[id_plant].get("fcast_update_period") // 900)
+
             # define input parameters and their ranges for data retrieval and normalization
             input_par = {'temp': [-10 + 273.15, 35 + 273.15],
                          'cloud_cover': [0, 100],
