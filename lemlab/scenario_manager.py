@@ -344,6 +344,8 @@ class Scenario:
         prosumer_info = {
             "mpc_horizon": self.config["prosumer"]["mpc_horizon"],
             "mpc_price_fcast": self.config["prosumer"]["mpc_price_fcast"],
+            "mpc_price_fcast_retraining_period": self.config["prosumer"]["mpc_price_fcast_retraining_period"],
+            "mpc_price_fcast_update_period": self.config["prosumer"]["mpc_price_fcast_update_period"],
             "solver": self.config["prosumer"]["general_solver"],
             "meter_prob_late": self.config["prosumer"]["meter_prob_late"],
             "meter_prob_late_95": self.config["prosumer"]["meter_prob_late_95"],
@@ -474,28 +476,20 @@ class Scenario:
         # Dict containing all specifications of the household
         dict_hh = {"type": "hh",
                    "has_submeter": self.config["prosumer"]["hh_has_submeter"],
+                   "fcast": self.config["prosumer"]["hh_fcast"],
+                   "fcast_order": [],
+                   "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["hh_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["hh_fcast_update_period"],
                    }
 
-        # Add the corresponding forecast method to dict
-        if self.config["prosumer"]["hh_fcast"] == "sarma":
-            fcast_order = self.config["prosumer"]["hh_fcast_sarma_order"]
-            num_param = sum(fcast_order) - fcast_order[6] - fcast_order[10]
-            fcast_param = [1 / num_param] * num_param
-            params = {"fcast": "sarma",
-                      "fcast_order": fcast_order,
-                      "fcast_param": fcast_param,
-                      }
-        elif self.config["prosumer"]["hh_fcast"] == "smoothed":
-            params = {"fcast": self.config["prosumer"]["hh_fcast"],
-                      "fcast_order": [],
-                      "fcast_param": 9,
-                      }
-        else:
-            params = {"fcast": self.config["prosumer"]["hh_fcast"],
-                      "fcast_order": [],
-                      "fcast_param": [],
-                      }
-        dict_hh.update(params)
+        # Change the forecast parameters based on the method
+        if dict_hh["fcast"] == "sarma":
+            dict_hh["fcast_order"] = self.config["prosumer"]["hh_fcast_sarma_order"]
+            num_param = sum(dict_hh["fcast_order"]) - dict_hh["fcast_order"][6] - dict_hh["fcast_order"][10]
+            dict_hh["fcast_param"] = [1 / num_param] * num_param
+        elif dict_hh["fcast"] == "smoothed":
+            dict_hh["fcast_param"] = 9
 
         # Add the corresponding preliminary consumption to dict that is used for the dimensioning of pv, bat and hp
         if self.config["prosumer"]["hh_sizing"] == "uniform":
@@ -586,6 +580,8 @@ class Scenario:
                         "fcast": self.config[participant_type]["pv_fcast"],
                         "fcast_order": [],
                         "fcast_param": 9,
+                        "fcast_retraining_period": self.config["prosumer"]["pv_fcast_retraining_period"],
+                        "fcast_update_period": self.config["prosumer"]["pv_fcast_update_period"],
                         "quality": self.config[participant_type]["pv_quality"],
                         })
 
@@ -648,6 +644,8 @@ class Scenario:
                    "fcast": self.config["prosumer"]["ev_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["ev_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["ev_fcast_update_period"],
                    "quality": self.config["prosumer"]["ev_quality"],
                    }
 
@@ -675,6 +673,8 @@ class Scenario:
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["hp_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["hp_fcast_update_period"],
                    }
 
         list_plant_specs.append(dict_hp)
@@ -718,6 +718,8 @@ class Scenario:
                           "fcast": self.config[participant_type]["wind_fcast"],
                           "fcast_order": [],
                           "fcast_param": 9,
+                          "fcast_retraining_period": self.config["prosumer"]["wind_fcast_retraining_period"],
+                          "fcast_update_period": self.config["prosumer"]["wind_fcast_update_period"],
                           "quality": self.config[participant_type]["wind_quality"],
                           })
 
