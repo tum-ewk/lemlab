@@ -643,6 +643,8 @@ class Scenario:
                    "fcast": self.config["prosumer"]["ev_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["ev_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["ev_fcast_update_period"],
                    "quality": self.config["prosumer"]["ev_quality"],
                    }
 
@@ -666,8 +668,8 @@ class Scenario:
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
-                   "fcast_retraining_period": self.config["prosumer"]["pv_fcast_retraining_period"],
-                   "fcast_update_period": self.config["prosumer"]["pv_fcast_update_period"],
+                   "fcast_retraining_period": self.config["prosumer"]["hp_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["hp_fcast_update_period"],
                    }
 
         list_plant_specs.append(dict_hp)
@@ -711,8 +713,8 @@ class Scenario:
                           "fcast": self.config[participant_type]["wind_fcast"],
                           "fcast_order": [],
                           "fcast_param": 9,
-                          "fcast_retraining_period": self.config["prosumer"]["pv_fcast_retraining_period"],
-                          "fcast_update_period": self.config["prosumer"]["pv_fcast_update_period"],
+                          "fcast_retraining_period": self.config["prosumer"]["wind_fcast_retraining_period"],
+                          "fcast_update_period": self.config["prosumer"]["wind_fcast_update_period"],
                           "quality": self.config[participant_type]["wind_quality"],
                           })
 
