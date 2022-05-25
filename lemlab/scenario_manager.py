@@ -1570,7 +1570,6 @@ class Scenario:
                 "general": {
                     "general_number_of": (["forbidden"], [None]),
                     "general_solver": (["account"], ["overwrite"], "setting.split('_', 1)[1]"),
-                    "general_fcast_retraining_frequency": ([None], [None]),
                 },
                 "hh": {
                     "hh_has_submeter": (["plants"], ["overwrite"], "setting.split('_', 1)[1]"),
