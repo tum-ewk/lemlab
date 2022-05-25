@@ -159,6 +159,9 @@ prosumer:
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
                                             # glpk is possible, for limitations see documentation
 
+  "general_fcast_retraining_frequency": 96  # user forecast models retrained every n steps
+                                            #     recommended range: >= 96
+
   ################################ household load settings ####################################
 
   "hh_has_submeter": false                  # does the household load have a physical submeter or must a virtual meter
@@ -217,7 +220,7 @@ prosumer:
 
   ################################ small-scale photovoltaic settings ####################################
 
-  "pv_fraction": 0.1                        # fraction of prosumers with pv plants
+  "pv_fraction": 0.7                        # fraction of prosumers with pv plants
 
   "pv_sizing_power": 1.5                    # sizing of pv plant
                                             # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
@@ -226,7 +229,7 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "nn"                    # pv production forecasting method
+  "pv_fcast": "smoothed"                    # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -295,7 +298,7 @@ prosumer:
   ################################ heat pump settings ####################################
   ################################ heat pumps are coming soon
 
-  "hp_fraction": 0                          # fraction of prosumers with heat pumps
+  "hp_fraction": 1                          # fraction of prosumers with heat pumps
 
   "hp_type": ["ground", "air", "air"]       # type of heat pump
                                             #   "ground" - ground-water heat pump
@@ -341,7 +344,7 @@ prosumer:
 
   "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
 
-  "ev_fcast": "ev_close"                  # ev availability forecasting technique
+  "ev_fcast": "ev_close"                    # ev availability forecasting technique
                                             #   "ev_perfect" - perfect knowledge of the future
                                             #   "ev_close" - perfect knowledge of the current
                                             #                availability cycle once the vehicle arrives

@@ -196,7 +196,7 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "naive_average"               # household load utilities method
+  "hh_fcast": "naive_average"               # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
@@ -211,6 +211,13 @@ prosumer:
                            2, 0, 0, 96,     #  s1_ar, 0, s1_ma, s1,
                            2, 0, 0, 672]    #  s2_ar, 0, s2_ma, s2]
 
+  "hh_fcast_retraining_period": 3600        # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "hh_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
   ################################ small-scale photovoltaic settings ####################################
 
   "pv_fraction": 0.7                        # fraction of prosumers with pv plants
@@ -222,11 +229,18 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production utilities method
+  "pv_fcast": "smoothed"                    # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
                                             #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
+
+  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "pv_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
@@ -242,11 +256,18 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "perfect"                   # wind production utilities method
+  "wind_fcast": "perfect"                   # wind production forecasting method
                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
                                             #                           and turbine model
                                             #   "wind_lookup_file_fcast" - weather forecast from file used with
                                             #                              turbine model
+
+  "wind_fcast_retraining_period": 86400     # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "wind_fcast_update_period": 3600          # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
@@ -279,8 +300,29 @@ prosumer:
 
   "hp_fraction": 0                          # fraction of prosumers with heat pumps
 
-  "hp_fcast": "nn"                          # heating demand utilities technique
+  "hp_type": ["ground", "air", "air"]       # type of heat pump
+                                            #   "ground" - ground-water heat pump
+                                            #   "air" - air-water heat pump
+                                            #   "water" - water-water heat pump
+                                            # each prosumer selects a random value off this list
+
+  hp_temperature: 35                        # supply temperature of the heating system
+                                            # needs to match value in heat pump specification file
+
+  "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
+                                            # maximum power, which is the ceiled maximum heat demand from file
+
+  "hp_soc_init": 0.1                       # initial soc of the storage (0-1)
+
+  "hp_fcast": "nn"                          # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
+
+  "hp_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "hp_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   ################################ electric vehicle settings ####################################
 
@@ -301,10 +343,17 @@ prosumer:
 
   "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
 
-  "ev_fcast": "ev_close"                    # ev availability utilities technique
+  "ev_fcast": "ev_close"                    # ev availability forecasting technique
                                             #   "ev_perfect" - perfect knowledge of the future
                                             #   "ev_close" - perfect knowledge of the current
                                             #                availability cycle once the vehicle arrives
+
+  "ev_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "ev_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "ev_quality": "local"                     # quality that generated energy (v2g) should be labelled with on the lem
 
@@ -323,8 +372,15 @@ prosumer:
   ################################ model predictive controller settings ####################################
 
   "mpc_price_fcast": "naive"                # forecast model to be used for the lem market price
-                                            #     "flat" - no meaningful utilities, flat price assumed
+                                            #     "flat" - no meaningful forecasting, flat price assumed
                                             #     "naive" - expected price same as previous day (initialized flat)
+
+  "mpc_price_fcast_retraining_period": 86400 # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "mpc_price_fcast_update_period": 3600     # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "mpc_horizon": 96                         # mpc horizon : 1 - 96   -> unit steps (15 min)
 
@@ -377,11 +433,18 @@ producer:
 
   "pv_controllable": false                  # can the generator be controlled? (can power be decreased?)
 
-  "pv_fcast": "perfect"                     # pv production utilities method
+  "pv_fcast": "perfect"                     # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
                                             #   "file_nn" - forecast based on weather forecast file (coming soon)
+
+  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "pv_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
@@ -394,11 +457,18 @@ producer:
 
   "wind_controllable": false                # can the generator be controlled? (can power be decreased?)
 
-  "wind_fcast": "perfect"                   # wind production utilities method
+  "wind_fcast": "perfect"                   # wind production forecasting method
                                             #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
                                             #                           and turbine model
                                             #   "wind_lookup_file_forecast" - weather forecast from file used with
                                             #                                 turbine model
+
+  "mpc_price_fcast_retraining_period": 86400 # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "mpc_price_fcast_update_period": 3600     # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   "wind_quality": "green_local"             # quality that the generated energy should be labelled with on the lem
 
@@ -446,12 +516,19 @@ aggregator:
 
   ################################ forecast settings ####################################
 
-  "fcast": "sarma"                          # aggregator load utilities method
+  "fcast": "sarma"                          # aggregator load forecasting method
                                             #     "perfect" - perfect knowledge of the future
                                             #     "naive"   - today will be the same as yesterday
                                             #     "naive_average" - today will be the same as
                                             #       the last 2 days
                                             #     "sarma"   - full sarma model of order below
+
+  "fcast_retraining_period": 86400          # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "fcast_update_period": 3600               # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
                                             # order of double seasonal arma model
   "fcast_sarma_order": [2, 0, 2,            # [ar,    0, ma,
@@ -474,3 +551,4 @@ db_connections:
                                 "host": "127.0.0.1",
                                 "port": "5432",
                                 "db": "postgres" }
+                              
