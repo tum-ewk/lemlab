@@ -22,6 +22,7 @@ from lemlab.agents.aggregator import Aggregator
 from lemlab.agents.retailer import Retailer
 import lemlab.lem.clearing_ex_ante as clearing_ex_ante
 import lemlab.lem.settlement as lem_settlement
+import warnings
 
 
 class ScenarioExecutor:
@@ -123,6 +124,7 @@ class ScenarioExecutor:
 
         with open(f"{self.path_results}/sim_info.json", "r") as read_file:
             dict_sim = json.load(read_file)
+
         if dict_sim["quit_sim"] is True:
             print("This simulation was previously manually ended. Are you sure you want to manually restart?")
             x = input("Press <y> to continue, any other key to abort... ")
@@ -169,7 +171,7 @@ class ScenarioExecutor:
 
         self.db_conn_admin.end_connection()
         self.db_conn_user.end_connection()
-        #exit()
+        # exit()
 
     def end_execution(self):
         """
@@ -312,9 +314,9 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.ID_USER:                    [prosumer],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
                 self.db_conn_admin.db_param.T_UPDATE_BALANCE:           [t_setup],
-                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [self.config["retailer"]["price_sell"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [prosumer_config["ma_bid_max"]
                                                                          * euro_kwh_to_sigma_wh],
-                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [self.config["retailer"]["price_buy"]
+                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [prosumer_config["ma_offer_min"]
                                                                          * euro_kwh_to_sigma_wh],
                 self.db_conn_admin.db_param.PREFERENCE_QUALITY:         [prosumer_config["ma_preference_quality"]],
                 self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY:
@@ -390,7 +392,7 @@ class ScenarioExecutor:
                                             ts_delivery_first=ts_delivery_first - 900)
 
             # set up initial price history
-            index = range(ts_delivery_first - 900 * prosumer_config["mpc_horizon"],
+            index = range(ts_delivery_first - 900 * prosumer_config["mpc_horizon"]*2,
                           ts_delivery_first,
                           900)
 
@@ -472,7 +474,6 @@ class ScenarioExecutor:
         # retailer setup
 
         ts_delivery_first = int((t_setup - t_setup % 900 + 900))
-        null_id = "0" * 10
 
         euro_kwh_to_sigma_wh = self.db_conn_admin.db_param.EURO_TO_SIGMA / 1000
 
@@ -496,7 +497,7 @@ class ScenarioExecutor:
 
     # simulation execution
     def __execute(self):
-
+        path_weather = f"{self.path_results}/weather/weather.ft"
         # choose execution mode: "real-time" or normal simulation
         if self.config["simulation"]["rts"] is True:
             with open(f"{self.path_results}/sim_info.json", "r") as read_file:
@@ -573,7 +574,7 @@ class ScenarioExecutor:
             ts_delivery_start = pd.Timestamp(self.config["simulation"]["sim_start"],
                                              tz=self.config["simulation"]["sim_start_tz"]).timestamp()
             ts_delivery_end = ts_delivery_start + self.config["simulation"]["sim_length"] * 86400
-            ts_delivery_current = ts_delivery_start
+            ts_delivery_current = int(ts_delivery_start)
 
             # configure progress bar
             str_len = 42
@@ -581,11 +582,13 @@ class ScenarioExecutor:
             pbar = tqdm(range(simulation_length), total=simulation_length)
 
             # set up multiprocessing pool for prosumer functionality.
-            # pre-clearing activity is computationally intensive, as it contains forecasting and optimization
+            # pre-clearing activity is computationally intensive, as it contains utilities and optimization
+
             with mp.Pool(initializer=_par_step_prosumers_init,
                          initargs=(_par_step_prosumers_pre,
-                                   self.config["db_connections"]["database_connection_user"],
-                                   self.config["lem"])
+                                   self.config,
+                                   path_weather),
+                         processes=1
                          ) as pool:
                 # main simulation loop, step from ts_delivery start to end
                 while ts_delivery_current <= ts_delivery_end:
@@ -598,7 +601,7 @@ class ScenarioExecutor:
                     pbar.set_description(f"{str_time}: {'Forecasting and posting by market agents'.ljust(str_len)}")
 
                     # perform pre-clearing activities for prosumers, aggregators, retailer
-                    # pre-clearing includes real-time controllers, logging of meter values, forecasting,
+                    # pre-clearing includes real-time controllers, logging of meter values, utilities,
                     # model predictive control and posting bids to the market
                     pool.map(_par_step_prosumers_pre,
                              self.__gen_par_step_prosumers_pre_input())
@@ -656,8 +659,6 @@ class ScenarioExecutor:
         for aggregator in list_aggregators:
             aggregator.pre_clearing_activity(
                 db_obj=self.db_conn_user,
-                flag_retrain_forecasts=True if self.step_counter %
-                self.config["prosumer"]["general_fcast_retraining_frequency"] == 0 else False,
                 clear_positions=clear_positions)
 
     def __step_prosumers_pre(self, clear_positions=False):
@@ -676,10 +677,6 @@ class ScenarioExecutor:
         list_prosumers = self.__get_active_prosumers()
         for prosumer in list_prosumers:
             prosumer.pre_clearing_activity(db_obj=self.db_conn_user,
-                                           flag_retrain_forecasts=True
-                                           if self.step_counter %
-                                           self.config["prosumer"]["general_fcast_retraining_frequency"] == 0
-                                           else False,
                                            clear_positions=clear_positions)
 
     def __gen_par_step_prosumers_pre_input(self):
@@ -694,7 +691,6 @@ class ScenarioExecutor:
         :return: list of dicts: A dict for each prosumer containing:
                                 path prosumer -- str - a path to the prosumer's directory
                                 t_now         -- int - the current simulation time to be used by the parallel process
-                                retrain_forecasts -- boolean - flag for forecast model retraining
         """
         # get list all prosumers in the simulation
         if self.config["simulation"]["agents_active"]:
@@ -706,10 +702,7 @@ class ScenarioExecutor:
         # generate input list for parallel processing of prosumers
         for i, _ in enumerate(list_paths_prosumers):
             list_par_inputs.append({"path_prosumer": self.path_results + "/prosumer/" + list_paths_prosumers[i],
-                                    "t_now": self.t_now,
-                                    "retrain_fcast":
-                                        self.step_counter
-                                        % self.config["prosumer"]["general_fcast_retraining_frequency"]})
+                                    "t_now": self.t_now})
         return list_par_inputs
 
     # agent-post-clearing activities
@@ -768,9 +761,11 @@ class ScenarioExecutor:
 
         # if ex-ante market selected, clear market
         if self.config["lem"]["types_clearing_ex_ante"]:
-            clearing_ex_ante.market_clearing(db_obj=self.db_conn_admin,
-                                             config_lem=self.config["lem"],
-                                             t_override=self.t_now)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                clearing_ex_ante.market_clearing(db_obj=self.db_conn_admin,
+                                                 config_lem=self.config["lem"],
+                                                 t_override=self.t_now)
         # if ex-post markets are to be calculated, this is done here
         if self.config["lem"]["types_clearing_ex_post"]:
             lem_settlement.set_community_price(db_obj=self.db_conn_admin,
@@ -962,7 +957,7 @@ class ScenarioExecutor:
 
 # parallel functions need to be defined outside of the class to work
 
-def _par_step_prosumers_init(func, db_dict, lem_config):
+def _par_step_prosumers_init(func, config, path_weather):
     """
     Initializes DatabaseConnection instances for par_step_prosumer_pre processes.
 
@@ -975,8 +970,31 @@ def _par_step_prosumers_init(func, db_dict, lem_config):
     :param lem_config: dict, LEM config dict required to create a DatabaseConnection object
 
     """
-    func.db_conn = DatabaseConnection(db_dict=db_dict,
-                                      lem_config=lem_config)
+    # initialize each multiprocessing worker with a database connection
+    func.db_conn = DatabaseConnection(db_dict=config["db_connections"]["database_connection_user"],
+                                      lem_config=config["lem"])
+    # each multiprocessing worker gets a copy of the weather file for the simulation,
+    # as every worker needs to regularly access the same read-only file
+    df_weather = ft.read_dataframe(path_weather)
+    df_weather = df_weather.astype({'ts_delivery_current': 'int', 'ts_delivery_fcast': 'int'})
+    df_weather.set_index(["ts_delivery_current", "ts_delivery_fcast"], inplace=True)
+
+    t_first = pd.Timestamp(config["simulation"]["sim_start"],
+                           tz=config["simulation"]["sim_start_tz"]).timestamp() - 60
+    t_last = t_first + config["simulation"]["sim_length"] * 86400 + 86400
+    t_first_history = t_first - 100*86400
+
+    # slice weather data into historical data for forecast algorithm training (100 days)
+    # as well as perfect forecasting
+    df_weather_history = df_weather.loc[(slice(t_first_history, t_last + 3*86400), slice(None))]
+    df_weather_history = \
+        df_weather_history[df_weather_history.index.get_level_values(level=0)
+                           == df_weather_history.index.get_level_values(level=1)]
+    # slice weather forecasts for required simulation period from full weather file
+    df_weather_fcast = df_weather.loc[(slice(t_first-900, t_last + 1), slice(None))]
+
+    func.df_weather_history = df_weather_history
+    func.df_weather_fcast = df_weather_fcast
 
 
 def _par_step_prosumers_pre(list_info_prosumers):
@@ -993,6 +1011,8 @@ def _par_step_prosumers_pre(list_info_prosumers):
     :return: None
     """
     prosumer = Prosumer(path=list_info_prosumers["path_prosumer"],
-                        t_override=list_info_prosumers["t_now"])
-    prosumer.pre_clearing_activity(db_obj=_par_step_prosumers_pre.db_conn,
-                                   flag_retrain_forecasts=True if list_info_prosumers["retrain_fcast"] == 0 else False)
+                        t_override=list_info_prosumers["t_now"],
+                        df_weather_history=_par_step_prosumers_pre.df_weather_history,
+                        df_weather_fcast=_par_step_prosumers_pre.df_weather_fcast)
+
+    prosumer.pre_clearing_activity(db_obj=_par_step_prosumers_pre.db_conn)
