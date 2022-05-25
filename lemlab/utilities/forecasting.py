@@ -44,7 +44,6 @@ class ForecastManager:
         # set current timestamp from system clock or keyword arg
         self.t_now = t_override if t_override else pd.Timestamp.now().timestamp()
 
-
         # derive previous and next timestamps
         self.ts_delivery_prev = round(pd.Timestamp(self.t_now, unit="s").floor("15min").timestamp() - 15*60)
         self.ts_delivery_current = self.ts_delivery_prev + 15*60
@@ -58,8 +57,8 @@ class ForecastManager:
         """Return generation prediction for PV plants, consumption predictions for fixedgen loads, as well
               as well as market price predictions for the instance prediction horizon
 
-              Current status: all forecasts are currently perfect predictions determined by looking at future values in the
-                              input data
+              Current status: all forecasts are currently perfect predictions determined by looking at future values in
+              the input data
 
               :return: None
               """
@@ -114,7 +113,8 @@ class ForecastManager:
     def _train_sarma(self, filepath, fcast_order, fcast_param_init=None):
 
         """
-        Trains a SARMA model of the given order and the set initial parameters and returns the optimized model parameters.
+        Trains a SARMA model of the given order and the set initial parameters
+        and returns the optimized model parameters.
 
         :param filepath: string, path to the raw data
         :param fcast_order: list, order of SARMA model, see config.YAML for a description
@@ -126,7 +126,8 @@ class ForecastManager:
         # read historical values and create time series to be utilities from
         df_in = ft.read_dataframe(filepath)
         df_in.set_index("timestamp", inplace=True)
-        y = list(df_in[(df_in.index < self.ts_delivery_prev)]["power"]/df_in[(df_in.index < self.ts_delivery_prev)]["power"].max()*2)
+        y = list(df_in[(df_in.index < self.ts_delivery_prev)]["power"] /
+                 df_in[(df_in.index < self.ts_delivery_prev)]["power"].max()*2)
 
         # import model hyper parameters
         order = fcast_order
@@ -167,8 +168,8 @@ class ForecastManager:
     @staticmethod
     def _sarma_objective(par, training_data, order=None):
         """
-        Calculates the RMSE of the forecast model "par" of order "order" on the training data. Used for training of SARMA
-        models.
+        Calculates the RMSE of the forecast model "par" of order "order" on the training data.
+        Used for training of SARMA models.
 
         :param par: list, SARMA model parameters to be evaluated
         :param training_data: list, training data the model should be evaluated on
@@ -242,7 +243,7 @@ class ForecastManager:
 
         # get weather history for correct range
         training_data = self.df_weather_history.loc[(slice(ts_d_first, ts_d_last), slice(None))]
-        training_data = training_data[input_par.keys()].copy()
+        training_data = training_data.drop(training_data.columns.difference(input_par.keys()), axis=1)
 
         # for solar PV forecasts, create the maximum potential power curve, essentially the clear sky index for this
         # location
@@ -466,8 +467,6 @@ class ForecastManager:
 
         :param fcast: string, type of fcast model to be used e.g. "sarma" or "perfect"
         :param fcast_horizon: int, how many timesteps should the forecast contain?
-        :param fcast_order: list, order of the SARMA model, see config.YAML for further explanation
-        :param fcast_param: list, fcast model parameters, e.g. SARMA parameters
         :param filepath: string, path to the data
         :param column: string, name of the data column to be forecast
 
@@ -477,7 +476,8 @@ class ForecastManager:
         if fcast is None:
             fcast = self.plant_dict[id_plant].get("fcast")
         if fcast_horizon is None:
-            fcast_horizon = self.config_dict["mpc_horizon"] + self.plant_dict[id_plant].get("fcast_update_period", 900) // 900
+            fcast_horizon = self.config_dict["mpc_horizon"] + \
+                            self.plant_dict[id_plant].get("fcast_update_period", 900) // 900
         if id_plant is not None:
             fcast_param = self.plant_dict[id_plant].get("fcast_param")
             fcast_order = self.plant_dict[id_plant].get("fcast_order")
@@ -566,7 +566,7 @@ class ForecastManager:
             df_in = ft.read_dataframe(filepath)
             df_in.set_index("timestamp", inplace=True)
             df_y_hat = df_in[(self.ts_delivery_current <= df_in.index)
-                            & (df_in.index <= self.ts_delivery_current + 900 * fcast_horizon)][column].to_frame()
+                             & (df_in.index <= self.ts_delivery_current + 900 * fcast_horizon)][column].to_frame()
             return df_y_hat
 
         elif fcast == "naive":
@@ -617,7 +617,8 @@ class ForecastManager:
             df_in = ft.read_dataframe(filepath)
             df_in.set_index("timestamp", inplace=True)
             raw_pred_temp = list(df_in[(self.ts_delivery_current - 900 * fcast_param <= df_in.index)
-                                 & (df_in.index <= self.ts_delivery_current + 900 * fcast_horizon - 1 + 900 * fcast_param)]
+                                 & (df_in.index <= self.ts_delivery_current
+                                    + 900 * fcast_horizon - 1 + 900 * fcast_param)]
                                  [column])
             y_hat = []
 
@@ -683,7 +684,7 @@ class ForecastManager:
             x_fcast = forecasting_data_norm[input_par.keys()].to_numpy()
             forecasting_data_norm["power_fcast"] = nn_model.predict(x_fcast, verbose=0)
             forecasting_data_norm["power_fcast"] = forecasting_data_norm["power_fcast"] * forecasting_data_norm["mppc"]
-            forecasting_data_norm[forecasting_data_norm["power_fcast"] <= 0] = 0
+            forecasting_data_norm.loc[(forecasting_data_norm["power_fcast"] <= 0), "power_fcast"] = 0
 
             # return forecast result
             df_y_hat = forecasting_data_norm.reset_index()
