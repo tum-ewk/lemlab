@@ -8,7 +8,7 @@ simulation:
   # rts only
   "lem_active": true                        # should the lem be simulated? always true in sim
   "agents_active": true                     # should agents be simulated? always true in sim
-  "rts_start_steps": 6                      # when beginning an rts, this many steps will be
+  "rts_start_steps": 6                      # when beginning a rts, this many steps will be
                                             # simulated at an accelerated rate, before the rts commences
 
   # sim only
@@ -159,9 +159,6 @@ prosumer:
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
                                             # glpk is possible, for limitations see documentation
 
-  "general_fcast_retraining_frequency": 96  # user forecast models retrained every n steps
-                                            #     recommended range: >= 96
-
   ################################ household load settings ####################################
 
   "hh_has_submeter": false                  # does the household load have a physical submeter or must a virtual meter
@@ -233,7 +230,7 @@ prosumer:
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
-                                            #   "pv_file_fcast_nn" - forecast based on weather fcast file (coming soon)
+                                            #   "nn" - forecast based on weather fcast file
 
   "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
                                             # how many seconds between retraining periods?
@@ -298,7 +295,7 @@ prosumer:
   ################################ heat pump settings ####################################
   ################################ heat pumps are coming soon
 
-  "hp_fraction": 1                          # fraction of prosumers with heat pumps
+  "hp_fraction": 0                          # fraction of prosumers with heat pumps
 
   "hp_type": ["ground", "air", "air"]       # type of heat pump
                                             #   "ground" - ground-water heat pump
@@ -345,7 +342,7 @@ prosumer:
   "ev_soc_init": 0.8                        # initial soc of the battery (0-1)
 
   "ev_fcast": "ev_close"                    # ev availability forecasting technique
-                                            #   "ev_perfect" - perfect knowledge of the future
+                                            #   "perfect" - perfect knowledge of the future
                                             #   "ev_close" - perfect knowledge of the current
                                             #                availability cycle once the vehicle arrives
 
@@ -395,7 +392,7 @@ prosumer:
                                             #          trading is possible
                                             # each prosumer selects a random value off this list
 
-  "ma_horizon": [12, 24, 36, 48, 60]        # market agent trading horizon,
+  "ma_horizon": [16, 32, 48, 64, 80, 95]    # market agent trading horizon,
                                             #     possible range : 1 - (mpc_horizon - reopt_step
                                             # each prosumer selects a random value off this list
 
@@ -438,7 +435,7 @@ producer:
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
-                                            #   "file_nn" - forecast based on weather forecast file (coming soon)
+                                            #   "nn" - forecast based on weather forecast file
 
   "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
                                             # how many seconds between retraining periods?
@@ -475,7 +472,7 @@ producer:
 
   ################################ large-scale fixed generator settings ####################################
 
-  "fixedgen_active": True                   # is there a large-scale fixed generation producer?
+  "fixedgen_active": false                  # is there a large-scale fixed generation producer?
 
   "fixedgen_power": 3000                    # peak power of fixed power generator in w
                                             # (p.u. power read from file)
