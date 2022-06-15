@@ -1100,11 +1100,9 @@ class Scenario:
         plant_id = kwargs["plant_id"]
         plant_dict = kwargs["plant_dict"]
 
-        # Read in all wind profiles and select the one that is closest to the rated power of the wind turbine
+        # Read in all wind profiles and select one randomly
         filenames_wind = os.listdir(f'{self.path_input_data}/prosumers/wind/')
-        powers_wind = [int(x.split("_")[1]) for x in filenames_wind]
-        power_wind = plant_dict[plant_id].get("power")
-        filename_wind = filenames_wind[min(range(len(powers_wind)), key=lambda i: abs(powers_wind[i] - power_wind))]
+        filename_wind = choice(filenames_wind)
 
         # Copy wind file under plant_id name into prosumer specifications directoryprosumer directory
         shutil.copyfile(f"{self.path_input_data}/prosumers/wind/{filename_wind}",
