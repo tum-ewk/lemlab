@@ -1106,7 +1106,7 @@ class Scenario:
 
         # Copy wind file under plant_id name into prosumer specifications directoryprosumer directory
         shutil.copyfile(f"{self.path_input_data}/prosumers/wind/{filename_wind}",
-                        f"{self.path_scenario}/prosumer/{account['id_user']}/wind_{plant_id}.json")
+                        f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
 
     def __create_fixedgen_files(self, **kwargs) -> None:
         """creates the fixed generation files of the respective prosumer
