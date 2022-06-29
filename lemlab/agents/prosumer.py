@@ -11,7 +11,7 @@ import numpy as np
 import pyomo.environ as pyo
 from random import random
 from lemlab.utilities.forecasting import ForecastManager
-import time
+from bisect import bisect_left
 
 
 class Prosumer:
@@ -29,30 +29,18 @@ class Prosumer:
 
         Public methods:
 
-        __init__ :       Create an instance of the Prosumer class from a configuration folder created using the
-                         Simulation class
+        __init__ :              Create an instance of the Prosumer class from a configuration folder created using the
+                                Scenario_Executor class
+        pre_clearing_activity:  Perform all activities required before market clearing. This includes:
+                                    real time controller execution
+                                    logging of metering values
+                                    forecasting
+                                    predictive control
+                                    market trading
 
-        controller_real_time:      Calculate the behaviour of the instance in the previous time step by applying a
-                            selected controller_real_time strategy to measurement data and plant specifications.
-
-        log_meter_values: Log the result of the controller_real_time method to the database as metering data.
-
-        get_predictions: Return generation prediction for PV plants, consumption predictions for fixed loads, as well
-                         as well as market price predictions.
-
-        controller_model_predictive: Execute the model predictive controller_real_time for the market participant given
-                         the predicted generation, consumption, and market prices for a configurable time horizon.
-
-
-        get_market_positions: Query and return currently matched and unmatched market positions of the market
-                                 participant in question
-
-        set_target_grid_power: Set the target power (to/from grid) for the next controller_real_time execution. Either
-                    MPC result for the Strommunity market design, or market result for double sided market simulations.
-
-        market_agent: Calculate and post/update market positions to the double sided market
-
-        retrain_forecasts: retrains the utilities model
+        post_clearing_activity: Performs all activities required after market clearing, mainly:
+                                    retrieving market results
+                                    determining controller setpoints
     """
 
     def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None):
@@ -77,14 +65,11 @@ class Prosumer:
 
         self.meas_val = {"timestamp": self.ts_delivery_prev}
 
+        self.df_weather_history = df_weather_history
+        self.df_weather_fcast = df_weather_fcast
         # only if forecasts are required
-        if df_weather_fcast is not None:
-            self.fcast_manager = ForecastManager(self.path,
-                                                 self.config_dict,
-                                                 self.plant_dict,
-                                                 self.t_now,
-                                                 df_weather_fcast,
-                                                 df_weather_history)
+
+        self.fcast_manager = ForecastManager(self)
 
         # initialize instance dataframes to be used in later methods
         # df containing all time series forecasts for MPC and market agents
@@ -144,6 +129,33 @@ class Prosumer:
         if self._get_list_plants(plant_type="pv"):
             rtc_model.con_pv = pyo.Constraint(self._get_list_plants(plant_type="pv"),
                                               rule=pv_rule)
+
+    def add_c_wind_rtc(self, rtc_model):
+        # pv variables
+        rtc_model.p_wind = pyo.Var(self._get_list_plants(plant_type="wind"),
+                                   domain=pyo.NonNegativeReals)
+
+        current_wind_speed = float(self.df_weather_history.loc[self.ts_delivery_prev, "wind_speed"])
+
+        # wind maximum power constraint
+        def wind_rule(_model, _plant):
+
+            with open(f"{self.path}/spec_{_plant}.json") as read_file:
+                spec_file = json.load(read_file)
+
+            lookup_wind_speed = spec_file["wind_speed_m/s"]
+            lookup_power = spec_file["power_pu"]
+
+            p_max = self._lookup(current_wind_speed, lookup_wind_speed, lookup_power) * self.plant_dict[_plant]["power"]
+
+            if self.plant_dict[_plant].get("controllable"):
+                return _model.p_wind[_plant] <= p_max
+
+            return _model.p_wind[_plant] == p_max
+
+        if self._get_list_plants(plant_type="wind"):
+            rtc_model.con_wind = pyo.Constraint(self._get_list_plants(plant_type="wind"),
+                                                rule=wind_rule)
 
     def add_c_fixedgen_rtc(self, rtc_model):
         # fixedgen decision variables
@@ -312,6 +324,8 @@ class Prosumer:
                 expression_left += _model.p_fixedgen[_fixedgen]
             for _pv in self._get_list_plants(plant_type="pv"):
                 expression_left += _model.p_pv[_pv]
+            for _wind in self._get_list_plants(plant_type="wind"):
+                expression_left += _model.p_wind[_wind]
             for _bat in self._get_list_plants(plant_type="bat"):
                 expression_left += _model.p_bat_out[_bat] - _model.p_bat_in[_bat]
             for _ev in self._get_list_plants(plant_type="ev"):
@@ -346,6 +360,9 @@ class Prosumer:
         for pv in self._get_list_plants(plant_type="pv"):
             self.meas_val[pv] = rtc_model.p_pv[pv].value
             meas_grid += rtc_model.p_pv[pv].value
+        for wind in self._get_list_plants(plant_type="wind"):
+            self.meas_val[wind] = rtc_model.p_wind[wind].value
+            meas_grid += rtc_model.p_wind[wind].value
         for fixedgen in self._get_list_plants(plant_type="fixedgen"):
             self.meas_val[fixedgen] = rtc_model.p_fixedgen[fixedgen].value
             meas_grid += rtc_model.p_fixedgen[fixedgen].value
@@ -393,12 +410,14 @@ class Prosumer:
                                     ).loc[self.ts_delivery_prev]
             # non-default controllers common model parameters initialized here.
 
-
             rtc_model = pyo.ConcreteModel()
 
             self.add_p_fix_load(rtc_model)
 
             self.add_c_pv_rtc(rtc_model)
+
+            self.add_c_wind_rtc(rtc_model)
+
             self.add_c_fixedgen_rtc(rtc_model)
 
             self.add_c_bat_rtc(rtc_model, df_target_grid_power)
@@ -491,8 +510,8 @@ class Prosumer:
 
         :return: None
         """
-        self.mpc_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
 
+        self.mpc_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
         # if no plants, revert to simple rule-based controller
         if controller is None and len(self._get_list_plants()) - len(self._get_list_plants(plant_type="hh")) == 0:
             controller = "hh"
@@ -509,6 +528,11 @@ class Prosumer:
                 model.p_pv = pyo.Var(self._get_list_plants(plant_type="pv"),
                                      range(0, self.config_dict["mpc_horizon"]),
                                      domain=pyo.NonNegativeReals)
+
+            if self._get_list_plants(plant_type="wind"):
+                model.p_wind = pyo.Var(self._get_list_plants(plant_type="wind"),
+                                       range(0, self.config_dict["mpc_horizon"]),
+                                       domain=pyo.NonNegativeReals)
 
             # fixedgen power variable
             if self._get_list_plants(plant_type="fixedgen"):
@@ -675,14 +699,28 @@ class Prosumer:
             # define pv power upper bound from input file
             model.con_p_pv = pyo.ConstraintList()
             model.sum_pv = [0] * self.config_dict["mpc_horizon"]
-            for pv in self._get_list_plants(plant_type="pv"):
+
+            for plant in self._get_list_plants(plant_type=["pv"]):
                 for t, t_d in enumerate(range(self.ts_delivery_current,
-                                              self.ts_delivery_current + 900*self.config_dict["mpc_horizon"], 900)):
-                    model.sum_pv[t] += self.mpc_table.loc[t_d, f"power_{pv}"]
-                    if self.plant_dict[pv].get("controllable"):
-                        model.con_p_pv.add(expr=model.p_pv[pv, t] <= round(self.mpc_table.loc[t_d, f"power_{pv}"], 1))
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
+                    model.sum_pv[t] += self.mpc_table.loc[t_d, f"power_{plant}"]
+                    if self.plant_dict[plant].get("controllable"):
+                        model.con_p_pv.add(expr=model.p_pv[plant, t] <= round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
                     else:
-                        model.con_p_pv.add(expr=model.p_pv[pv, t] == round(self.mpc_table.loc[t_d, f"power_{pv}"], 1))
+                        model.con_p_pv.add(expr=model.p_pv[plant, t] == round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
+
+            # define wind power upper bound from input file
+            model.con_p_wind = pyo.ConstraintList()
+            model.sum_wind = [0] * self.config_dict["mpc_horizon"]
+
+            for plant in self._get_list_plants(plant_type=["wind"]):
+                for t, t_d in enumerate(range(self.ts_delivery_current,
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
+                    model.sum_wind[t] += self.mpc_table.loc[t_d, f"power_{plant}"]
+                    if self.plant_dict[plant].get("controllable"):
+                        model.con_p_wind.add(expr=model.p_wind[plant, t] <= round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
+                    else:
+                        model.con_p_wind.add(expr=model.p_wind[plant, t] == round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
 
             # define fixedgen power upper bound from input file
             model.con_p_fixedgen = pyo.ConstraintList()
@@ -702,7 +740,7 @@ class Prosumer:
             model.con_batt_charge_grid = pyo.ConstraintList()
             for t in range(0, self.config_dict["mpc_horizon"]):
                 expr_left = 0
-                expr_right = model.sum_pv[t]
+                expr_right = model.sum_pv[t] + model.sum_wind[t]
                 make_const = 0
                 for bat in self._get_list_plants(plant_type="bat"):
                     if not self.plant_dict[bat].get("charge_from_grid"):
@@ -733,6 +771,8 @@ class Prosumer:
                 expression_left = p_load[_t]
                 for _pv in self._get_list_plants(plant_type="pv"):
                     expression_left += model.p_pv[_pv, _t]
+                for _wind in self._get_list_plants(plant_type="wind"):
+                    expression_left += model.p_wind[_wind, _t]
                 for _bat in self._get_list_plants(plant_type="bat"):
                     expression_left += model.p_bat_out[_bat, _t] - model.p_bat_in[_bat, _t]
                 for _ev in self._get_list_plants(plant_type="ev"):
@@ -775,6 +815,10 @@ class Prosumer:
                 # PV
                 for pv in self._get_list_plants(plant_type="pv"):
                     dict_mpc_table[f"power_{pv}"][t_d] = model.p_pv[pv, i]()
+
+                # Wind
+                for wind in self._get_list_plants(plant_type="wind"):
+                    dict_mpc_table[f"power_{wind}"][t_d] = model.p_wind[wind, i]()
 
                 # Battery
                 for bat in self._get_list_plants(plant_type="bat"):
@@ -1072,10 +1116,15 @@ class Prosumer:
 
     def _get_list_plants(self, plant_type=None):
         list_plants = []
-        for plant in self.config_dict["list_plants"]:
-            if self.plant_dict[plant].get("type") == plant_type:
-                list_plants.append(plant)
-        if plant_type is None:
+        if type(plant_type) is list:
+            for plant in self.config_dict["list_plants"]:
+                if self.plant_dict[plant].get("type") in plant_type:
+                    list_plants.append(plant)
+        elif type(plant_type) is str:
+            for plant in self.config_dict["list_plants"]:
+                if self.plant_dict[plant].get("type") == plant_type:
+                    list_plants.append(plant)
+        else:
             list_plants = self.config_dict["list_plants"]
         return list_plants
 
@@ -1141,3 +1190,25 @@ class Prosumer:
         if return_val == "pos":
             return abs(pos_comp)
         return abs(neg_comp)
+
+    @staticmethod
+    def _lookup(x, x_axis, y_axis):
+        """
+        Static internal method:
+        Perform lookup on provided table. Find y-value for desired x-value
+
+        :param x: x-value to look up
+        :param x_axis: x-axis of lookup table
+        :param y_axis: y-value of lookup table
+
+        :return: float, y-value corresponding to x-value input
+        """
+        if x <= x_axis[0]:
+            return y_axis[0]
+        if x >= x_axis[-1]:
+            return y_axis[-1]
+
+        i = bisect_left(x_axis, x)
+        k = (x - x_axis[i - 1]) / (x_axis[i] - x_axis[i - 1])
+        y = k * (y_axis[i] - y_axis[i - 1]) + y_axis[i - 1]
+        return y
