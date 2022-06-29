@@ -12,9 +12,9 @@ simulation:
                                             # simulated at an accelerated rate, before the rts commences
 
   # sim only
-  "sim_start": "2021-03-23 00:00"           # simulation start as unix timestamp
+  "sim_start": "2021-03-23 06:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
-  "sim_length": 1                           # length of the simulation in days
+  "sim_length": 0.3                           # length of the simulation in days
 
   "path_input_data": "../input_data"        # path relative to the lemlab repository
   "path_scenarios": "../scenarios"          # path relative to the lemlab repository
@@ -153,7 +153,7 @@ prosumer:
 
   ################################ general settings ################################
 
-  "general_number_of": 20                   # number of prosumers (single family homes) to simulate
+  "general_number_of": 3                   # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
@@ -176,7 +176,7 @@ prosumer:
                                             #                  respective shares and hh_intervals for the various ranges
                                             #                  the shares represent
 
-  "hh_sizing_uniform": 3500                 # uniform power consumption for all households +-500
+  "hh_sizing_uniform": 2959                 # uniform power consumption for all households +-500
                                             # (hh_load_type = "uniform")
 
   "hh_sizing_distribution": [0.1, 0.2,      # distribution of the total power consumption of the households.
@@ -193,7 +193,7 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "naive_average"               # household load forecasting method
+  "hh_fcast": "perfect"                     # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
@@ -219,14 +219,14 @@ prosumer:
 
   "pv_fraction": 0.7                        # fraction of prosumers with pv plants
 
-  "pv_sizing_power": 1.5                    # sizing of pv plant
+  "pv_sizing_power": 1.5                      # sizing of pv plant
                                             # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
 
   "pv_sizing_power_deviation": 0.2          # random positive/negative deviation from pv_sizing_power
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production forecasting method
+  "pv_fcast": "perfect"                    # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -244,7 +244,7 @@ prosumer:
   ################################ small-scale wind settings ####################################
   ################################ wind power is coming soon
 
-  "wind_fraction": 0                        # fraction of prosumers with wind power plants
+  "wind_fraction": 0.1                        # fraction of prosumers with wind power plants
 
   "wind_sizing_power": 0.7                  # sizing of wind power plant
                                             # 1 = 1000 w of wind for every 1000 kwh/a of household consumption
@@ -253,11 +253,11 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "perfect"                   # wind production forecasting method
-                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
-                                            #                           and turbine model
-                                            #   "wind_lookup_file_fcast" - weather forecast from file used with
-                                            #                              turbine model
+  "wind_fcast": "weather_perfect"             # wind production forecasting method
+                                            #   "weather_perfect" - perfect knowledge of future wind speeds
+                                            #                       and turbine model
+                                            #   "weather_fcast" - weather forecast from file used with
+                                            #                     turbine model
 
   "wind_fcast_retraining_period": 86400     # models should be periodically retrained based on new data
                                             # how many seconds between retraining periods?
@@ -295,23 +295,27 @@ prosumer:
   ################################ heat pump settings ####################################
   ################################ heat pumps are coming soon
 
-  "hp_fraction": 0                          # fraction of prosumers with heat pumps
+  "hp_fraction": 1                          # fraction of prosumers with heat pumps
 
-  "hp_type": ["ground", "air", "air"]       # type of heat pump
+  "hp_type": ["Outdoor Air/Water",
+              "Brine/Water",
+              "Water/Water"]                # type of heat pump
                                             #   "ground" - ground-water heat pump
                                             #   "air" - air-water heat pump
                                             #   "water" - water-water heat pump
                                             # each prosumer selects a random value off this list
 
-  hp_temperature: 35                        # supply temperature of the heating system
+  hp_temperature: 50                        # supply temperature of the heating system
                                             # needs to match value in heat pump specification file
 
   "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
                                             # maximum power, which is the ceiled maximum heat demand from file
 
-  "hp_soc_init": 0.1                        # initial soc of the storage (0-1)
+  "hp_soc_init": 0.3                        # initial soc of the storage (0-1)
 
-  "hp_fcast": "nn"                          # heating demand forecasting technique
+  "hp_tes_efficiency": 0.98                  # charing and discharging efficiency of thermal energz storage
+
+  "hp_fcast": "perfect"                     # heating demand forecasting technique
                                             #   "nn" - neural network based on the included weather data
                                             #   "mr" - multiple regression based on the included weather data
 
@@ -321,6 +325,7 @@ prosumer:
   "hp_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
+
 
   ################################ electric vehicle settings ####################################
 
