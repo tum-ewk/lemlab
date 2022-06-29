@@ -226,7 +226,7 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production forecasting method
+  "pv_fcast": "perfect"                     # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -242,9 +242,8 @@ prosumer:
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
   ################################ small-scale wind settings ####################################
-  ################################ wind power is coming soon
 
-  "wind_fraction": 0                        # fraction of prosumers with wind power plants
+  "wind_fraction": 0.1                      # fraction of prosumers with wind power plants
 
   "wind_sizing_power": 0.7                  # sizing of wind power plant
                                             # 1 = 1000 w of wind for every 1000 kwh/a of household consumption
@@ -253,11 +252,11 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "perfect"                   # wind production forecasting method
-                                            #   "wind_lookup_perfect" - perfect knowledge of future wind speeds
-                                            #                           and turbine model
-                                            #   "wind_lookup_file_fcast" - weather forecast from file used with
-                                            #                              turbine model
+  "wind_fcast": "weather_fcast"             # wind production forecasting method
+                                            #   "weather_perfect" - perfect knowledge of future wind speeds
+                                            #                       and turbine model
+                                            #   "weather_fcast" - weather forecast from file used with
+                                            #                     turbine model
 
   "wind_fcast_retraining_period": 86400     # models should be periodically retrained based on new data
                                             # how many seconds between retraining periods?
@@ -369,7 +368,7 @@ prosumer:
 
   ################################ model predictive controller settings ####################################
 
-  "mpc_price_fcast": "naive"                # forecast model to be used for the lem market price
+  "mpc_price_fcast": "flat"                 # forecast model to be used for the lem market price
                                             #     "flat" - no meaningful forecasting, flat price assumed
                                             #     "naive" - expected price same as previous day (initialized flat)
 

@@ -9,58 +9,70 @@ import random
 import json
 import pathlib
 import os
-from scipy.optimize import minimize as sp_minimize
 import feather as ft
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from bisect import bisect_left
+from scipy.optimize import minimize as sp_minimize
 
-# suppress all tensorflow output
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
-
-"""
-ForecastManager provides functions for the forecasting of household electric load and production for application
-in the local energy market.
-
-Forecasting is divided into two steps. Training models and making the forecast. Training models must be done once at
-the beginning of a simulation and may be repeated as often or as rarely as desired.
-
-Applying the model to calculate a forecast must be done at least as often as the MPC is executed.
-
-"""
+# suppress tensorflow warnings because there are always some drivers for some graphics card missing.
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # or any {'0', '1', '2', '3'}
 
 
 class ForecastManager:
 
-    def __init__(self, path_prosumer, config_dict, plant_dict, t_override=None, df_weather_fcast=None,
-                 df_weather_history=None):
-        self.path_prosumer = path_prosumer
-        self.config_dict = config_dict
-        self.plant_dict = plant_dict
-        self.path_prosumer = path_prosumer
+    """
+    ForecastManager provides functions for the forecasting of prosumer time series.
+
+    Forecasting is divided into two steps: model retraining and forecast update.
+
+    Retraining is the step in which historical data are analysed and model weights reassigned.
+    Forecast update is the application of the trained model to the most recent input data to generate a new forecast.
+
+    The most recent forecast for each plant is saved to prosumer/fcasts_current.ft for the model predictive controller
+    and market agent to make use of.
+
+    Retraining and update frequencies are specified in the plant configuration files.
+
+    Public methods:
+
+        __init__ :         Self explanatory
+
+        update_forecasts:  Retrains and updates all plant forecasts as well as price forecasts for the Prosumer class.
+                           Results are saved to the fcast_table DataFrame.
+
+    """
+
+    def __init__(self, prosumer_obj):
+        """Create instance of ForecastManager.
+
+        :param prosumer_obj: the Prosumer object that owns this instance of ForecastManager
+
+        """
+        self.path_prosumer = prosumer_obj.path
+        self.config_dict = prosumer_obj.config_dict
+        self.plant_dict = prosumer_obj.plant_dict
 
         self.fcast_table = None
 
         # set current timestamp from system clock or keyword arg
-        self.t_now = t_override if t_override else pd.Timestamp.now().timestamp()
+        self.t_now = prosumer_obj.t_now
 
         # derive previous and next timestamps
-        self.ts_delivery_prev = round(pd.Timestamp(self.t_now, unit="s").floor("15min").timestamp() - 15*60)
-        self.ts_delivery_current = self.ts_delivery_prev + 15*60
+        self.ts_delivery_prev = prosumer_obj.ts_delivery_prev
+        self.ts_delivery_current = prosumer_obj.ts_delivery_current
 
         # organize weather data
-        self.df_weather_history = df_weather_history
-        self.df_weather_fcast = df_weather_fcast
+        self.df_weather_history = prosumer_obj.df_weather_history
+        self.df_weather_fcast = prosumer_obj.df_weather_fcast
 
     def update_forecasts(self):
 
-        """Return generation prediction for PV plants, consumption predictions for fixedgen loads, as well
-              as well as market price predictions for the instance prediction horizon
+        """Public function that calls retraining and updating functions for all plants and prices required by the parent
+           Prosumer instance.
 
-              Current status: all forecasts are currently perfect predictions determined by looking at future values in
-              the input data
-
-              :return: None
+           :return: None
               """
         # retrain forecast models as required
         self._retrain_forecasts()
@@ -72,351 +84,135 @@ class ForecastManager:
 
     # internal functions
 
-    def _retrieve_fcast_table(self):
-        if os.path.exists(f"{self.path_prosumer}/fcasts_current.ft"):
-            self.fcast_table = ft.read_dataframe(f"{self.path_prosumer}/fcasts_current.ft").set_index("timestamp")
-        else:
-            ts_init = [[ts, 0] for ts in range(self.ts_delivery_current,
-                                               self.ts_delivery_current + self.config_dict["mpc_horizon"] * 900,
-                                               900)]
-            self.fcast_table = pd.DataFrame(ts_init,
-                                            columns=["timestamp", f"power_{self.config_dict['id_meter_grid']}"]
-                                            ).set_index("timestamp")
-
     def _retrain_forecasts(self):
+        # iterate through all plants owned by the Prosumer instance
         for plant in self.plant_dict:
+            # check when the models were last retrained and how often they should be retrained
             last_retrain = self.plant_dict[plant].get("fcast_last_retrain", 0)
             period_retrain = self.plant_dict[plant].get("fcast_retraining_period", 900)
 
             if self.ts_delivery_current - last_retrain >= period_retrain:
+
+                # currently only sarma and PV neural networks can be retrained
                 if self.plant_dict[plant].get("fcast") == "sarma":
+                    # sarma algorithm has issues with objective value overflow, suppress these warnings as the function
+                    # works just fine
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        param = self._train_sarma(filepath=f"{self.path_prosumer}/raw_data_{plant}.ft",
-                                                  fcast_param_init=self.plant_dict[plant]["fcast_param"],
-                                                  fcast_order=self.plant_dict[plant]["fcast_order"]
-                                                  )
-                    self.plant_dict[plant]["fcast_param"] = param
-                    with open(f"{self.path_prosumer}/config_plants.json", "w") as write_file:
-                        json.dump(self.plant_dict, write_file)
+                        self._train_sarma(id_plant=plant, column = "power")
+                        # set plant as retrained if it was actually done
+                        self.plant_dict[plant]["fcast_last_retrain"] = self.ts_delivery_current
+
                 elif self.plant_dict[plant].get("fcast") == "nn":
+                    # the only implementer neural network is the PV neural network
+                    # model is automatically saved to file
                     self._train_pv_neural_net(path_objective=f"{self.path_prosumer}/raw_data_{plant}.ft",
                                               id_plant=plant)
+                    # set plant as retrained if it was actually done
+                    self.plant_dict[plant]["fcast_last_retrain"] = self.ts_delivery_current
 
-                self.plant_dict[plant]["fcast_last_retrain"] = self.ts_delivery_current
-            else:
-                pass
-
+        # save retraining timestamps to file
         with open(f"{self.path_prosumer}/config_plants.json", "w") as write_file:
             json.dump(self.plant_dict, write_file)
 
-    def _train_sarma(self, filepath, fcast_order, fcast_param_init=None):
-
-        """
-        Trains a SARMA model of the given order and the set initial parameters
-        and returns the optimized model parameters.
-
-        :param filepath: string, path to the raw data
-        :param fcast_order: list, order of SARMA model, see config.YAML for a description
-        :param fcast_param_init: list, initial values of the SARMA model parameters
-
-        :return optimal_param: list, new SARMA model parameters after training
-        """
-
-        # read historical values and create time series to be utilities from
-        df_in = ft.read_dataframe(filepath)
-        df_in.set_index("timestamp", inplace=True)
-        y = list(df_in[(df_in.index < self.ts_delivery_prev)]["power"] /
-                 df_in[(df_in.index < self.ts_delivery_prev)]["power"].max()*2)
-
-        # import model hyper parameters
-        order = fcast_order
-
-        # season lengths
-        s1 = order[6]
-        s2 = order[10]
-
-        # resize input dataset to match training time
-        training_time = s2 * order[7] + 3000
-        y = y[-training_time:]
-
-        # generate random starting point for optimization if no initial parameters are supplied
-        init = fcast_param_init
-        if fcast_param_init is None:
-            target = 3
-            while target > 1 or target < 0.9:
-                init = []
-                for i in range(sum(order) - s1 - s2):
-                    init.append(random.random() * 0.5 - 0.1)
-                target = sum(init)
-
-        # execute a gradient search on the model parameters to minimize the RMSE
-        result = sp_minimize(self._sarma_objective,
-                             x0=init,
-                             method="SLSQP",
-                             args=(y, order),
-                             tol=1e-4)
-
-        # extract optimal fcast parameters
-        optimal_param = []
-        for val in result.x:
-            optimal_param.append(val)
-        optimal_param = [round(num, 3) for num in optimal_param]
-
-        return optimal_param
-
-    @staticmethod
-    def _sarma_objective(par, training_data, order=None):
-        """
-        Calculates the RMSE of the forecast model "par" of order "order" on the training data.
-        Used for training of SARMA models.
-
-        :param par: list, SARMA model parameters to be evaluated
-        :param training_data: list, training data the model should be evaluated on
-        :param order: list, order of the SARMA model, see config.YAML for further explanation
-
-        :return obj: float, RMSE of the SARMA model
-        """
-        if order is None:
-            order = [3, 0, 3, 3, 0, 3, 96, 2, 0, 2, 96 * 7]
-        # par contains parameters in order
-        # y contains training data for model to be build on
-        # order -> [ar, i, ma, s1_ar, s1_i, s1_ma, s1_len, s2_ar, s2_i, s2_ma, s2_len]
-
-        # season lengths
-        s1 = order[6]
-        s2 = order[10]
-        # time series to be fitted
-        y = training_data
-        # training steps to start and end on
-        step_start = s2 * 2
-        step_end = len(y)
-
-        # array of residuals as estimated by model
-        res_est = [0] * (len(y) + 1)
-
-        # set mean value of data to zero
-        y_mean = np.mean(y)
-        y = np.array(y) - y_mean
-
-        # squared error, objective
-        err = [0] * (len(y) + 1)
-
-        # calculate model residuals for training data
-        for t in range(step_start, step_end):
-            par_pointer = 0  # pointer used for establishing dynamic order SARIMA equations
-            res_est[t] = y[t]  # first term of SARMA -> residual[t] = y[t] - (ar1*y[t-1] + ma1*residual[t-1] ... )
-            # AR terms of equation
-            for lag in range(1, order[0] + 1):
-                res_est[t] -= par[par_pointer] * y[t - lag]
-                par_pointer += 1
-            # MA terms of equation
-            for lag in range(1, order[2] + 1):
-                res_est[t] -= par[par_pointer] * res_est[t - lag]
-                par_pointer += 1
-            # season 1 AR terms of equation
-            for lag in range(1, order[3] + 1):
-                res_est[t] -= par[par_pointer] * (y[t - lag * s1])
-                par_pointer += 1
-            # season 2 AR terms of equation
-            for lag in range(1, order[5] + 1):  # SAR 2
-                res_est[t] -= par[par_pointer] * (y[t - lag * s2])
-                par_pointer += 1
-            # season 1 MA terms of equation
-            for lag in range(1, order[7] + 1):  # SMA 1
-                res_est[t] -= par[par_pointer] * (res_est[t - lag * s1])
-                par_pointer += 1
-            # season 2 MA terms of equation
-            for lag in range(1, order[9] + 1):  # SMA 2
-                res_est[t] -= par[par_pointer] * (res_est[t - lag * s2])
-                par_pointer += 1
-            # calculate mean squared error
-            err[t] = res_est[t]
-            # calculate APE
-        # return RMSE as objective value
-        return np.sqrt(np.mean(np.square(err)))
-
-    def _prepare_data_weather(self,
-                              path_objective, input_par,
-                              ts_d_first, ts_d_last,
-                              train_or_predict="train", real_fcasts=True):
-
-        # get weather history for correct range
-        training_data = self.df_weather_history.loc[(slice(ts_d_first, ts_d_last), slice(None))]
-        training_data = training_data.drop(training_data.columns.difference(input_par.keys()), axis=1)
-
-        # for solar PV forecasts, create the maximum potential power curve, essentially the clear sky index for this
-        # location
-        df_raw_data = ft.read_dataframe(f"{path_objective}").set_index("timestamp")
-        if "mppc" not in df_raw_data.columns:
-            df_raw_data = self._calc_mppc(df_raw_data)
-            ft.write_dataframe(df_raw_data.reset_index(), f"{path_objective}")
-
-        # cut raw data to the required length
-        df_raw_data = df_raw_data[(df_raw_data.index >= ts_d_first) & (df_raw_data.index <= ts_d_last)]
-
-        if train_or_predict == "train" or real_fcasts is False:
-            # get power and MPPC data for this location if we are training
-            training_data["power"] = list(df_raw_data["power"])
-            training_data["mppc"] = list(df_raw_data["mppc"])
-            nn_data_normalized = training_data.copy()
-
-        elif real_fcasts:
-            # get weather forecast if we are forecasting
-            fcasting_data = self.df_weather_fcast.loc[(slice(self.ts_delivery_current, self.ts_delivery_current),
-                                                       slice(self.ts_delivery_current, ts_d_last)), :].copy()
-            fcasting_data["mppc"] = list(df_raw_data["mppc"])
-            nn_data_normalized = fcasting_data.copy()
-
-        # normalize input data for forecast models
-        for key in input_par.keys():
-            var_range = input_par[key][1] - input_par[key][0]
-            nn_data_normalized[key] = \
-                nn_data_normalized[key].sub(input_par[key][0]).div(var_range)
-
-        # if we are training PV models, the forecast power should be normalized to maximum potential power
-        if train_or_predict == "train":
-            nn_data_normalized = nn_data_normalized[nn_data_normalized["mppc"] >= 0.05]
-            nn_data_normalized["power"] = \
-                nn_data_normalized["power"].div(nn_data_normalized["mppc"], fill_value=0)
-        return nn_data_normalized
-
-    @staticmethod
-    def _calc_mppc(df_raw_data):
-        df_raw_data["mppc"] = 0
-        for ix, row in df_raw_data.iterrows():
-            mppc = 0
-            t_since_start = ix - df_raw_data.index[0]
-            for j in range(1, 20):
-                if j * 86400 <= t_since_start:
-                    mppc = max(mppc, df_raw_data.loc[ix - j * 86400, "power"])
-            df_raw_data.loc[ix, "mppc"] = mppc
-        return df_raw_data
-
-    def _train_pv_neural_net(self, path_objective, id_plant):
-        """
-        Train and save artificial neural network model for weather-based forecasts (pv, wind, heat pump)
-
-        """
-        # define input parameters and their ranges for data retrieval and normalization
-        input_par = {'temp': [-10 + 273.15, 35 + 273.15],
-                     'cloud_cover': [0, 100],
-                     'pop': [0, 100],
-                     'wind_speed': [0, 30],
-                     'wind_dir': [0, 360],
-                     'ghi': [0, 1000]}
-
-        # training period of 30 days
-        ts_d_first = self.ts_delivery_prev - 86400 * 30
-        ts_d_last = self.ts_delivery_prev
-
-        # retrieve training data from the weather and pv power files in normalized form, then shuffle it
-        training_data_norm = self._prepare_data_weather(path_objective=path_objective,
-                                                        input_par=input_par,
-                                                        ts_d_first=ts_d_first,
-                                                        ts_d_last=ts_d_last)
-
-        training_data_norm = training_data_norm.sample(frac=1, replace=False)
-
-        # select training and validation data, 20 and 80% of dataset respectively
-        validation_data = training_data_norm.tail(n=int(len(training_data_norm) * 0.2)).copy()
-        training_data = training_data_norm.head(n=int(len(training_data_norm) * 0.8)).copy()
-
-        x_train = training_data[input_par.keys()].to_numpy()
-        x_val = validation_data[input_par.keys()].to_numpy()
-        y_train = training_data["power"].to_numpy()
-        y_val = validation_data["power"].to_numpy()
-
-        # prepare data for neural network training
-        buffer_size = 100
-        batch_size = 16
-
-        train_data = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-        train_data = train_data.repeat(5)
-        train_data = train_data.shuffle(buffer_size).batch(batch_size)
-
-        val_data = tf.data.Dataset.from_tensor_slices((x_val, y_val))
-        val_data = val_data.shuffle(buffer_size).batch(batch_size)
-
-        # internal function that slows down learning rate the further training progresses
-        def scheduler(epoch, lr):
-            if epoch > 10:
-                return lr * tf.math.exp(-0.1)
-            return lr
-        callback_lr = tf.keras.callbacks.LearningRateScheduler(scheduler)
-        # define callback for early training stoppage in case no more progress is made for 10 steps
-        callback_es = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
-                                                       patience=10,
-                                                       restore_best_weights=True)
-
-        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-
-        # define neural network layers
-        model = tf.keras.models.Sequential([
-            tf.keras.layers.Dense(26, activation="relu", input_shape=(len(input_par),)),
-            tf.keras.layers.Dense(10, activation="relu"),
-            tf.keras.layers.Dense(1),
-        ])
-        model.compile(optimizer=optimizer, loss='mse')
-        model.fit(train_data, epochs=60, verbose=0, validation_data=val_data,
-                  callbacks=[callback_lr, callback_es])
-
-        # save neural network to the directory for later retrieval
-        path = pathlib.Path(path_objective)
-        model.save(path.parent.joinpath(f"fcast_model_{id_plant}.hdf5"))
-
     def _update_all_forecasts(self):
+        # update forecasts for all plants operated by the owning Prosumer instance
         if self.config_dict["mpc_horizon"] > 0:
             # get forecasts for physical plants
+
             for plant in self.plant_dict:
+                # check last update time
                 last_update = self.plant_dict[plant].get("fcast_last_update", 0)
                 period_update = self.plant_dict[plant].get("fcast_update_period", 900)
+
+                # if time for forecasts to be updated again, do it!
                 if self.ts_delivery_current - last_update >= period_update:
                     if self.plant_dict[plant].get("type") in ["pv", "fixedgen"]:
-                        df_temp = self._update_forecast(id_plant=plant)
+                        # retrieve forecast for pv and fixed_gen plants, scale PU forecast by plant power
+                        df_temp = self.__update_single_forecast(id_plant=plant)
+                        df_temp["power"] *= self.plant_dict[plant].get("power")
+                        # rename column and merge into forecast table
                         df_temp.rename(columns={'power': f'power_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
 
                     elif self.plant_dict[plant].get("type") in ["wind"]:
-                        df_temp = self._update_forecast(id_plant=plant, column="wind_speed")
+                        # retrieve forecast for wind plants
+                        df_temp = self.__update_single_forecast(id_plant=plant, column="wind_speed")
                         df_temp.rename(columns={'wind_speed': f'wind_speed_{plant}'}, inplace=True)
 
+                        # translate wind speed into power generation according to plant spec file
+                        with open(f"{self.path_prosumer}/spec_{plant}.json") as read_file:
+                            spec_file = json.load(read_file)
+
+                        lookup_ws = spec_file["wind_speed_m/s"]
+                        lookup_power = spec_file["power_pu"]
+
+                        list_ws = list(df_temp[f"wind_speed_{plant}"])
+                        list_power = []
+                        for ws in list_ws:
+                            list_power.append(
+                                self._lookup(ws, lookup_ws, lookup_power) * self.plant_dict[plant]["power"])
+
+                        df_temp[f"power_{plant}"] = list_power
+
+                        # merge into forecast table
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix="duplicate")
-                        self.fcast_table[f'power_{plant}'] = 0
+
                     elif self.plant_dict[plant].get("type") == "hh":
-                        df_temp = self._update_forecast(id_plant=plant)
+                        # retrieve hh forecast and merge into forecast table
+                        df_temp = self.__update_single_forecast(id_plant=plant)
                         df_temp.rename(columns={'power': f'power_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
 
                     elif self.plant_dict[plant].get("type") == "bat":
+                        # Battery is not forecast.
+                        # We create the columns for power and soc to be set by the controller later
                         self.fcast_table[f'power_{plant}'] = 0
                         self.fcast_table[f'soc_{plant}'] = 0
 
                     elif self.plant_dict[plant].get("type") == "ev":
-                        df_temp = self._update_forecast(id_plant=plant, column="availability")
+                        # retrieve electric vehicle forecasts for availability AND distance driven
+                        df_temp = self.__update_single_forecast(id_plant=plant, column="availability")
                         df_temp.rename(columns={'availability': f'availability_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
 
-                        df_temp = self._update_forecast(id_plant=plant, column="distance_driven")
+                        df_temp = self.__update_single_forecast(id_plant=plant, column="distance_driven")
                         df_temp.rename(columns={'distance_driven': f'distance_driven_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
-
+                        # empty columns created for EV analogously to battery
                         self.fcast_table[f'power_{plant}'] = 0
                         self.fcast_table[f'soc_{plant}'] = 0
                         self.fcast_table[f'soc_min_{plant}'] = 0
 
+                    elif self.plant_dict[plant].get("type") == "hp":
+                        # retrieve heat pump temperature forecasts
+                        df_temp = self.__update_single_forecast(id_plant=plant, fcast="weather_perfect", column="temp")
+                        df_temp.rename(columns={'temp': f'temp_{plant}'}, inplace=True)
+                        self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
+                        # retrieve heat load forecasts
+                        df_temp = self.__update_single_forecast(id_plant=plant, column="heat")
+                        df_temp.rename(columns={'heat': f'heat_{plant}'}, inplace=True)
+                        self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
+
+                        # empty columns created for HP analogously to battery
+                        self.fcast_table[f'power_{plant}'] = 0
+                        self.fcast_table[f'soc_{plant}'] = 0
+                        self.fcast_table[f'cop_{plant}'] = 0
+
+                    # if plant was updated, save this to the spec file
                     self.plant_dict[plant]["fcast_last_update"] = self.ts_delivery_current
                     with open(f"{self.path_prosumer}/config_plants.json", "w") as write_file:
                         json.dump(self.plant_dict, write_file)
 
-            # get forecasts for lem prices
-            if self.config_dict["mpc_price_fcast"] != "flat":
+            # These forecasts are handled separately from those for plants
+            # LEM prices are forecast either naively (same as yesterday)
+            if self.config_dict["mpc_price_fcast"] == "naive":
                 last_update = self.config_dict.get("mpc_price_fcast_last_update", 0)
                 period_update = self.config_dict.get("mpc_price_fcast_update_period")
 
                 if self.ts_delivery_current - last_update >= period_update:
                     # return all predicted values in one list
-                    df_temp = self._update_forecast(
+                    df_temp = self.__update_single_forecast(
                         fcast=self.config_dict["mpc_price_fcast"],
                         fcast_horizon=self.config_dict["mpc_horizon"] + period_update//900,
                         filepath=f"{self.path_prosumer}/price_history.ft",
@@ -428,15 +224,14 @@ class ForecastManager:
                     self.config_dict["mpc_price_fcast_last_update"] = self.ts_delivery_current
                     with open(f"{self.path_prosumer}/config_account.json", "w") as write_file:
                         json.dump(self.config_dict, write_file)
+            # or flat (market price is always exactly the average between the market floor and ceiling)
             else:
-                self.fcast_table[f'price'] = \
-                    (self.config_dict["max_bid"] - self.config_dict["min_offer"]) / 2 * self.config_dict["mpc_horizon"]
+                self.fcast_table[f'price'] = (self.config_dict["max_bid"] + self.config_dict["min_offer"]) / 2
 
-            # predict settlement prices
-            # TODO: only predict those settlement prices that have not yet been posted to the DB
-            # add perfect predictions
+            # Levies prices always perform a naive forecast. Perfect forecasts require the retailer/network operator
+            # to post settlement prices on the market in advance
 
-            df_temp = self._update_forecast(
+            df_temp = self.__update_single_forecast(
                         fcast="naive",
                         column="price_energy_levies_positive",
                         fcast_horizon=self.config_dict["mpc_horizon"],
@@ -444,7 +239,7 @@ class ForecastManager:
                         )
 
             self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix="duplicate")
-            df_temp = self._update_forecast(
+            df_temp = self.__update_single_forecast(
                         fcast="naive",
                         column="price_energy_levies_negative",
                         fcast_horizon=self.config_dict["mpc_horizon"],
@@ -452,19 +247,25 @@ class ForecastManager:
                         )
             self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix="duplicate")
 
+            # drop duplicates from the table and then throw away old data
             self.fcast_table.drop(list(self.fcast_table.filter(regex='duplicate')), axis=1, inplace=True)
             self.fcast_table = self.fcast_table[self.fcast_table.index >= self.ts_delivery_current]
 
-    def _update_forecast(self,
-                         id_plant=None,
-                         fcast=None,
-                         fcast_horizon=None,
-                         filepath=None,
-                         column="power"):
+    # very internal functions
+
+    def __update_single_forecast(self,
+                                 id_plant=None,
+                                 fcast=None,
+                                 fcast_horizon=None,
+                                 filepath=None,
+                                 column="power"):
         """
-        Takes a forecast model fcast and applies it to the data in "column" of "filepath" and returns a forecast
+        Takes the forecast model "fcast" for plant "id_plant" and applies it to the data in "column" of "filepath" and returns a forecast
         starting at ts_delivery_current for "fcast_horizon" steps.
 
+        id_plant is optional as price forecasts don't require a plant to be attached.
+
+        :param id_plant: string, id of plant to be forecast
         :param fcast: string, type of fcast model to be used e.g. "sarma" or "perfect"
         :param fcast_horizon: int, how many timesteps should the forecast contain?
         :param filepath: string, path to the data
@@ -473,14 +274,18 @@ class ForecastManager:
         :return obj: float, RMSE of the SARMA model
 
         """
-        if fcast is None:
-            fcast = self.plant_dict[id_plant].get("fcast")
-        if fcast_horizon is None:
-            fcast_horizon = self.config_dict["mpc_horizon"] + \
-                            self.plant_dict[id_plant].get("fcast_update_period", 900) // 900
+
         if id_plant is not None:
             fcast_param = self.plant_dict[id_plant].get("fcast_param")
             fcast_order = self.plant_dict[id_plant].get("fcast_order")
+
+            if fcast_horizon is None:
+                fcast_horizon = self.config_dict["mpc_horizon"] + \
+                                self.plant_dict[id_plant].get("fcast_update_period", 900) // 900
+
+        if fcast is None:
+            fcast = self.plant_dict[id_plant].get("fcast")
+
         if filepath is None:
             filepath = f"{self.path_prosumer}/raw_data_{id_plant}.ft"
 
@@ -655,6 +460,7 @@ class ForecastManager:
             return df_y_hat
 
         elif fcast == "nn":
+            # neural network for pv plant
             # load saved neural network model
             path = pathlib.Path(filepath)
             nn_model = tf.keras.models.load_model(path.parent.joinpath(f"fcast_model_{id_plant}.hdf5"))
@@ -691,3 +497,318 @@ class ForecastManager:
             df_y_hat.drop(df_y_hat.columns.difference(['ts_delivery_fcast', 'power_fcast']), axis=1, inplace=True)
             df_y_hat.rename(columns={"ts_delivery_fcast": "timestamp", "power_fcast": "power"}, inplace=True)
             return df_y_hat.set_index("timestamp")
+
+        elif fcast == "weather_perfect":
+            # perfect forecast on a weather parameter "column"
+            df_wind_perfect = \
+                pd.DataFrame(
+                    self.df_weather_history.loc[
+                        slice(self.ts_delivery_current, self.ts_delivery_current + 900 * fcast_horizon),
+                        slice(None)]
+                    [column].droplevel('ts_delivery_fcast'))
+            df_wind_perfect.index.name = "timestamp"
+            return df_wind_perfect
+
+        elif fcast == "weather_fcast":
+            # actual forecast on a weather parameter "column"
+            df_wind_fcast = \
+                pd.DataFrame(
+                    self.df_weather_fcast.loc[
+                        (slice(self.ts_delivery_current, self.ts_delivery_current),
+                         slice(self.ts_delivery_current, self.ts_delivery_current + 900 * fcast_horizon)),
+                        :]
+                    [column].droplevel('ts_delivery_current'))
+            df_wind_fcast.index.name = "timestamp"
+            return df_wind_fcast
+
+    def _prepare_data_weather(self,
+                              path_objective, input_par,
+                              ts_d_first, ts_d_last,
+                              train_or_predict="train", real_fcasts=True):
+
+        # get weather history for correct range
+        training_data = self.df_weather_history.loc[(slice(ts_d_first, ts_d_last), slice(None))]
+        training_data = training_data.drop(training_data.columns.difference(input_par.keys()), axis=1)
+
+        # for solar PV forecasts, create the maximum potential power curve, essentially the clear sky index for this
+        # location
+        df_raw_data = ft.read_dataframe(f"{path_objective}").set_index("timestamp")
+        if "mppc" not in df_raw_data.columns:
+            df_raw_data = self._calc_mppc(df_raw_data)
+            ft.write_dataframe(df_raw_data.reset_index(), f"{path_objective}")
+
+        # cut raw data to the required length
+        df_raw_data = df_raw_data[(df_raw_data.index >= ts_d_first) & (df_raw_data.index <= ts_d_last)]
+
+        if train_or_predict == "train" or real_fcasts is False:
+            # get power and MPPC data for this location if we are training
+            training_data["power"] = list(df_raw_data["power"])
+            training_data["mppc"] = list(df_raw_data["mppc"])
+            nn_data_normalized = training_data.copy()
+
+        elif real_fcasts:
+            # get weather forecast if we are forecasting
+            fcasting_data = self.df_weather_fcast.loc[(slice(self.ts_delivery_current, self.ts_delivery_current),
+                                                       slice(self.ts_delivery_current, ts_d_last)), :].copy()
+            fcasting_data["mppc"] = list(df_raw_data["mppc"])
+            nn_data_normalized = fcasting_data.copy()
+
+        # normalize input data for forecast models
+        for key in input_par.keys():
+            var_range = input_par[key][1] - input_par[key][0]
+            nn_data_normalized[key] = \
+                nn_data_normalized[key].sub(input_par[key][0]).div(var_range)
+
+        # if we are training PV models, the forecast power should be normalized to maximum potential power
+        if train_or_predict == "train":
+            nn_data_normalized = nn_data_normalized[nn_data_normalized["mppc"] >= 0.05]
+            nn_data_normalized["power"] = \
+                nn_data_normalized["power"].div(nn_data_normalized["mppc"], fill_value=0)
+        return nn_data_normalized
+
+    def _retrieve_fcast_table(self):
+        if os.path.exists(f"{self.path_prosumer}/fcasts_current.ft"):
+            self.fcast_table = ft.read_dataframe(f"{self.path_prosumer}/fcasts_current.ft").set_index("timestamp")
+        else:
+            ts_init = [[ts, 0] for ts in range(self.ts_delivery_current,
+                                               self.ts_delivery_current + self.config_dict["mpc_horizon"] * 900,
+                                               900)]
+            self.fcast_table = pd.DataFrame(ts_init,
+                                            columns=["timestamp", f"power_{self.config_dict['id_meter_grid']}"]
+                                            ).set_index("timestamp")
+
+    @staticmethod
+    def _sarma_objective(par, training_data, order=None):
+        """
+        Calculates the RMSE of the forecast model "par" of order "order" on the training data.
+        Used for training of SARMA models.
+
+        :param par: list, SARMA model parameters to be evaluated
+        :param training_data: list, training data the model should be evaluated on
+        :param order: list, order of the SARMA model, see config.YAML for further explanation
+
+        :return obj: float, RMSE of the SARMA model
+        """
+        if order is None:
+            order = [3, 0, 3, 3, 0, 3, 96, 2, 0, 2, 96 * 7]
+        # par contains parameters in order
+        # y contains training data for model to be build on
+        # order -> [ar, i, ma, s1_ar, s1_i, s1_ma, s1_len, s2_ar, s2_i, s2_ma, s2_len]
+
+        # season lengths
+        s1 = order[6]
+        s2 = order[10]
+        # time series to be fitted
+        y = training_data
+        # training steps to start and end on
+        step_start = s2 * 2
+        step_end = len(y)
+
+        # array of residuals as estimated by model
+        res_est = [0] * (len(y) + 1)
+
+        # set mean value of data to zero
+        y_mean = np.mean(y)
+        y = np.array(y) - y_mean
+
+        # squared error, objective
+        err = [0] * (len(y) + 1)
+
+        # calculate model residuals for training data
+        for t in range(step_start, step_end):
+            par_pointer = 0  # pointer used for establishing dynamic order SARIMA equations
+            res_est[t] = y[t]  # first term of SARMA -> residual[t] = y[t] - (ar1*y[t-1] + ma1*residual[t-1] ... )
+            # AR terms of equation
+            for lag in range(1, order[0] + 1):
+                res_est[t] -= par[par_pointer] * y[t - lag]
+                par_pointer += 1
+            # MA terms of equation
+            for lag in range(1, order[2] + 1):
+                res_est[t] -= par[par_pointer] * res_est[t - lag]
+                par_pointer += 1
+            # season 1 AR terms of equation
+            for lag in range(1, order[3] + 1):
+                res_est[t] -= par[par_pointer] * (y[t - lag * s1])
+                par_pointer += 1
+            # season 2 AR terms of equation
+            for lag in range(1, order[5] + 1):  # SAR 2
+                res_est[t] -= par[par_pointer] * (y[t - lag * s2])
+                par_pointer += 1
+            # season 1 MA terms of equation
+            for lag in range(1, order[7] + 1):  # SMA 1
+                res_est[t] -= par[par_pointer] * (res_est[t - lag * s1])
+                par_pointer += 1
+            # season 2 MA terms of equation
+            for lag in range(1, order[9] + 1):  # SMA 2
+                res_est[t] -= par[par_pointer] * (res_est[t - lag * s2])
+                par_pointer += 1
+            # calculate mean squared error
+            err[t] = res_est[t]
+            # calculate APE
+        # return RMSE as objective value
+        return np.sqrt(np.mean(np.square(err)))
+
+    def _train_sarma(self, id_plant, column):
+
+        """
+        Trains a SARMA model of the given order and the set initial parameters
+        and returns the optimized model parameters.
+
+        :param id_plant: string, id of the plant model to be trained
+        :param column
+        :return optimal_param: list, new SARMA model parameters after training
+        """
+
+        # read historical values and create time series to be utilities from
+        df_in = ft.read_dataframe(f"{self.path_prosumer}/raw_data_{id_plant}.ft")
+        df_in.set_index("timestamp", inplace=True)
+
+        y = list(df_in[(df_in.index < self.ts_delivery_prev)][column] /
+                 df_in[(df_in.index < self.ts_delivery_prev)][column].max()*2)
+
+        # import model hyper parameters
+        order = self.plant_dict[id_plant]["fcast_order"]
+
+        # season lengths
+        s1 = order[6]
+        s2 = order[10]
+
+        # resize input dataset to match training time
+        training_time = s2 * order[7] + 3000
+        y = y[-training_time:]
+
+        # generate random starting point for optimization if no initial parameters are supplied
+        init = self.plant_dict[id_plant]["fcast_order"]
+
+        if init is None:
+            target = 3
+            while target > 1 or target < 0.9:
+                init = []
+                for i in range(sum(order) - s1 - s2):
+                    init.append(random.random() * 0.5 - 0.1)
+                target = sum(init)
+
+        # execute a gradient search on the model parameters to minimize the RMSE
+        result = sp_minimize(self._sarma_objective,
+                             x0=init,
+                             method="SLSQP",
+                             args=(y, order),
+                             tol=1e-4)
+
+        # extract optimal fcast parameters
+        optimal_param = []
+        for val in result.x:
+            optimal_param.append(val)
+        optimal_param = [round(num, 3) for num in optimal_param]
+
+        self.plant_dict[id_plant]["fcast_param"] = optimal_param
+        # save forecast parameters to file
+        with open(f"{self.path_prosumer}/config_plants.json", "w") as write_file:
+            json.dump(self.plant_dict, write_file)
+
+    @staticmethod
+    def _calc_mppc(df_raw_data):
+        df_raw_data["mppc"] = 0
+        for ix, row in df_raw_data.iterrows():
+            mppc = 0
+            t_since_start = ix - df_raw_data.index[0]
+            for j in range(1, 20):
+                if j * 86400 <= t_since_start:
+                    mppc = max(mppc, df_raw_data.loc[ix - j * 86400, "power"])
+            df_raw_data.loc[ix, "mppc"] = mppc
+        return df_raw_data
+
+    def _train_pv_neural_net(self, path_objective, id_plant):
+        """
+        Train and save artificial neural network model for weather-based forecasts (pv, wind, heat pump)
+
+        """
+        # define input parameters and their ranges for data retrieval and normalization
+        input_par = {'temp': [-10 + 273.15, 35 + 273.15],
+                     'cloud_cover': [0, 100],
+                     'pop': [0, 100],
+                     'wind_speed': [0, 30],
+                     'wind_dir': [0, 360],
+                     'ghi': [0, 1000]}
+
+        # training period of 30 days
+        ts_d_first = self.ts_delivery_prev - 86400 * 30
+        ts_d_last = self.ts_delivery_prev
+
+        # retrieve training data from the weather and pv power files in normalized form, then shuffle it
+        training_data_norm = self._prepare_data_weather(path_objective=path_objective,
+                                                        input_par=input_par,
+                                                        ts_d_first=ts_d_first,
+                                                        ts_d_last=ts_d_last)
+
+        training_data_norm = training_data_norm.sample(frac=1, replace=False)
+
+        # select training and validation data, 20 and 80% of dataset respectively
+        validation_data = training_data_norm.tail(n=int(len(training_data_norm) * 0.2)).copy()
+        training_data = training_data_norm.head(n=int(len(training_data_norm) * 0.8)).copy()
+
+        x_train = training_data[input_par.keys()].to_numpy()
+        x_val = validation_data[input_par.keys()].to_numpy()
+        y_train = training_data["power"].to_numpy()
+        y_val = validation_data["power"].to_numpy()
+
+        # prepare data for neural network training
+        buffer_size = 100
+        batch_size = 16
+
+        train_data = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+        train_data = train_data.repeat(5)
+        train_data = train_data.shuffle(buffer_size).batch(batch_size)
+
+        val_data = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+        val_data = val_data.shuffle(buffer_size).batch(batch_size)
+
+        # internal function that slows down learning rate the further training progresses
+        def scheduler(epoch, lr):
+            if epoch > 10:
+                return lr * tf.math.exp(-0.1)
+            return lr
+
+        callback_lr = tf.keras.callbacks.LearningRateScheduler(scheduler)
+        # define callback for early training stoppage in case no more progress is made for 10 steps
+        callback_es = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
+                                                       patience=10,
+                                                       restore_best_weights=True)
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+
+        # define neural network layers
+        model = tf.keras.models.Sequential([
+            tf.keras.layers.Dense(26, activation="relu", input_shape=(len(input_par),)),
+            tf.keras.layers.Dense(10, activation="relu"),
+            tf.keras.layers.Dense(1),
+        ])
+        model.compile(optimizer=optimizer, loss='mse')
+        model.fit(train_data, epochs=60, verbose=0, validation_data=val_data,
+                  callbacks=[callback_lr, callback_es])
+
+        # save neural network to the directory for later retrieval
+        path = pathlib.Path(path_objective)
+        model.save(path.parent.joinpath(f"fcast_model_{id_plant}.hdf5"))
+
+    @staticmethod
+    def _lookup(x, x_axis, y_axis):
+        """
+        Static internal method:
+        Perform lookup on provided table. Find y-value for desired x-value
+
+        :param x: x-value to look up
+        :param x_axis: x-axis of lookup table
+        :param y_axis: y-value of lookup table
+
+        :return: float, y-value corresponding to x-value input
+        """
+        if x <= x_axis[0]:
+            return y_axis[0]
+        if x >= x_axis[-1]:
+            return y_axis[-1]
+
+        i = bisect_left(x_axis, x)
+        k = (x - x_axis[i - 1]) / (x_axis[i] - x_axis[i - 1])
+        y = k * (y_axis[i] - y_axis[i - 1]) + y_axis[i - 1]
+        return y

@@ -1098,13 +1098,13 @@ class Scenario:
         # Read necessary keyword arguments
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
-        plant_dict = kwargs["plant_dict"]
+        # plant_dict = kwargs["plant_dict"]
 
         # Read in all wind profiles and select one randomly
         filenames_wind = os.listdir(f'{self.path_input_data}/prosumers/wind/')
         filename_wind = choice(filenames_wind)
 
-        # Copy wind file under plant_id name into prosumer specifications directoryprosumer directory
+        # Copy wind file under plant_id name into prosumer specifications directory
         shutil.copyfile(f"{self.path_input_data}/prosumers/wind/{filename_wind}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
 
