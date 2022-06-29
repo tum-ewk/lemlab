@@ -226,8 +226,7 @@ class ForecastManager:
                         json.dump(self.config_dict, write_file)
             # or flat (market price is always exactly the average between the market floor and ceiling)
             else:
-                self.fcast_table[f'price'] = \
-                    (self.config_dict["max_bid"] - self.config_dict["min_offer"]) / 2 * self.config_dict["mpc_horizon"]
+                self.fcast_table[f'price'] = (self.config_dict["max_bid"] + self.config_dict["min_offer"]) / 2
 
             # Levies prices always perform a naive forecast. Perfect forecasts require the retailer/network operator
             # to post settlement prices on the market in advance

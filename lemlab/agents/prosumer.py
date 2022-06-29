@@ -534,7 +534,6 @@ class Prosumer:
                                        range(0, self.config_dict["mpc_horizon"]),
                                        domain=pyo.NonNegativeReals)
 
-
             # fixedgen power variable
             if self._get_list_plants(plant_type="fixedgen"):
                 model.p_fixedgen = pyo.Var(self._get_list_plants(plant_type="fixedgen"),
