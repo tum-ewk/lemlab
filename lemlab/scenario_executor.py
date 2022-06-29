@@ -17,9 +17,9 @@ import feather as ft
 import numpy as np
 from ruamel.yaml import YAML
 from lemlab.db_connection.db_connection import DatabaseConnection
-from lemlab.agents.prosumer import Prosumer
-from lemlab.agents.aggregator import Aggregator
-from lemlab.agents.retailer import Retailer
+from lemlab.agents import Prosumer
+from lemlab.agents import Aggregator
+from lemlab.agents import Retailer
 import lemlab.lem.clearing_ex_ante as clearing_ex_ante
 import lemlab.lem.settlement as lem_settlement
 import warnings
