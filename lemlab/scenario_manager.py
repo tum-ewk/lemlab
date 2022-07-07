@@ -800,15 +800,16 @@ class Scenario:
         # Initialize prosumer's main meter
         self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_grid'),
                           init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
-
+        final_plant_dict = plant_dict
         # Initialize all other meters and create device-dependent files
         for plant_id in list_plant_ids:
             self.__init_meter(id_user=account['id_user'], id_meter=plant_id,
                               init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
 
             # Check which types are present and create the corresponding files
-            self.__create_plant_files(plant_type=plant_dict[plant_id].get("type"), account=account,
-                                      plant_id=plant_id, plant_dict=plant_dict)
+            final_plant_dict[plant_id] = self.__create_plant_files(plant_type=plant_dict[plant_id].get("type"),
+                                                                   account=account, plant_id=plant_id,
+                                                                   plant_dict=plant_dict)
 
         # Write final config files to the directory
         # Contains the general account information
@@ -852,23 +853,23 @@ class Scenario:
             None
 
         """
-
         if plant_type == "hh":
-            self.__create_hh_files(**kwargs)
+            plant_config = self.__create_hh_files(**kwargs)
         elif plant_type == "pv":
-            self.__create_pv_files(**kwargs)
+            plant_config = self.__create_pv_files(**kwargs)
         elif plant_type == "bat":
-            self.__create_bat_files(**kwargs)
+            plant_config = self.__create_bat_files(**kwargs)
         elif plant_type == "ev":
-            self.__create_ev_files(**kwargs)
+            plant_config = self.__create_ev_files(**kwargs)
         elif plant_type == "hp":
-            self.__create_hp_files(**kwargs)
+            plant_config = self.__create_hp_files(**kwargs)
         elif plant_type == "wind":
-            self.__create_wind_files(**kwargs)
+            plant_config = self.__create_wind_files(**kwargs)
         elif plant_type == "fixedgen":
-            self.__create_fixedgen_files(**kwargs)
+            plant_config = self.__create_fixedgen_files(**kwargs)
         else:
             raise Warning("Key was found with no associated function.")
+        return plant_config
 
     def __create_hh_files(self, **kwargs) -> None:
         """creates the household files of the respective prosumer
@@ -944,6 +945,8 @@ class Scenario:
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
 
+        return account["list_plant_specs"][0]
+
     def __create_pv_files(self, **kwargs) -> None:
         """creates the PV files of the respective prosumer
 
@@ -968,6 +971,10 @@ class Scenario:
         ft.write_dataframe(df_pv.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_bat_files(self, **kwargs) -> None:
         """creates the battery files of the respective prosumer
@@ -992,6 +999,11 @@ class Scenario:
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
                 as write_file:
             json.dump(soc_init, write_file)
+
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_ev_files(self, **kwargs) -> None:
         """creates the electric vehicle files of the respective prosumer
@@ -1026,6 +1038,7 @@ class Scenario:
         ft.write_dataframe(df_ev.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
+        return plant_dict[plant_id]
 
     def __create_hp_files(self, **kwargs) -> None:
         """creates the heat pump files of the respective prosumer
@@ -1042,6 +1055,8 @@ class Scenario:
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
 
+        #############
+        # in the first step, we identify a dummy heat demand time series as heat pump raw data
         # Find out the annual consumption to identify the correct household heat demand time series
         hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
         annual_consumption = hh_plant["annual_consumption"]
@@ -1050,6 +1065,7 @@ class Scenario:
         filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
+
         # TODO: replace "power" column with "heat" column once it is implemented
         column = "power"
         df_hp = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp")*(-1)
@@ -1059,7 +1075,8 @@ class Scenario:
         ft.write_dataframe(df_hp.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
-
+        ########
+        # heat pump max thermal power and storage capacity are dimensioned according to the peak heat load
         # Update power and storage capacity information based on peak heat demand
         max_heat = max(abs(df_hp["heat"]))
         hp_power_th = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)  # unit in W
@@ -1067,10 +1084,14 @@ class Scenario:
         hp_capacity_wh = hp_power_th * hp_capacity
 
         # read hp electric power from spec dict
-        hp_idx, hp_plant = next([idx, plant] for idx, plant in enumerate(account["list_plant_specs"])
-                                if plant["type"] == "hp")
-        soc_init = hp_capacity_wh * self.config["prosumer"]["hp_soc_init"]
+        ix = account["list_plants"].index(plant_id)
+        hp_plant = account["list_plant_specs"][ix]
+        # set thermal power and storage capacity
+        hp_plant["capacity"] = hp_capacity_wh
+        hp_plant['power_th'] = hp_power_th
 
+        # set and save initial SoC of thermal storage
+        soc_init = hp_capacity_wh * self.config["prosumer"]["hp_soc_init"]
         # Write SoC to prosumer specifications directory
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
                 as write_file:
@@ -1084,17 +1105,13 @@ class Scenario:
         hp_param_generic = hp_dataset.loc[(hp_dataset['Model'] == 'Generic') & (hp_dataset['Type'] == hp_type) &
                                           (hp_dataset['Subtype'] == 'On-Off')]  # generic fitting parameter
         df_hp_param = self.__get_hp_parameters(model='Generic', group_id=int(hp_param_generic["Group"].values),
-                                               t_in=0, t_out=hp_t_out, p_th=hp_power_th)  # specifc fittung parameter
-        df_hp_param['capacity_wh'] = hp_capacity_wh
-        df_hp_param['power_th'] = hp_power_th
-        # input_files = [file for file in os.listdir(f'{self.path_input_data}/prosumers/hp/')
-        #                if os.path.isfile(os.path.join(f'{self.path_input_data}/prosumers/hp/', file))
-        #                and file.split("_")[-1].split(".")[0] == hp_plant["hp_type"]]
+                                               t_in=0, t_out=hp_t_out, p_th=hp_power_th)  # specific fitting parameter
 
         df_hp_param.to_json(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json", orient="records")
 
         shutil.copyfile(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
+        return hp_plant
 
     def __get_hp_parameters(self, model: str, group_id: int = 0, t_in: int = 0, t_out: int = 0, p_th: int = 0,) \
                             -> pd.DataFrame:
@@ -1551,6 +1568,11 @@ class Scenario:
         shutil.copyfile(f"{self.path_input_data}/prosumers/wind/{filename_wind}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
 
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
+
     def __create_fixedgen_files(self, **kwargs) -> None:
         """creates the fixed generation files of the respective prosumer
 
@@ -1575,6 +1597,11 @@ class Scenario:
         ft.write_dataframe(df_fixedgen.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}/"
                            f"raw_data_{plant_id}.ft")
+
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_aggregator(self) -> None:
         """creates the aggregator files if activated

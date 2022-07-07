@@ -104,14 +104,11 @@ class ScenarioAnalyzer:
 
         """
 
-
         self.plot_virtual_feeder_flow()             # plots the virtual power flow of the LEM
         self.plot_mcp()                             # plots the market clearing prices and their weighted average
         self.plot_balance()                         # plots the balance of each household at the end
         self.plot_price_type()                      # plots price vs. type of energy over time
-        self.plot_household(id_user=1)  # plots the power profile of one household as example
-        self.plot_household(id_user=2)  # plots the power profile of one household as example
-        self.plot_household(id_user=3)  # plots the power profile of one household as example
+        self.plot_household()  # plots the power profile of one household as example
 
         # self.plot_balance_per_type()                # plots the weighted costs per energy for each household type
 

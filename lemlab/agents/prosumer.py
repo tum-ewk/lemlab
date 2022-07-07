@@ -8,13 +8,12 @@ import json
 import feather as ft
 import pandas as pd
 import numpy as np
-import pyomo.environ as pyo
+from pyomo import environ as pyo
 from typing import Union
 from random import random
 from lemlab.utilities.forecasting import ForecastManager
 from bisect import bisect_left
 
-import time
 
 class Prosumer:
     """Prosumer defines objects and methods used to simulate a single family home in a local energy market
@@ -45,7 +44,7 @@ class Prosumer:
                                     determining controller setpoints
     """
 
-    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None):
+    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None, tf_import=False):
         """Create a Prosumer instance from a configuration folder created using the Simulation class.
 
         :param path: path to prosumer configuration directory
@@ -70,8 +69,7 @@ class Prosumer:
         self.df_weather_history = df_weather_history
         self.df_weather_fcast = df_weather_fcast
         # only if forecasts are required
-
-        self.fcast_manager = ForecastManager(self)
+        self.fcast_manager = ForecastManager(self, tf_import)
 
         # initialize instance dataframes to be used in later methods
         # df containing all time series forecasts for MPC and market agents
@@ -180,10 +178,13 @@ class Prosumer:
         # hp variables
         rtc_model.p_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
                                  domain=pyo.NonPositiveReals)
+
         rtc_model.q_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
-                                 domain=pyo.NonPositiveReals)
+                                 domain=pyo.NonNegativeReals)
+
         rtc_model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
         res_hp_dict = {}
+
         for _plant in self._get_list_plants(plant_type="hp"):
             # TODO: the ambient temperature should be read from mpc_table, but it is None for the first iteration
             # temp_amb = self.mpc_table.loc[self.ts_delivery_prev, f"temp_{_plant}"]
@@ -205,14 +206,14 @@ class Prosumer:
                                                 rule=hp_p_rule)
 
         def hp_q_rule(_model, _plant):
-            return _model.q_hp[_plant] == _model.p_hp[_plant] * res_hp_dict[_plant]['COP']
+            return _model.q_hp[_plant] == -1 * _model.p_hp[_plant] * res_hp_dict[_plant]['COP']
 
         if self._get_list_plants(plant_type="hp"):
             rtc_model.con_hp_q = pyo.Constraint(self._get_list_plants(plant_type="hp"),
                                                 rule=hp_q_rule)
 
-        # constraints for thermy energy storage
-        # battery decision variables
+        # constraints for thermal energy storage
+        # tes decision variables
         rtc_model.q_tes_in = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.NonNegativeReals)
         rtc_model.q_tes_out = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.NonNegativeReals)
         rtc_model.q_tes_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
@@ -226,9 +227,8 @@ class Prosumer:
         for hp in self._get_list_plants(plant_type="hp"):
             with open(f"{self.path}/soc_{hp}.json", "r") as read_file:
                 dict_soc_old[hp] = json.load(read_file)
-            temp = pd.read_json(f"{self.path}/spec_{hp}.json")
-            dict_capacity_wh[hp] = temp['capacity_wh']
-            dict_power_th[hp] = temp['power_th']
+            dict_capacity_wh[hp] = self.plant_dict[hp]['capacity']
+            dict_power_th[hp] = self.plant_dict[hp]['power_th']
             rtc_model.n_tes[hp] = self.plant_dict[hp]["efficiency"]
             rtc_model.q_tes_in[hp].setub(float(dict_power_th[hp]))
             rtc_model.q_tes_out[hp].setub(float(dict_power_th[hp]))
@@ -411,7 +411,7 @@ class Prosumer:
             expression_right = _model.q_load_fix
             expression_left = 0
             for _hp in self._get_list_plants(plant_type="hp"):
-                expression_left += _model.q_tes_in[_hp] - _model.q_tes_out[_hp] + _model.q_hp[_hp]
+                expression_left += _model.q_tes_out[_hp] - _model.q_tes_in[_hp] + _model.q_hp[_hp]
             return expression_left == expression_right
 
         if self._get_list_plants(plant_type="hp"):
@@ -524,6 +524,7 @@ class Prosumer:
             rtc_model = pyo.ConcreteModel()
 
             self.add_p_fix_load(rtc_model)
+
             self.add_q_fix_load(rtc_model)
 
             self.add_c_pv_rtc(rtc_model)
@@ -531,8 +532,11 @@ class Prosumer:
             self.add_c_wind_rtc(rtc_model)
 
             self.add_c_fixedgen_rtc(rtc_model)
+
             self.add_c_hp_rtc(rtc_model)
+
             self.add_c_bat_rtc(rtc_model, df_target_grid_power)
+
             self.add_c_ev_rtc(rtc_model, df_target_grid_power)
 
             self.add_c_balance_rtc(rtc_model, df_target_grid_power)
@@ -660,7 +664,7 @@ class Prosumer:
                                      domain=pyo.NonPositiveReals)
                 model.q_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
                                      range(0, self.config_dict["mpc_horizon"]),
-                                     domain=pyo.NonPositiveReals)
+                                     domain=pyo.NonNegativeReals)
                 model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"),
                                           range(0, self.config_dict["mpc_horizon"]),
                                           domain=pyo.Binary)
@@ -683,9 +687,9 @@ class Prosumer:
                 for hp in self._get_list_plants(plant_type="hp"):
                     hp_param[hp] = pd.read_json(f"{self.path}/spec_{hp}.json")
                     for i in range(self.config_dict["mpc_horizon"]):
-                        model.q_tes_in[hp, i].setub(float(hp_param[hp]["power_th"]))
-                        model.q_tes_out[hp, i].setub(float(hp_param[hp]["power_th"]))
-                        model.soc_tes[hp, i].setub(float(hp_param[hp]["capacity_wh"]))
+                        model.q_tes_in[hp, i].setub(float(self.plant_dict[hp]["power_th"]))
+                        model.q_tes_out[hp, i].setub(float(self.plant_dict[hp]["power_th"]))
+                        model.soc_tes[hp, i].setub(float(self.plant_dict[hp]["capacity"]))
 
             # battery power, absolute components
             if self._get_list_plants(plant_type="bat"):
@@ -899,14 +903,14 @@ class Prosumer:
                 t_in_secondary = self.plant_dict[hp]["temperature"] - 5
                 hp_sim_res = heatpump.simulate(t_in_primary=temp_amb, t_in_secondary=t_in_secondary,
                                                t_amb=temp_amb, mode=1)
-                hp_p = hp_sim_res['P_el']
+                hp_p = -1 * hp_sim_res['P_el']
                 hp_cop = hp_sim_res['COP']
 
                 for t, t_d in enumerate(range(self.ts_delivery_current,
                                               self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
                     # model.con_hp.add(expr=model.p_hp[hp, t] <= hp_p[t] * model.p_hp_milp[hp, t])
-                    model.con_hp.add(expr=model.p_hp[hp, t] >= hp_p[t] * (-1))
-                    model.con_hp.add(expr=model.q_hp[hp, t] == hp_cop[t] * model.p_hp[hp, t])
+                    model.con_hp.add(expr=model.p_hp[hp, t] >= hp_p[t])
+                    model.con_hp.add(expr=model.q_hp[hp, t] == -1 * hp_cop[t] * model.p_hp[hp, t])
 
             # define initial thermal energy storage soc, determined using first term of thermal energy system power and
             # thermal energy system soc in the prev step
@@ -966,10 +970,10 @@ class Prosumer:
             if self._get_list_plants(plant_type="hp"):
                 model.con_heat_balance = pyo.ConstraintList()
                 for _t in range(self.config_dict["mpc_horizon"]):
-                    expression_heat_right = q_load[_t]
-                    expression_heat_left = 0
+                    expression_heat_left = q_load[_t]
+                    expression_heat_right = 0
                     for _hp in self._get_list_plants(plant_type="hp"):
-                        expression_heat_left = model.q_tes_in[_hp, _t] - model.q_tes_out[_hp, _t] + model.q_hp[_hp, _t]
+                        expression_heat_left += model.q_tes_out[_hp, _t] - model.q_tes_in[_hp, _t] + model.q_hp[_hp, _t]
                     model.con_heat_balance.add(expr=(expression_heat_left == expression_heat_right))
 
             # power balance
@@ -1006,7 +1010,7 @@ class Prosumer:
                     # ensure non-degeneracy of the MILP
                     # cannot be used by GLPK as non-linear objectives cannot be solved
                     if self.config_dict["solver"] != "glpk":
-                        step_obj += 5e-10 * _model.p_grid_out[j] * _model.p_grid_out[j]
+                        step_obj += 5e-10 * _model.p_grid_out[j] * _model.p_grid_out[j] # -10 is where its at
                         step_obj += 5e-10 * _model.p_grid_in[j] * _model.p_grid_in[j]
                     # legacy check for electric vehicle constraint violation
                     # for item in self._get_list_plants(plant_type="ev"):
@@ -1014,6 +1018,7 @@ class Prosumer:
                 return step_obj
 
             # Solve model
+            self.mpc_table.to_csv("1.csv")
             model.objective_fun = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
             pyo.SolverFactory(self.config_dict["solver"]).solve(model)
             # Update mpc_table with results of model
@@ -1080,6 +1085,8 @@ class Prosumer:
 
         ft.write_dataframe(self.mpc_table.reset_index().rename(columns={"index": "timestamp"}),
                            f"{self.path}/controller_mpc.ft")
+        ft.write_dataframe(self.mpc_table.reset_index().rename(columns={"index": "timestamp"}),
+                           f"{self.path}/controller_mpc_{self.ts_delivery_current}.ft")
 
     def update_price_history(self, db_obj, market_type="ex_ante"):
         """Calculate price history from market results, save output to price_history.ft

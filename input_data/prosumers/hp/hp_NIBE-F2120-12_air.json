@@ -1,8 +1,0 @@
-{
-  "_comment": "Based on NIBE F2120-12 (12 kW) (read from graph on p. 20)",
-  "ambient_temp": [-25, -15, -7, 2, 7, 15],
-  "cop_w35": [2.15, 2.80, 3.30, 4.10, 4.90, 6.05],
-  "cop_w45": [1.80, 2.30, 2.85, 3.50, 4.05, 4.85],
-  "cop_w55": [1.70, 2.00, 2.30, 2.95, 3.20, 3.95],
-  "link": "https://www.aircon.panasonic.eu/DE_de/ranges/aquarea/high-performance/"
-}
