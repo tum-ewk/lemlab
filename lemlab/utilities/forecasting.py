@@ -42,7 +42,7 @@ class ForecastManager:
 
     """
 
-    def __init__(self, prosumer_obj, tf_import=False):
+    def __init__(self, prosumer_obj):
         """Create instance of ForecastManager.
 
         :param prosumer_obj: the Prosumer object that owns this instance of ForecastManager
@@ -54,10 +54,10 @@ class ForecastManager:
 
         self.fcast_table = None
         for plant in self.plant_dict:
-            if self.plant_dict[plant]["fcast"] in ["nn"]:
+            if self.plant_dict[plant].get("fcast", None) in ["nn"]:
                 import tensorflow as tf
                 self.tf = tf
-            elif self.plant_dict[plant]["fcast"] in ["sarma"]:
+            elif self.plant_dict[plant].get("fcast", None) in ["sarma"]:
                 from scipy.optimize import minimize as sp_minimize
                 self.sp_minimize = sp_minimize
 

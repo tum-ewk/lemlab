@@ -1013,7 +1013,6 @@ def _par_step_prosumers_pre(list_info_prosumers):
     prosumer = Prosumer(path=list_info_prosumers["path_prosumer"],
                         t_override=list_info_prosumers["t_now"],
                         df_weather_history=_par_step_prosumers_pre.df_weather_history,
-                        df_weather_fcast=_par_step_prosumers_pre.df_weather_fcast,
-                        tf_import=True)
+                        df_weather_fcast=_par_step_prosumers_pre.df_weather_fcast)
 
     prosumer.pre_clearing_activity(db_obj=_par_step_prosumers_pre.db_conn)

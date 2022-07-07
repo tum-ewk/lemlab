@@ -44,7 +44,7 @@ class Prosumer:
                                     determining controller setpoints
     """
 
-    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None, tf_import=False):
+    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None):
         """Create a Prosumer instance from a configuration folder created using the Simulation class.
 
         :param path: path to prosumer configuration directory
@@ -69,7 +69,7 @@ class Prosumer:
         self.df_weather_history = df_weather_history
         self.df_weather_fcast = df_weather_fcast
         # only if forecasts are required
-        self.fcast_manager = ForecastManager(self, tf_import)
+        self.fcast_manager = ForecastManager(self)
 
         # initialize instance dataframes to be used in later methods
         # df containing all time series forecasts for MPC and market agents
@@ -1018,7 +1018,6 @@ class Prosumer:
                 return step_obj
 
             # Solve model
-            self.mpc_table.to_csv("1.csv")
             model.objective_fun = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
             pyo.SolverFactory(self.config_dict["solver"]).solve(model)
             # Update mpc_table with results of model
