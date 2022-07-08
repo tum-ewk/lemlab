@@ -8,10 +8,11 @@ import json
 import feather as ft
 import pandas as pd
 import numpy as np
-import pyomo.environ as pyo
+from pyomo import environ as pyo
+from typing import Union
 from random import random
 from lemlab.utilities.forecasting import ForecastManager
-import time
+from bisect import bisect_left
 
 
 class Prosumer:
@@ -29,30 +30,18 @@ class Prosumer:
 
         Public methods:
 
-        __init__ :       Create an instance of the Prosumer class from a configuration folder created using the
-                         Simulation class
+        __init__ :              Create an instance of the Prosumer class from a configuration folder created using the
+                                Scenario_Executor class
+        pre_clearing_activity:  Perform all activities required before market clearing. This includes:
+                                    real time controller execution
+                                    logging of metering values
+                                    forecasting
+                                    predictive control
+                                    market trading
 
-        controller_real_time:      Calculate the behaviour of the instance in the previous time step by applying a
-                            selected controller_real_time strategy to measurement data and plant specifications.
-
-        log_meter_values: Log the result of the controller_real_time method to the database as metering data.
-
-        get_predictions: Return generation prediction for PV plants, consumption predictions for fixed loads, as well
-                         as well as market price predictions.
-
-        controller_model_predictive: Execute the model predictive controller_real_time for the market participant given
-                         the predicted generation, consumption, and market prices for a configurable time horizon.
-
-
-        get_market_positions: Query and return currently matched and unmatched market positions of the market
-                                 participant in question
-
-        set_target_grid_power: Set the target power (to/from grid) for the next controller_real_time execution. Either
-                    MPC result for the Strommunity market design, or market result for double sided market simulations.
-
-        market_agent: Calculate and post/update market positions to the double sided market
-
-        retrain_forecasts: retrains the utilities model
+        post_clearing_activity: Performs all activities required after market clearing, mainly:
+                                    retrieving market results
+                                    determining controller setpoints
     """
 
     def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None):
@@ -65,8 +54,8 @@ class Prosumer:
         # set current timestamp from system clock or keyword arg
         self.t_now = t_override if t_override else pd.Timestamp.now().timestamp()
         # derive previous and next timestamps
-        self.ts_delivery_prev = round(pd.Timestamp(self.t_now, unit="s").floor("15min").timestamp() - 15*60)
-        self.ts_delivery_current = self.ts_delivery_prev + 15*60
+        self.ts_delivery_prev = round(pd.Timestamp(self.t_now, unit="s").floor("15min").timestamp() - 15 * 60)
+        self.ts_delivery_current = self.ts_delivery_prev + 15 * 60
         self.path = path
 
         with open(f"{self.path}/config_account.json", "r") as read_file:
@@ -77,14 +66,10 @@ class Prosumer:
 
         self.meas_val = {"timestamp": self.ts_delivery_prev}
 
+        self.df_weather_history = df_weather_history
+        self.df_weather_fcast = df_weather_fcast
         # only if forecasts are required
-        if df_weather_fcast is not None:
-            self.fcast_manager = ForecastManager(self.path,
-                                                 self.config_dict,
-                                                 self.plant_dict,
-                                                 self.t_now,
-                                                 df_weather_fcast,
-                                                 df_weather_history)
+        self.fcast_manager = ForecastManager(self)
 
         # initialize instance dataframes to be used in later methods
         # df containing all time series forecasts for MPC and market agents
@@ -145,10 +130,37 @@ class Prosumer:
             rtc_model.con_pv = pyo.Constraint(self._get_list_plants(plant_type="pv"),
                                               rule=pv_rule)
 
+    def add_c_wind_rtc(self, rtc_model):
+        # pv variables
+        rtc_model.p_wind = pyo.Var(self._get_list_plants(plant_type="wind"),
+                                   domain=pyo.NonNegativeReals)
+
+        current_wind_speed = float(self.df_weather_history.loc[self.ts_delivery_prev, "wind_speed"])
+
+        # wind maximum power constraint
+        def wind_rule(_model, _plant):
+
+            with open(f"{self.path}/spec_{_plant}.json") as read_file:
+                spec_file = json.load(read_file)
+
+            lookup_wind_speed = spec_file["wind_speed_m/s"]
+            lookup_power = spec_file["power_pu"]
+
+            p_max = self._lookup(current_wind_speed, lookup_wind_speed, lookup_power) * self.plant_dict[_plant]["power"]
+
+            if self.plant_dict[_plant].get("controllable"):
+                return _model.p_wind[_plant] <= p_max
+
+            return _model.p_wind[_plant] == p_max
+
+        if self._get_list_plants(plant_type="wind"):
+            rtc_model.con_wind = pyo.Constraint(self._get_list_plants(plant_type="wind"),
+                                                rule=wind_rule)
+
     def add_c_fixedgen_rtc(self, rtc_model):
         # fixedgen decision variables
         rtc_model.p_fixedgen = pyo.Var(self._get_list_plants(plant_type="fixedgen"),
-                                   domain=pyo.NonNegativeReals)
+                                       domain=pyo.NonNegativeReals)
 
         def fixedgen_rule(_model, _plant):
             p_max = ft.read_dataframe(f"{self.path}/raw_data_{_plant}.ft").set_index("timestamp")
@@ -162,6 +174,83 @@ class Prosumer:
             rtc_model.con_fixedgen = pyo.Constraint(self._get_list_plants(plant_type="fixedgen"),
                                                     rule=fixedgen_rule)
 
+    def add_c_hp_rtc(self, rtc_model):
+        # hp variables
+        rtc_model.p_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                 domain=pyo.NonPositiveReals)
+
+        rtc_model.q_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                 domain=pyo.NonNegativeReals)
+
+        # rtc_model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
+        res_hp_dict = {}
+
+        for _plant in self._get_list_plants(plant_type="hp"):
+            temp_amb = float(self.df_weather_history.loc[self.ts_delivery_prev, "temp"]) - 273.15
+            hp_param = pd.read_json(f"{self.path}/spec_{_plant}.json")
+            heatpump = HeatPump(hp_param)
+            t_in_secondary = self.plant_dict[_plant]["temperature"] - 5
+            hp_sim_res = heatpump.simulate(t_in_primary=temp_amb, t_in_secondary=t_in_secondary,
+                                           t_amb=temp_amb, mode=1)
+            res_hp_dict[_plant] = hp_sim_res
+
+        # hp maximum power constraint
+        def hp_p_rule(_model, _plant):
+            # return _model.p_hp[_plant] == res_hp_dict[_plant]['P_el'] * (-1) * rtc_model.p_hp_milp[_plant]
+            return _model.p_hp[_plant] >= res_hp_dict[_plant]['P_el'] * (-1)
+
+        if self._get_list_plants(plant_type="hp"):
+            rtc_model.con_hp_p = pyo.Constraint(self._get_list_plants(plant_type="hp"),
+                                                rule=hp_p_rule)
+
+        def hp_q_rule(_model, _plant):
+            return _model.q_hp[_plant] == -1 * _model.p_hp[_plant] * res_hp_dict[_plant]['COP']
+
+        if self._get_list_plants(plant_type="hp"):
+            rtc_model.con_hp_q = pyo.Constraint(self._get_list_plants(plant_type="hp"),
+                                                rule=hp_q_rule)
+
+        # constraints for thermal energy storage
+        # tes decision variables
+        rtc_model.q_tes_in = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.NonNegativeReals)
+        rtc_model.q_tes_out = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.NonNegativeReals)
+        rtc_model.q_tes_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
+
+        # else set battery power to zero
+        dict_soc_old = {}
+        dict_capacity_wh = {}
+        dict_power_th = {}
+        rtc_model.n_tes = {}
+
+        for hp in self._get_list_plants(plant_type="hp"):
+            with open(f"{self.path}/soc_{hp}.json", "r") as read_file:
+                dict_soc_old[hp] = json.load(read_file)
+            dict_capacity_wh[hp] = self.plant_dict[hp]['capacity']
+            dict_power_th[hp] = self.plant_dict[hp]['power_th']
+            rtc_model.n_tes[hp] = self.plant_dict[hp]["efficiency"]
+            rtc_model.q_tes_in[hp].setub(float(dict_power_th[hp]))
+            rtc_model.q_tes_out[hp].setub(float(dict_power_th[hp]))
+
+        def tes_soc_rule_1(_model, _hp):
+            return (dict_soc_old[_hp] - 0.25 * _model.q_tes_out[_hp] / _model.n_tes[_hp]
+                    + 0.25 * _model.q_tes_in[_hp] * _model.n_tes[_hp]
+                    <= float(dict_capacity_wh[_hp]))
+
+        def tes_soc_rule_2(_model, _hp):
+            return (dict_soc_old[_hp] - 0.25 * _model.q_tes_out[_hp] / _model.n_tes[_hp]
+                    + 0.25 * _model.q_tes_in[_hp] * _model.n_tes[_hp] >= 0)
+
+        def tes_bin_rule_minus(_model, _hp):
+            return _model.q_tes_in[_hp] <= 100000 * (1 - _model.q_tes_milp[_hp])
+
+        def tes_bin_rule_plus(_model, _hp):
+            return _model.q_tes_out[_hp] <= 100000 * _model.q_tes_milp[_hp]
+
+        rtc_model.tes_soc_1 = pyo.Constraint(self._get_list_plants(plant_type="hp"), rule=tes_soc_rule_1)
+        rtc_model.tes_soc_2 = pyo.Constraint(self._get_list_plants(plant_type="hp"), rule=tes_soc_rule_2)
+        rtc_model.tes_bin_minus = pyo.Constraint(self._get_list_plants(plant_type="hp"), rule=tes_bin_rule_minus)
+        rtc_model.tes_bin_plus = pyo.Constraint(self._get_list_plants(plant_type="hp"), rule=tes_bin_rule_plus)
+
     def add_c_bat_rtc(self, rtc_model, df_target_grid_power):
         if self._get_list_plants(plant_type="bat"):
             # battery decision variables
@@ -169,9 +258,9 @@ class Prosumer:
             rtc_model.p_bat_out = pyo.Var(self._get_list_plants(plant_type="bat"), domain=pyo.NonNegativeReals)
             rtc_model.p_bat_milp = pyo.Var(self._get_list_plants(plant_type="bat"), domain=pyo.Binary)
             rtc_model.deviation_bat_plus = pyo.Var(self._get_list_plants(plant_type="bat"),
-                                               domain=pyo.NonNegativeReals)
+                                                   domain=pyo.NonNegativeReals)
             rtc_model.deviation_bat_minus = pyo.Var(self._get_list_plants(plant_type="bat"),
-                                                domain=pyo.NonNegativeReals)
+                                                    domain=pyo.NonNegativeReals)
 
             # else set battery power to zero
             dict_soc_old = {}
@@ -252,8 +341,8 @@ class Prosumer:
 
                 with open(f"{self.path}/soc_{ev}.json", "r") as read_file:
                     rtc_model.ev_soc_old[ev] = max(0.05 * self.plant_dict[ev]["capacity"],
-                                               json.load(read_file) - raw_data_ev["distance_driven"] / 100
-                                               * self.plant_dict[ev]["consumption"])
+                                                   json.load(read_file) - raw_data_ev["distance_driven"] / 100
+                                                   * self.plant_dict[ev]["consumption"])
 
                 n_ev = self.plant_dict[ev]["efficiency"]
 
@@ -263,31 +352,31 @@ class Prosumer:
                         rtc_model.p_ev_out[ev].setub(self.plant_dict[ev]["charging_power"])
 
                     rtc_model.con_ev_soc.add(expr=rtc_model.ev_soc_old[ev]
-                                              - 0.25 * rtc_model.p_ev_out[ev] / n_ev
-                                              + 0.25 * rtc_model.p_ev_in[ev] * n_ev
-                                              <= self.plant_dict[ev].get("capacity"))
+                                                  - 0.25 * rtc_model.p_ev_out[ev] / n_ev
+                                                  + 0.25 * rtc_model.p_ev_in[ev] * n_ev
+                                                  <= self.plant_dict[ev].get("capacity"))
 
                     rtc_model.con_ev_soc.add(expr=rtc_model.ev_soc_old[ev]
-                                              - 0.25 * rtc_model.p_ev_out[ev] / n_ev
-                                              + 0.25 * rtc_model.p_ev_in[ev] * n_ev
-                                              >= df_target_grid_power[f"soc_min_{ev}"])
+                                                  - 0.25 * rtc_model.p_ev_out[ev] / n_ev
+                                                  + 0.25 * rtc_model.p_ev_in[ev] * n_ev
+                                                  >= df_target_grid_power[f"soc_min_{ev}"])
 
                     rtc_model.con_ev_milp.add(expr=rtc_model.p_ev_out[ev]
-                                               <= 1000000 * rtc_model.p_ev_milp[ev])
+                                                   <= 1000000 * rtc_model.p_ev_milp[ev])
 
                     rtc_model.con_ev_milp.add(expr=rtc_model.p_ev_in[ev]
-                                               <= 1000000 * (1 - rtc_model.p_ev_milp[ev]))
+                                                   <= 1000000 * (1 - rtc_model.p_ev_milp[ev]))
 
                     rtc_model.con_ev_milp.add(expr=rtc_model.deviation_ev_plus[ev]
-                                               <= 1000000 * rtc_model.dev_ev_milp[ev])
+                                                   <= 1000000 * rtc_model.dev_ev_milp[ev])
 
                     rtc_model.con_ev_milp.add(expr=rtc_model.deviation_ev_minus[ev]
-                                               <= 1000000 * (1 - rtc_model.dev_ev_milp[ev]))
+                                                   <= 1000000 * (1 - rtc_model.dev_ev_milp[ev]))
 
                     rtc_model.con_ev_dev.add(expr=rtc_model.p_ev_out[ev] - rtc_model.p_ev_in[ev]
-                                              == df_target_grid_power[f"power_{ev}"]
-                                              - (rtc_model.deviation_ev_plus[ev]
-                                                 - rtc_model.deviation_ev_minus[ev]))
+                                                  == df_target_grid_power[f"power_{ev}"]
+                                                  - (rtc_model.deviation_ev_plus[ev]
+                                                     - rtc_model.deviation_ev_minus[ev]))
 
     def add_p_fix_load(self, rtc_model):
         # fixedgen load consumption, sum of household loads
@@ -299,11 +388,32 @@ class Prosumer:
             p_load += float(p_meas)
         rtc_model.p_load_fix = p_load
 
+    def add_q_fix_load(self, rtc_model):
+        # fixed hosehould thermal load
+        q_load = float(0)
+        for hp in self._get_list_plants(plant_type="hp"):
+            q_meas = ft.read_dataframe(f"{self.path}/raw_data_{hp}.ft")
+            q_meas.set_index("timestamp", inplace=True)
+            q_meas = float(q_meas[q_meas.index == self.ts_delivery_prev]["heat"].values)
+            q_load += float(q_meas)
+        rtc_model.q_load_fix = q_load
+
     def add_c_balance_rtc(self, rtc_model, df_target_grid_power):
 
         # deviation from setpoint (grid fee-in), absolute components
         rtc_model.deviation_gr_plus = pyo.Var(domain=pyo.NonNegativeReals)
         rtc_model.deviation_gr_minus = pyo.Var(domain=pyo.NonNegativeReals)
+
+        # declare heat balancing constraint
+        def balance_heat_rule(_model):
+            expression_right = 0
+            expression_left = _model.q_load_fix
+            for _hp in self._get_list_plants(plant_type="hp"):
+                expression_left += _model.q_tes_out[_hp] - _model.q_tes_in[_hp] + _model.q_hp[_hp]
+            return expression_left == expression_right
+
+        if self._get_list_plants(plant_type="hp"):
+            rtc_model.con_heat_balance = pyo.Constraint(rule=balance_heat_rule)
 
         # declare balancing constraint, same for all controllers
         def balance_rule(_model):
@@ -312,8 +422,12 @@ class Prosumer:
                 expression_left += _model.p_fixedgen[_fixedgen]
             for _pv in self._get_list_plants(plant_type="pv"):
                 expression_left += _model.p_pv[_pv]
+            for _wind in self._get_list_plants(plant_type="wind"):
+                expression_left += _model.p_wind[_wind]
             for _bat in self._get_list_plants(plant_type="bat"):
                 expression_left += _model.p_bat_out[_bat] - _model.p_bat_in[_bat]
+            for _hp in self._get_list_plants(plant_type="hp"):
+                expression_left += _model.p_hp[_hp]
             for _ev in self._get_list_plants(plant_type="ev"):
                 expression_left += _model.p_ev_out[_ev] - _model.p_ev_in[_ev]
             expression_right = float(df_target_grid_power[f"power_{self.config_dict['id_meter_grid']}"])
@@ -346,10 +460,22 @@ class Prosumer:
         for pv in self._get_list_plants(plant_type="pv"):
             self.meas_val[pv] = rtc_model.p_pv[pv].value
             meas_grid += rtc_model.p_pv[pv].value
+        for wind in self._get_list_plants(plant_type="wind"):
+            self.meas_val[wind] = rtc_model.p_wind[wind].value
+            meas_grid += rtc_model.p_wind[wind].value
         for fixedgen in self._get_list_plants(plant_type="fixedgen"):
             self.meas_val[fixedgen] = rtc_model.p_fixedgen[fixedgen].value
             meas_grid += rtc_model.p_fixedgen[fixedgen].value
-
+        for hp in self._get_list_plants(plant_type="hp"):
+            self.meas_val[hp] = rtc_model.p_hp[hp].value
+            meas_grid += rtc_model.p_hp[hp].value
+            with open(f"{self.path}/soc_{hp}.json", "r") as read_file:
+                dict_soc_old = json.load(read_file)
+            tes_soc_new = dict_soc_old \
+                          - 0.25 * rtc_model.q_tes_out[hp].value / self.plant_dict[hp]["efficiency"] \
+                          + 0.25 * rtc_model.q_tes_in[hp].value * self.plant_dict[hp]["efficiency"]
+            with open(f"{self.path}/soc_{hp}.json", "w") as write_file:
+                json.dump(tes_soc_new, write_file)
         for bat in self._get_list_plants(plant_type="bat"):
             self.meas_val[bat] = rtc_model.p_bat_out[bat].value - rtc_model.p_bat_in[bat].value
             meas_grid += rtc_model.p_bat_out[bat].value - rtc_model.p_bat_in[bat].value
@@ -393,15 +519,22 @@ class Prosumer:
                                     ).loc[self.ts_delivery_prev]
             # non-default controllers common model parameters initialized here.
 
-
             rtc_model = pyo.ConcreteModel()
 
             self.add_p_fix_load(rtc_model)
 
+            self.add_q_fix_load(rtc_model)
+
             self.add_c_pv_rtc(rtc_model)
+
+            self.add_c_wind_rtc(rtc_model)
+
             self.add_c_fixedgen_rtc(rtc_model)
 
+            self.add_c_hp_rtc(rtc_model)
+
             self.add_c_bat_rtc(rtc_model, df_target_grid_power)
+
             self.add_c_ev_rtc(rtc_model, df_target_grid_power)
 
             self.add_c_balance_rtc(rtc_model, df_target_grid_power)
@@ -410,6 +543,7 @@ class Prosumer:
 
             # solve model
             pyo.SolverFactory(self.config_dict["solver"]).solve(rtc_model)
+
             self.get_result_rtc(rtc_model)
 
             # assign results to instance variables for logging
@@ -491,6 +625,7 @@ class Prosumer:
 
         :return: None
         """
+
         self.mpc_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
 
         # if no plants, revert to simple rule-based controller
@@ -510,11 +645,50 @@ class Prosumer:
                                      range(0, self.config_dict["mpc_horizon"]),
                                      domain=pyo.NonNegativeReals)
 
+            if self._get_list_plants(plant_type="wind"):
+                model.p_wind = pyo.Var(self._get_list_plants(plant_type="wind"),
+                                       range(0, self.config_dict["mpc_horizon"]),
+                                       domain=pyo.NonNegativeReals)
+
             # fixedgen power variable
             if self._get_list_plants(plant_type="fixedgen"):
                 model.p_fixedgen = pyo.Var(self._get_list_plants(plant_type="fixedgen"),
                                            range(0, self.config_dict["mpc_horizon"]),
                                            domain=pyo.NonNegativeReals)
+
+            # hp variable
+            if self._get_list_plants(plant_type="hp"):
+                model.p_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                     range(0, self.config_dict["mpc_horizon"]),
+                                     domain=pyo.NonPositiveReals)
+                model.q_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                     range(0, self.config_dict["mpc_horizon"]),
+                                     domain=pyo.NonNegativeReals)
+                model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                          range(0, self.config_dict["mpc_horizon"]),
+                                          domain=pyo.Binary)
+
+                # thermal energy system variable, the number is the same as the number of hps
+                model.q_tes_in = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                         range(self.config_dict["mpc_horizon"]),
+                                         domain=pyo.NonNegativeReals)
+                model.q_tes_out = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                          range(self.config_dict["mpc_horizon"]),
+                                          domain=pyo.NonNegativeReals)
+                model.q_tes_milp = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                           range(self.config_dict["mpc_horizon"]),
+                                           domain=pyo.Binary)
+                model.soc_tes = pyo.Var(self._get_list_plants(plant_type="hp"),
+                                        range(self.config_dict["mpc_horizon"]),
+                                        domain=pyo.NonNegativeReals)
+
+                hp_param = {}
+                for hp in self._get_list_plants(plant_type="hp"):
+                    hp_param[hp] = pd.read_json(f"{self.path}/spec_{hp}.json")
+                    for i in range(self.config_dict["mpc_horizon"]):
+                        model.q_tes_in[hp, i].setub(float(self.plant_dict[hp]["power_th"]))
+                        model.q_tes_out[hp, i].setub(float(self.plant_dict[hp]["power_th"]))
+                        model.soc_tes[hp, i].setub(float(self.plant_dict[hp]["capacity"]))
 
             # battery power, absolute components
             if self._get_list_plants(plant_type="bat"):
@@ -584,11 +758,11 @@ class Prosumer:
 
                     # Subtract consumption based on the driven kilometers since last time step (0.25 --> 15 min --> 900 s)
                     soc_potential -= self.plant_dict[ev].get("consumption") \
-                        * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[i] * 1 / 100
+                                     * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[i] * 1 / 100
 
                     # Add charged energy since last time step (0.25 --> 15 min --> 900 s)
                     soc_potential += self.plant_dict[ev].get("charging_power") * 0.25 * n_ev \
-                        * self.mpc_table[f"availability_{ev}"].iloc[i]
+                                     * self.mpc_table[f"availability_{ev}"].iloc[i]
 
                     # Keep charged energy between 5 % and 85 % of maximum capacity
                     soc_potential = max(min(soc_potential, 0.85 * self.plant_dict[ev].get("capacity")),
@@ -599,7 +773,8 @@ class Prosumer:
                     # Action: Add constraint that SoC needs to be at least the potential SoC
                     if (i < self.config_dict["mpc_horizon"] - 1 and self.mpc_table[f"availability_{ev}"].iloc[i] == 1
                         and self.mpc_table[f"availability_{ev}"].iloc[i + 1] == 0) \
-                       or (i == self.config_dict["mpc_horizon"] - 1 and self.mpc_table[f"availability_{ev}"].iloc[i] == 1):
+                        or (i == self.config_dict["mpc_horizon"] - 1
+                            and self.mpc_table[f"availability_{ev}"].iloc[i] == 1):
                         model.con_soc_ev.add(expr=model.soc_ev[ev, i] >= soc_potential) # - model.ev_slack[ev, i])
                         dict_soc_ev_min[ev][i] = soc_potential
 
@@ -621,7 +796,7 @@ class Prosumer:
 
                 # Loop through mpc horizon backwards to calculate minimal SoC the EV must reach in each timestep
                 # hold in order to be charged before departure
-                for i in range(self.config_dict["mpc_horizon"]-1, 0, -1):
+                for i in range(self.config_dict["mpc_horizon"] - 1, 0, -1):
                     if dict_soc_ev_min[ev][i] > 0:
                         dict_soc_ev_min[ev][i - 1] = dict_soc_ev_min[ev][i] - \
                                                      0.25 * self.plant_dict[ev]["charging_power"] * n_ev
@@ -633,32 +808,39 @@ class Prosumer:
             for ev in self._get_list_plants(plant_type="ev"):
                 n_ev = self.plant_dict[ev]["efficiency"]
                 model.con_soc_ev_calc.add(expr=dict_soc_ev_old[ev]
-                                          - 0.25 * model.p_ev_out[ev, 0] / n_ev
-                                          + 0.25 * model.p_ev_in[ev, 0] * n_ev
-                                          - (self.plant_dict[ev].get("consumption")
-                                             * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[0]
-                                             * 1 / 100)
-                                          == model.soc_ev[ev, 0])
+                                               - 0.25 * model.p_ev_out[ev, 0] / n_ev
+                                               + 0.25 * model.p_ev_in[ev, 0] * n_ev
+                                               - (self.plant_dict[ev].get("consumption")
+                                                  * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[0]
+                                                  * 1 / 100)
+                                               == model.soc_ev[ev, 0])
                 for t in range(1, self.config_dict["mpc_horizon"]):
                     model.con_soc_ev_calc.add(expr=model.soc_ev[ev, t - 1]
-                                              - 0.25 * model.p_ev_out[ev, t] / n_ev
-                                              + 0.25 * model.p_ev_in[ev, t] * n_ev
-                                              - (self.plant_dict[ev].get("consumption")
-                                                 * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[t]
-                                                 * 1 / 100)
-                                              == model.soc_ev[ev, t])
+                                                   - 0.25 * model.p_ev_out[ev, t] / n_ev
+                                                   + 0.25 * model.p_ev_in[ev, t] * n_ev
+                                                   - (self.plant_dict[ev].get("consumption")
+                                                      * self.mpc_table[f"distance_driven_adjusted_{ev}"].iloc[t]
+                                                      * 1 / 100)
+                                                   == model.soc_ev[ev, t])
 
             # Add variables for grid powerflow
             model.p_grid_out = pyo.Var(range(self.config_dict["mpc_horizon"]), domain=pyo.NonNegativeReals)
             model.p_grid_in = pyo.Var(range(self.config_dict["mpc_horizon"]), domain=pyo.NonNegativeReals)
             model.p_grid_milp = pyo.Var(range(self.config_dict["mpc_horizon"]), domain=pyo.Binary)
 
-            # fixedgen power, sum of household loads
+            # sum of household electrical loads
             p_load = [0] * self.config_dict["mpc_horizon"]
             for hh in self._get_list_plants(plant_type="hh"):
                 for i, ts_d in enumerate(range(self.ts_delivery_current,
-                                               self.ts_delivery_current + self.config_dict["mpc_horizon"]*900, 900)):
+                                               self.ts_delivery_current + self.config_dict["mpc_horizon"] * 900, 900)):
                     p_load[i] += float(self.mpc_table.loc[ts_d, f"power_{hh}"])
+
+            # sum of household thermal loads
+            q_load = [0] * self.config_dict["mpc_horizon"]
+            for hp in self._get_list_plants(plant_type="hp"):
+                for i, ts_d in enumerate(range(self.ts_delivery_current,
+                                               self.ts_delivery_current + self.config_dict["mpc_horizon"] * 900, 900)):
+                    q_load[i] += float(self.mpc_table.loc[ts_d, f"heat_{hp}"])
 
             model.con_p_bat_bin = pyo.ConstraintList()
             for bat in self._get_list_plants(plant_type="bat"):
@@ -675,34 +857,89 @@ class Prosumer:
             # define pv power upper bound from input file
             model.con_p_pv = pyo.ConstraintList()
             model.sum_pv = [0] * self.config_dict["mpc_horizon"]
-            for pv in self._get_list_plants(plant_type="pv"):
+
+            for plant in self._get_list_plants(plant_type=["pv"]):
                 for t, t_d in enumerate(range(self.ts_delivery_current,
-                                              self.ts_delivery_current + 900*self.config_dict["mpc_horizon"], 900)):
-                    model.sum_pv[t] += self.mpc_table.loc[t_d, f"power_{pv}"]
-                    if self.plant_dict[pv].get("controllable"):
-                        model.con_p_pv.add(expr=model.p_pv[pv, t] <= round(self.mpc_table.loc[t_d, f"power_{pv}"], 1))
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
+                    model.sum_pv[t] += self.mpc_table.loc[t_d, f"power_{plant}"]
+                    if self.plant_dict[plant].get("controllable"):
+                        model.con_p_pv.add(expr=model.p_pv[plant, t] <= round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
                     else:
-                        model.con_p_pv.add(expr=model.p_pv[pv, t] == round(self.mpc_table.loc[t_d, f"power_{pv}"], 1))
+                        model.con_p_pv.add(expr=model.p_pv[plant, t] == round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
+
+            # define wind power upper bound from input file
+            model.con_p_wind = pyo.ConstraintList()
+            model.sum_wind = [0] * self.config_dict["mpc_horizon"]
+
+            for plant in self._get_list_plants(plant_type=["wind"]):
+                for t, t_d in enumerate(range(self.ts_delivery_current,
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
+                    model.sum_wind[t] += self.mpc_table.loc[t_d, f"power_{plant}"]
+                    if self.plant_dict[plant].get("controllable"):
+                        model.con_p_wind.add(expr=model.p_wind[plant, t] <= round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
+                    else:
+                        model.con_p_wind.add(expr=model.p_wind[plant, t] == round(self.mpc_table.loc[t_d, f"power_{plant}"], 1))
 
             # define fixedgen power upper bound from input file
             model.con_p_fixedgen = pyo.ConstraintList()
             model.sum_fixedgen = [0] * self.config_dict["mpc_horizon"]
             for fixedgen in self._get_list_plants(plant_type="fixedgen"):
                 for t, t_d in enumerate(range(self.ts_delivery_current,
-                                              self.ts_delivery_current + 900*self.config_dict["mpc_horizon"], 900)):
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
                     model.sum_fixedgen[t] += self.mpc_table.loc[t_d, f"power_{fixedgen}"]
                     if self.plant_dict[fixedgen].get("controllable"):
                         model.con_p_fixedgen.add(expr=model.p_fixedgen[fixedgen, t]
-                                                 <= self.mpc_table.loc[t_d, f"power_{fixedgen}"])
+                                                      <= self.mpc_table.loc[t_d, f"power_{fixedgen}"])
                     else:
                         model.con_p_fixedgen.add(expr=model.p_fixedgen[fixedgen, t]
-                                                 == self.mpc_table.loc[t_d, f"power_{fixedgen}"])
+                                                      == self.mpc_table.loc[t_d, f"power_{fixedgen}"])
+
+            # define the constraints for heat pump,
+            model.con_hp = pyo.ConstraintList()
+            for hp in self._get_list_plants(plant_type="hp"):
+                temp_amb = self.mpc_table[f"temp_{hp}"].values - 273.15
+                heatpump = HeatPump(hp_param[hp])
+                t_in_secondary = self.plant_dict[hp]["temperature"] - 5
+                hp_sim_res = heatpump.simulate(t_in_primary=temp_amb, t_in_secondary=t_in_secondary,
+                                               t_amb=temp_amb, mode=1)
+                hp_p = -1 * hp_sim_res['P_el']
+                hp_cop = hp_sim_res['COP']
+
+                for t, t_d in enumerate(range(self.ts_delivery_current,
+                                              self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"], 900)):
+                    # model.con_hp.add(expr=model.p_hp[hp, t] <= hp_p[t] * model.p_hp_milp[hp, t])
+                    model.con_hp.add(expr=model.p_hp[hp, t] >= hp_p[t])
+                    model.con_hp.add(expr=model.q_hp[hp, t] == -1 * hp_cop[t] * model.p_hp[hp, t])
+
+            # define initial thermal energy storage soc, determined using first term of thermal energy system power and
+            # thermal energy system soc in the prev step
+            model.con_tes_soc_calc = pyo.ConstraintList()
+            model.con_tes_bin = pyo.ConstraintList()
+
+            for hp in self._get_list_plants(plant_type="hp"):
+                n_tes = self.plant_dict[hp]["efficiency"]
+                with open(f"{self.path}/soc_{hp}.json", "r") as read_file:
+                    soc_tes_init = json.load(read_file)
+                model.con_tes_soc_calc.add(expr=soc_tes_init
+                                                - 0.25 * model.q_tes_out[hp, 0] / n_tes
+                                                + 0.25 * model.q_tes_in[hp, 0] * n_tes
+                                                == model.soc_tes[hp, 0])
+                for t in range(1, self.config_dict["mpc_horizon"]):
+                    model.con_tes_soc_calc.add(expr=model.soc_tes[hp, t - 1]
+                                                    - 0.25 * model.q_tes_out[hp, t] / n_tes
+                                                    + 0.25 * model.q_tes_in[hp, t] * n_tes
+                                                    == model.soc_tes[hp, t])
+
+                #exclusivity for thermal energy system charging
+                for t in range(self.config_dict["mpc_horizon"]):
+                    model.con_tes_bin.add(expr=model.q_tes_in[hp, t] <= 1000000 * (1 - model.q_tes_milp[hp, t]))
+                    model.con_tes_bin.add(expr=model.q_tes_out[hp, t] <= 1000000 * model.q_tes_milp[hp, t])
 
             # limit battery charging to pv generation
             model.con_batt_charge_grid = pyo.ConstraintList()
             for t in range(0, self.config_dict["mpc_horizon"]):
                 expr_left = 0
-                expr_right = model.sum_pv[t]
+                expr_right = model.sum_pv[t] + model.sum_wind[t]
                 make_const = 0
                 for bat in self._get_list_plants(plant_type="bat"):
                     if not self.plant_dict[bat].get("charge_from_grid"):
@@ -719,26 +956,41 @@ class Prosumer:
                 with open(f"{self.path}/soc_{bat}.json", "r") as read_file:
                     soc_bat_init = json.load(read_file)
                 model.con_soc_calc.add(expr=soc_bat_init
-                                       - 0.25 * model.p_bat_out[bat, 0] / n_bat
-                                       + 0.25 * model.p_bat_in[bat, 0] * n_bat
-                                       == model.soc_bat[bat, 0])
+                                            - 0.25 * model.p_bat_out[bat, 0] / n_bat
+                                            + 0.25 * model.p_bat_in[bat, 0] * n_bat
+                                            == model.soc_bat[bat, 0])
                 for t in range(1, self.config_dict["mpc_horizon"]):
                     model.con_soc_calc.add(expr=model.soc_bat[bat, t - 1]
-                                           - 0.25 * model.p_bat_out[bat, t] / n_bat
-                                           + 0.25 * model.p_bat_in[bat, t] * n_bat
-                                           == model.soc_bat[bat, t])
+                                                - 0.25 * model.p_bat_out[bat, t] / n_bat
+                                                + 0.25 * model.p_bat_in[bat, t] * n_bat
+                                                == model.soc_bat[bat, t])
 
+            # heat balance
+            if self._get_list_plants(plant_type="hp"):
+                model.con_heat_balance = pyo.ConstraintList()
+                for _t in range(self.config_dict["mpc_horizon"]):
+                    expression_heat_right = 0
+                    expression_heat_left = q_load[_t]
+                    for _hp in self._get_list_plants(plant_type="hp"):
+                        expression_heat_left += model.q_tes_out[_hp, _t] - model.q_tes_in[_hp, _t] + model.q_hp[_hp, _t]
+                    model.con_heat_balance.add(expr=(expression_heat_left == expression_heat_right))
+
+            # power balance
             model.con_balance = pyo.ConstraintList()
             for _t in range(self.config_dict["mpc_horizon"]):
                 expression_left = p_load[_t]
                 for _pv in self._get_list_plants(plant_type="pv"):
                     expression_left += model.p_pv[_pv, _t]
+                for _wind in self._get_list_plants(plant_type="wind"):
+                    expression_left += model.p_wind[_wind, _t]
                 for _bat in self._get_list_plants(plant_type="bat"):
                     expression_left += model.p_bat_out[_bat, _t] - model.p_bat_in[_bat, _t]
                 for _ev in self._get_list_plants(plant_type="ev"):
                     expression_left += model.p_ev_out[_ev, _t] - model.p_ev_in[_ev, _t]
                 for _fixedgen in self._get_list_plants(plant_type="fixedgen"):
                     expression_left += model.p_fixedgen[_fixedgen, _t]
+                for _hp in self._get_list_plants(plant_type="hp"):
+                    expression_left += model.p_hp[_hp, _t]
                 expression_right = model.p_grid_out[_t] - model.p_grid_in[_t]
                 model.con_balance.add(expr=(expression_left == expression_right))
 
@@ -757,7 +1009,7 @@ class Prosumer:
                     # ensure non-degeneracy of the MILP
                     # cannot be used by GLPK as non-linear objectives cannot be solved
                     if self.config_dict["solver"] != "glpk":
-                        step_obj += 5e-10 * _model.p_grid_out[j] * _model.p_grid_out[j]
+                        step_obj += 5e-10 * _model.p_grid_out[j] * _model.p_grid_out[j] # -10 is where its at
                         step_obj += 5e-10 * _model.p_grid_in[j] * _model.p_grid_in[j]
                     # legacy check for electric vehicle constraint violation
                     # for item in self._get_list_plants(plant_type="ev"):
@@ -767,7 +1019,6 @@ class Prosumer:
             # Solve model
             model.objective_fun = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
             pyo.SolverFactory(self.config_dict["solver"]).solve(model)
-
             # Update mpc_table with results of model
             dict_mpc_table = self.mpc_table.to_dict()
             for i, t_d in enumerate(range(self.ts_delivery_current,
@@ -775,6 +1026,10 @@ class Prosumer:
                 # PV
                 for pv in self._get_list_plants(plant_type="pv"):
                     dict_mpc_table[f"power_{pv}"][t_d] = model.p_pv[pv, i]()
+
+                # Wind
+                for wind in self._get_list_plants(plant_type="wind"):
+                    dict_mpc_table[f"power_{wind}"][t_d] = model.p_wind[wind, i]()
 
                 # Battery
                 for bat in self._get_list_plants(plant_type="bat"):
@@ -785,7 +1040,8 @@ class Prosumer:
                 for ev in self._get_list_plants(plant_type="ev"):
                     dict_mpc_table[f"power_{ev}"][t_d] = model.p_ev_out[ev, i]() - model.p_ev_in[ev, i]()
                     dict_mpc_table[f"soc_{ev}"][t_d] = model.soc_ev[ev, i]()
-                    dict_mpc_table[f"soc_min_{ev}"][t_d] = min(dict_soc_ev_min[ev][i], self.plant_dict[ev].get("capacity"))
+                    dict_mpc_table[f"soc_min_{ev}"][t_d] = min(dict_soc_ev_min[ev][i],
+                                                               self.plant_dict[ev].get("capacity"))
                     # Temporary check for errors in the electric vehicle charging routine
 
                     # if model.ev_slack[ev, i]() >= 10**-6:
@@ -799,6 +1055,11 @@ class Prosumer:
                 for fixedgen in self._get_list_plants(plant_type="fixedgen"):
                     dict_mpc_table[f"power_{fixedgen}"][t_d] = model.p_fixedgen[fixedgen, i]()
 
+                # Heat pump
+                for hp in self._get_list_plants(plant_type="hp"):
+                    dict_mpc_table[f"power_{hp}"][t_d] = model.p_hp[hp, i]()
+                    dict_mpc_table[f"soc_{hp}"][t_d] = model.soc_tes[hp, i]()
+
                 # Grid power
                 dict_mpc_table[f"power_{self.config_dict['id_meter_grid']}"][t_d] \
                     = model.p_grid_out[i]() - model.p_grid_in[i]()
@@ -810,7 +1071,7 @@ class Prosumer:
             p_load = [0] * self.config_dict["mpc_horizon"]
             for hh in self._get_list_plants(plant_type="hh"):
                 for i, ts_d in enumerate(range(self.ts_delivery_current,
-                                               self.ts_delivery_current + self.config_dict["mpc_horizon"]*900, 900)):
+                                               self.ts_delivery_current + self.config_dict["mpc_horizon"] * 900, 900)):
                     p_load[i] += float(self.mpc_table.loc[ts_d, f"power_{hh}"])
             dict_mpc_table = self.mpc_table.to_dict()
             for i, t_d in enumerate(range(self.ts_delivery_current,
@@ -822,6 +1083,8 @@ class Prosumer:
 
         ft.write_dataframe(self.mpc_table.reset_index().rename(columns={"index": "timestamp"}),
                            f"{self.path}/controller_mpc.ft")
+        ft.write_dataframe(self.mpc_table.reset_index().rename(columns={"index": "timestamp"}),
+                           f"{self.path}/controller_mpc_{self.ts_delivery_current}.ft")
 
     def update_price_history(self, db_obj, market_type="ex_ante"):
         """Calculate price history from market results, save output to price_history.ft
@@ -839,8 +1102,8 @@ class Prosumer:
 
         dict_price_history = \
             {"price_energy_balancing_positive":
-                settlement_prices.loc[self.ts_delivery_prev,
-                                      db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE] / euro_kwh_to_sigma_wh,
+                 settlement_prices.loc[self.ts_delivery_prev,
+                                       db_obj.db_param.PRICE_ENERGY_BALANCING_POSITIVE] / euro_kwh_to_sigma_wh,
              "price_energy_balancing_negative":
                  settlement_prices.loc[self.ts_delivery_prev,
                                        db_obj.db_param.PRICE_ENERGY_BALANCING_NEGATIVE] / euro_kwh_to_sigma_wh,
@@ -868,18 +1131,20 @@ class Prosumer:
                                            "total_energy_traded": 0})
             else:
                 total_energy = market_results[db_obj.db_param.QTY_ENERGY_TRADED].sum()
-                total_paid = (market_results[db_obj.db_param.QTY_ENERGY_TRADED] * market_results[db_obj.db_param.PRICE_ENERGY_MARKET_
-                              + db_obj.lem_config["types_pricing_ex_ante"][0]]).sum()
+                total_paid = (market_results[db_obj.db_param.QTY_ENERGY_TRADED] * market_results[
+                    db_obj.db_param.PRICE_ENERGY_MARKET_
+                    + db_obj.lem_config["types_pricing_ex_ante"][0]]).sum()
                 if total_energy != 0:
-                    dict_price_history.update({"weighted_average_price": total_paid/total_energy/euro_kwh_to_sigma_wh,
-                                               "total_energy_traded": total_energy})
+                    dict_price_history.update(
+                        {"weighted_average_price": total_paid / total_energy / euro_kwh_to_sigma_wh,
+                         "total_energy_traded": total_energy})
                 else:
                     dict_price_history.update({"weighted_average_price": self.config_dict["max_bid"],
                                                "total_energy_traded": 0})
             df_price_history.loc[self.ts_delivery_prev] = dict_price_history
         else:
             market_results = db_obj.get_results_market_ex_post(
-                ts_delivery_first=self.ts_delivery_prev - 24*3600,
+                ts_delivery_first=self.ts_delivery_prev - 24 * 3600,
                 ts_delivery_last=self.ts_delivery_prev).set_index("ts_delivery")
 
             if self.config_dict["mpc_price_fcast"] == "flat":
@@ -914,8 +1179,8 @@ class Prosumer:
             self.matched_bids, self.matched_bids_by_timestep = db_obj.get_results_market_ex_ante(
                 id_user=self.config_dict['id_market_agent'],
                 ts_delivery_first=self.ts_delivery_prev,
-                ts_delivery_last=self.ts_delivery_current + self.config_dict["ma_horizon"]*900
-                )
+                ts_delivery_last=self.ts_delivery_current + self.config_dict["ma_horizon"] * 900
+            )
             self.update_price_history(db_obj, market_type="ex_ante")
         else:
             self.matched_bids, self.matched_bids_by_timestep = None, None
@@ -926,10 +1191,10 @@ class Prosumer:
         user_info = db_obj.get_info_user(self.config_dict["id_user"])
 
         self.config_dict["max_bid"] = \
-            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_BID_MAX])\
+            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_BID_MAX]) \
             / db_obj.db_param.EURO_TO_SIGMA * 1000
         self.config_dict["min_offer"] = \
-            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_OFFER_MIN])\
+            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_OFFER_MIN]) \
             / db_obj.db_param.EURO_TO_SIGMA * 1000
         self.config_dict["ma_strategy"] = \
             user_info.loc[0, db_obj.db_param.STRATEGY_MARKET_AGENT]
@@ -961,7 +1226,7 @@ class Prosumer:
             '''When operating in a double-sided electricity market,
                the target grid power is set based on the market results.
                '''
-            df_target_grid_power[f"power_{self.config_dict['id_meter_grid']}"] =\
+            df_target_grid_power[f"power_{self.config_dict['id_meter_grid']}"] = \
                 self.matched_bids_by_timestep["net_bids"] * 4
 
         ft.write_dataframe(df_target_grid_power.reset_index(),
@@ -980,7 +1245,7 @@ class Prosumer:
         df_potential_bids = pd.DataFrame(
             self.mpc_table[(self.ts_delivery_current <= self.mpc_table.index)
                            & (self.mpc_table.index <= self.ts_delivery_current
-                              + 15*60*self.config_dict["ma_horizon"])]
+                              + 15 * 60 * self.config_dict["ma_horizon"])]
             [f"power_{self.config_dict['id_meter_grid']}"]) / 4
 
         df_potential_bids.rename(columns={f"power_{self.config_dict['id_meter_grid']}": "net_bids"}, inplace=True)
@@ -1004,7 +1269,7 @@ class Prosumer:
 
         delta = 0
         gradient = (self.config_dict["max_bid"] - self.config_dict["min_offer"]) / (
-                    self.config_dict["ma_horizon"] - 1)
+                self.config_dict["ma_horizon"] - 1)
 
         for t_s in index_pot_bids:
             """Market logic to be inserted at this point. In order to be posted, bids must be assigned prices"""
@@ -1072,10 +1337,15 @@ class Prosumer:
 
     def _get_list_plants(self, plant_type=None):
         list_plants = []
-        for plant in self.config_dict["list_plants"]:
-            if self.plant_dict[plant].get("type") == plant_type:
-                list_plants.append(plant)
-        if plant_type is None:
+        if type(plant_type) is list:
+            for plant in self.config_dict["list_plants"]:
+                if self.plant_dict[plant].get("type") in plant_type:
+                    list_plants.append(plant)
+        elif type(plant_type) is str:
+            for plant in self.config_dict["list_plants"]:
+                if self.plant_dict[plant].get("type") == plant_type:
+                    list_plants.append(plant)
+        else:
             list_plants = self.config_dict["list_plants"]
         return list_plants
 
@@ -1095,7 +1365,7 @@ class Prosumer:
 
                 rand_late = random() + self.config_dict["meter_prob_late"]
                 if rand_late > 1:
-                    time_late = abs(np.random.normal(0, self.config_dict["meter_prob_late_95"]/2, 1)[0])
+                    time_late = abs(np.random.normal(0, self.config_dict["meter_prob_late_95"] / 2, 1)[0])
                 else:
                     time_late = 0
 
@@ -1141,3 +1411,256 @@ class Prosumer:
         if return_val == "pos":
             return abs(pos_comp)
         return abs(neg_comp)
+
+    @staticmethod
+    def _lookup(x, x_axis, y_axis):
+        """
+        Static internal method:
+        Perform lookup on provided table. Find y-value for desired x-value
+
+        :param x: x-value to look up
+        :param x_axis: x-axis of lookup table
+        :param y_axis: y-value of lookup table
+
+        :return: float, y-value corresponding to x-value input
+        """
+        if x <= x_axis[0]:
+            return y_axis[0]
+        if x >= x_axis[-1]:
+            return y_axis[-1]
+
+        i = bisect_left(x_axis, x)
+        k = (x - x_axis[i - 1]) / (x_axis[i] - x_axis[i - 1])
+        y = k * (y_axis[i] - y_axis[i - 1]) + y_axis[i - 1]
+        return y
+
+
+class HeatPump:
+    """
+    Heat pump model calculating the outputs one of 6 different generic heat pump types.
+    Model source:
+
+    [Group ID]: Count	    Reglulated	On-Off
+    Outdoor Air / Water	      [1] 	     [4]
+    Brine / Water	          [2]	     [5]
+    Water / Water	          [3]	     [6]
+
+    Public methods:
+    --------------
+    __init__ : Create an instance of the HeatPump class from a pre-defined parameter groups to be used for simulation
+    simulate : Performs the simulation of the heat pump model
+
+    """
+
+    def __init__(self, parameters: pd.DataFrame):
+        self.group_id = float(parameters['Group'].array[0])
+        self.p1_p_el_h = float(parameters['p1_P_el_h [1/°C]'].array[0])
+        self.p2_p_el_h = float(parameters['p2_P_el_h [1/°C]'].array[0])
+        self.p3_p_el_h = float(parameters['p3_P_el_h [-]'].array[0])
+        self.p4_p_el_h = float(parameters['p4_P_el_h [1/°C]'].array[0])
+        self.p1_cop = float(parameters['p1_COP [-]'].array[0])
+        self.p2_cop = float(parameters['p2_COP [-]'].array[0])
+        self.p3_cop = float(parameters['p3_COP [-]'].array[0])
+        self.p4_cop = float(parameters['p4_COP [-]'].array[0])
+        self.p_el_ref = float(parameters['P_el_h_ref [W]'].array[0])
+        self.p_th_ref = float(parameters['P_th_h_ref [W]'].array[0])
+        try:
+            self.p1_eer = parameters['p1_EER [-]'].array[0]
+            self.p2_eer = parameters['p2_EER [-]'].array[0]
+            self.p3_eer = parameters['p3_EER [-]'].array[0]
+            self.p4_eer = parameters['p4_EER [-]'].array[0]
+            self.p1_p_el_c = parameters['p1_P_el_c [1/°C]'].array[0]
+            self.p2_p_el_c = parameters['p2_P_el_c [1/°C]'].array[0]
+            self.p3_p_el_c = parameters['p3_P_el_c [-]'].array[0]
+            self.p4_p_el_c = parameters['p4_P_el_c [1/°C]'].array[0]
+            self.p_el_col_ref = parameters['P_el_c_ref [W]'].array[0]
+        except:
+            self.p1_eer = np.nan
+            self.p2_eer = np.nan
+            self.p3_eer = np.nan
+            self.p4_eer = np.nan
+            self.p1_p_el_c = np.nan
+            self.p2_p_el_c = np.nan
+            self.p3_p_el_c = np.nan
+            self.p4_p_el_c = np.nan
+            self.p_el_col_ref = np.nan
+
+        self.delta_t = 5  # Inlet temperature is supposed to be heated up by 5 K
+        self.cp = 4200  # J/(kg*K), specific heat capacity of water
+
+    def simulate(self, t_in_primary: Union[float, np.ndarray], t_in_secondary: Union[float, np.ndarray],
+                 t_amb: Union[float, np.ndarray], mode: int = 1, p_th_min: Union[float, np.ndarray] = 0) -> dict:
+        """
+        Performs the simulation of the heat pump model.
+
+        Parameters
+        ----------
+        t_in_primary : numeric or iterable (e.g. pd.Series)
+            Input temperature on primry side :math:`T` (air, brine, water). [°C]
+        t_in_secondary : numeric or iterable (e.g. pd.Series)
+            Input temperature on secondary side :math:`T` from heating storage or system. [°C]
+        parameters : pd.DataFrame
+            Data frame containing the heat pump parameters from hplib.getParameters().
+        t_amb : numeric or iterable (e.g. pd.Series)
+            Ambient temperature :math:'T' of the air. [°C]
+        mode : int
+            for heating: 1, for cooling: 2
+        P_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input. At maximum electrical input a electrical heating rod turns on.
+
+        Returns
+        -------
+        result : dict
+            with the following columns
+            T_in = Input temperature :math:`T` at primary side of the heat pump. [°C]
+            T_out = Output temperature :math:`T` at secondary side of the heat pump. [°C]
+            T_amb = Ambient / Outdoor temperature :math:`T`. [°C]
+            COP = Coefficient of Performance.
+            EER = Energy Efficiency Ratio.
+            P_el = Electrical input Power. [W]
+            P_th = Thermal output power. [W]
+            m_dot = Mass flow at secondary side of the heat pump. [kg/s]
+        """
+
+        if mode == 2 and self.group_id > 1:
+            raise ValueError('Cooling is only possible with heat pumps of group id = 1.')
+
+        t_in = t_in_primary  # info value for dataframe
+        if mode == 1:
+            t_out = t_in_secondary + self.delta_t  # Inlet temperature is supposed to be heated up by 5 K
+            eer = 0
+        if mode == 2:  # Inlet temperature is supposed to be cooled down by 5 K
+            t_out = t_in_secondary - self.delta_t
+            cop = 0
+        # for subtype = air/water heat pump
+        if self.group_id in (1, 4):
+            t_amb = t_in
+        t_ambient = t_amb
+        # for regulated heat pumps
+        if self.group_id in (1, 2, 3):
+            if mode == 1:
+                cop = self.p1_cop * t_in + self.p2_cop * t_out + self.p3_cop + self.p4_cop * t_amb
+                p_el = self.p_el_ref * (self.p1_p_el_h * t_in
+                                        + self.p2_p_el_h * t_out
+                                        + self.p3_p_el_h
+                                        + self.p4_p_el_h * t_amb)
+                if self.group_id == 1:
+                    if isinstance(t_in, np.ndarray):
+                        t_in = np.full_like(t_in, -7)
+                    else:
+                        t_in = -7
+                    t_amb = t_in
+
+                elif self.group_id == 2:
+                    if isinstance(t_amb, np.ndarray):
+                        t_amb = np.full_like(t_amb, -7)
+                    else:
+                        t_amb = -7
+                p_el_25 = 0.25 * self.p_el_ref * (self.p1_p_el_h * t_in
+                                                  + self.p2_p_el_h * t_out
+                                                  + self.p3_p_el_h
+                                                  + self.p4_p_el_h * t_amb)
+                if isinstance(p_el, np.ndarray):
+                    p_el = np.where(p_el < p_el_25, p_el_25, p_el)
+                elif p_el < p_el_25:
+                    p_el = p_el_25
+
+                p_th = p_el * cop
+
+                if isinstance(cop, np.ndarray):
+                    # turn on heating rod and compressor
+                    p_el = np.where((cop > 1) & (p_th < p_th_min) & (self.p_el_ref < p_th_min / cop),
+                                    self.p_el_ref + self.p_th_ref, p_el)
+                    p_th = np.where((cop > 1) & (p_th < p_th_min) & (self.p_el_ref < p_th_min / cop),
+                                    self.p_el_ref * cop + self.p_th_ref, p_th)
+                    # increase electrical power for compressor
+                    p_el = np.where((cop > 1) & (p_th < p_th_min) & (self.p_el_ref > p_th_min / cop),
+                                    p_th_min / cop, p_el)
+                    p_th = np.where((cop > 1) & (p_th < p_th_min) & (self.p_el_ref > p_th_min / cop), p_th_min,
+                                    p_th)
+                    # only turn on heating rod
+                    p_el = np.where(cop <= 1, self.p_th_ref, p_el)
+                    p_th = np.where(cop <= 1, self.p_th_ref, p_th)
+                    cop = p_th / p_el
+                else:
+                    if cop <= 1:
+                        cop = 1
+                        p_el = self.p_th_ref
+                        p_th = self.p_th_ref
+                    elif p_th < p_th_min:
+                        if self.p_el_ref > p_th_min / cop:
+                            p_el = p_th_min / cop
+                            p_th = p_th_min
+                        else:
+                            p_el = self.p_el_ref + self.p_th_ref
+                            p_th = self.p_el_ref * cop + self.p_th_ref
+                            cop = p_th / p_el
+
+            if mode == 2:
+                eer = (self.p1_eer * t_in + self.p2_eer * t_out + self.p3_eer + self.p4_eer * t_amb)
+                if isinstance(t_in, np.ndarray):
+                    t_in = np.where(t_in < 25, 25, t_in)
+                elif t_in < 25:
+                    t_in = 25
+                t_amb = t_in
+                p_el = (
+                               self.p1_p_el_c * t_in + self.p2_p_el_c * t_out + self.p3_p_el_c + self.p4_p_el_c * t_amb) * self.p_el_col_ref
+                if isinstance(p_el, np.ndarray):
+                    eer = np.where(p_el < 0, 0, eer)
+                    p_el = np.where(p_el < 0, 0, p_el)
+                elif p_el < 0:
+                    eer = 0
+                    p_el = 0
+                p_th = -(eer * p_el)
+                if isinstance(eer, np.ndarray):
+                    p_el = np.where(eer <= 1, 0, p_el)
+                    p_th = np.where(eer <= 1, 0, p_th)
+                    eer = np.where(eer <= 1, 0, eer)
+                elif eer < 1:
+                    eer = 0
+                    p_el = 0
+                    p_th = 0
+
+        # for subtype = On-Off
+        elif self.group_id in (4, 5, 6):
+            p_el = (self.p1_p_el_h * t_in
+                    + self.p2_p_el_h * t_out
+                    + self.p3_p_el_h
+                    + self.p4_p_el_h * t_amb) * self.p_el_ref
+
+            cop = self.p1_cop * t_in + self.p2_cop * t_out + self.p3_cop + self.p4_cop * t_amb
+
+            p_th = p_el * cop
+
+            if isinstance(cop, np.ndarray):
+                p_el = np.where((cop > 1) & (p_th < p_th_min), p_el + self.p_th_ref, p_el)
+                p_th = np.where((cop > 1) & (p_th < p_th_min), p_th + self.p_th_ref, p_th)
+                p_el = np.where(cop <= 1, self.p_th_ref, p_el)
+                p_th = np.where(cop <= 1, self.p_th_ref, p_th)
+                cop = p_th / p_el
+
+            else:
+                if cop <= 1:
+                    cop = 1
+                    p_el = self.p_th_ref
+                    p_th = self.p_th_ref
+                elif p_th < p_th_min:
+                    p_th = p_th + self.p_th_ref
+                    p_el = p_el + self.p_th_ref
+                    cop = p_th / p_el
+
+        # massflow
+        m_dot = abs(p_th / (self.delta_t * self.cp))
+
+        # round
+        result = dict()
+
+        result['T_in'] = t_in_primary
+        result['T_out'] = t_out
+        result['T_amb'] = t_ambient
+        result['COP'] = cop
+        result['EER'] = eer
+        result['P_el'] = p_el
+        result['P_th'] = p_th
+        result['m_dot'] = m_dot
+
+        return result

@@ -10,12 +10,13 @@ import os
 import string
 import json
 from random import shuffle, choice, random, randint, choices
+import numpy as np
 from ruamel.yaml import YAML
-from typing import Tuple
+from typing import Tuple, Any, Union
 import pandas as pd
 import feather as ft
 import math
-
+from scipy import optimize
 
 class Scenario:
     """
@@ -370,7 +371,7 @@ class Scenario:
                 "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
                 "ma_bid_max": self.config["retailer"]["price_sell"],
-                "ma_offer_min":self.config["retailer"]["price_buy"],
+                "ma_offer_min": self.config["retailer"]["price_buy"],
                 "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                 "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
             })
@@ -391,7 +392,7 @@ class Scenario:
                     "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                     "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
                     "ma_bid_max": self.config["retailer"]["price_sell"],
-                    "ma_offer_min":self.config["retailer"]["price_buy"],
+                    "ma_offer_min": self.config["retailer"]["price_buy"],
                     "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                     "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
                 })
@@ -672,8 +673,8 @@ class Scenario:
                    "has_submeter": True,
                    "hp_type": choice(self.config["prosumer"]["hp_type"]),
                    "temperature": self.config["prosumer"]["hp_temperature"],
-                   "power": 0,
                    "capacity": choice(self.config["prosumer"]["hp_capacity"]),
+                   "efficiency": self.config["prosumer"]["hp_tes_efficiency"],
                    "fcast": self.config["prosumer"]["hp_fcast"],
                    "fcast_order": [],
                    "fcast_param": [],
@@ -799,15 +800,16 @@ class Scenario:
         # Initialize prosumer's main meter
         self.__init_meter(id_user=account['id_user'], id_meter=account.get('id_meter_grid'),
                           init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
-
+        final_plant_dict = plant_dict
         # Initialize all other meters and create device-dependent files
         for plant_id in list_plant_ids:
             self.__init_meter(id_user=account['id_user'], id_meter=plant_id,
                               init_reading_positive=randint(1, 10000), init_reading_negative=randint(1, 10000))
 
             # Check which types are present and create the corresponding files
-            self.__create_plant_files(plant_type=plant_dict[plant_id].get("type"), account=account,
-                                      plant_id=plant_id, plant_dict=plant_dict)
+            final_plant_dict[plant_id] = self.__create_plant_files(plant_type=plant_dict[plant_id].get("type"),
+                                                                   account=account, plant_id=plant_id,
+                                                                   plant_dict=plant_dict)
 
         # Write final config files to the directory
         # Contains the general account information
@@ -851,23 +853,23 @@ class Scenario:
             None
 
         """
-
         if plant_type == "hh":
-            self.__create_hh_files(**kwargs)
+            plant_config = self.__create_hh_files(**kwargs)
         elif plant_type == "pv":
-            self.__create_pv_files(**kwargs)
+            plant_config = self.__create_pv_files(**kwargs)
         elif plant_type == "bat":
-            self.__create_bat_files(**kwargs)
+            plant_config = self.__create_bat_files(**kwargs)
         elif plant_type == "ev":
-            self.__create_ev_files(**kwargs)
+            plant_config = self.__create_ev_files(**kwargs)
         elif plant_type == "hp":
-            self.__create_hp_files(**kwargs)
+            plant_config = self.__create_hp_files(**kwargs)
         elif plant_type == "wind":
-            self.__create_wind_files(**kwargs)
+            plant_config = self.__create_wind_files(**kwargs)
         elif plant_type == "fixedgen":
-            self.__create_fixedgen_files(**kwargs)
+            plant_config = self.__create_fixedgen_files(**kwargs)
         else:
             raise Warning("Key was found with no associated function.")
+        return plant_config
 
     def __create_hh_files(self, **kwargs) -> None:
         """creates the household files of the respective prosumer
@@ -943,6 +945,8 @@ class Scenario:
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
 
+        return account["list_plant_specs"][0]
+
     def __create_pv_files(self, **kwargs) -> None:
         """creates the PV files of the respective prosumer
 
@@ -967,6 +971,10 @@ class Scenario:
         ft.write_dataframe(df_pv.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_bat_files(self, **kwargs) -> None:
         """creates the battery files of the respective prosumer
@@ -991,6 +999,11 @@ class Scenario:
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
                 as write_file:
             json.dump(soc_init, write_file)
+
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_ev_files(self, **kwargs) -> None:
         """creates the electric vehicle files of the respective prosumer
@@ -1025,6 +1038,7 @@ class Scenario:
         ft.write_dataframe(df_ev.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
+        return plant_dict[plant_id]
 
     def __create_hp_files(self, **kwargs) -> None:
         """creates the heat pump files of the respective prosumer
@@ -1041,6 +1055,8 @@ class Scenario:
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
 
+        #############
+        # in the first step, we identify a dummy heat demand time series as heat pump raw data
         # Find out the annual consumption to identify the correct household heat demand time series
         hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
         annual_consumption = hh_plant["annual_consumption"]
@@ -1049,26 +1065,33 @@ class Scenario:
         filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
+
         # TODO: replace "power" column with "heat" column once it is implemented
         column = "power"
-        df_heat = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp") * (-1)
-        df_heat.rename(columns={column: "heat"}, inplace=True)
-
-        # Update power and storage capacity information based on peak heat demand
-        max_heat = max(abs(df_heat["heat"]))
-        hp_power = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)
-        hp_idx = next(idx for idx, plant in enumerate(account["list_plant_specs"]) if plant["type"] == "hp")
-        account["list_plant_specs"][hp_idx]["power"] = hp_power
-        account["list_plant_specs"][hp_idx]["capacity"] *= hp_power
-
-        # Calculate absolute initial battery SoC in Wh
-        soc_init = account["list_plant_specs"][hp_idx]["capacity"] * self.config["prosumer"]["hp_soc_init"]
+        df_hp = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp")*(-1)
+        df_hp.rename(columns={column: "heat"}, inplace=True)
 
         # Write heat demand time series to prosumer specifications directory
-        ft.write_dataframe(df_heat.reset_index(),
+        ft.write_dataframe(df_hp.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
+        ########
+        # heat pump max thermal power and storage capacity are dimensioned according to the peak heat load
+        # Update power and storage capacity information based on peak heat demand
+        max_heat = max(abs(df_hp["heat"]))
+        hp_power_th = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)  # unit in W
+        hp_capacity = choice(self.config["prosumer"]["hp_capacity"])
+        hp_capacity_wh = hp_power_th * hp_capacity
 
+        # read hp electric power from spec dict
+        ix = account["list_plants"].index(plant_id)
+        hp_plant = account["list_plant_specs"][ix]
+        # set thermal power and storage capacity
+        hp_plant["capacity"] = hp_capacity_wh
+        hp_plant['power_th'] = hp_power_th
+
+        # set and save initial SoC of thermal storage
+        soc_init = hp_capacity_wh * self.config["prosumer"]["hp_soc_init"]
         # Write SoC to prosumer specifications directory
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
                 as write_file:
@@ -1076,13 +1099,450 @@ class Scenario:
 
         # Read random heat pump file that fits the heat pump type from input data directory and copy to
         # prosumer specifications directory
-        hp_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hp")
-        input_files = [file for file in os.listdir(f'{self.path_input_data}/prosumers/hp/')
-                       if os.path.isfile(os.path.join(f'{self.path_input_data}/prosumers/hp/', file))
-                       and file.split("_")[-1].split(".")[0] == hp_plant["hp_type"]]
-        filename_hp = choice(input_files)
-        shutil.copyfile(f"{self.path_input_data}/prosumers/hp/{filename_hp}",
-                        f"{self.path_scenario}/prosumer/{account['id_user']}/hp_{plant_id}.json")
+        hp_type = hp_plant["hp_type"]
+        hp_t_out = self.config["prosumer"]["hp_temperature"]
+        hp_dataset = pd.read_csv(f'{self.path_input_data}/prosumers/hp/hp_database.csv')
+        hp_param_generic = hp_dataset.loc[(hp_dataset['Model'] == 'Generic') & (hp_dataset['Type'] == hp_type) &
+                                          (hp_dataset['Subtype'] == 'On-Off')]  # generic fitting parameter
+        df_hp_param = self.__get_hp_parameters(model='Generic', group_id=int(hp_param_generic["Group"].values),
+                                               t_in=0, t_out=hp_t_out, p_th=hp_power_th)  # specific fitting parameter
+
+        df_hp_param.to_json(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json", orient="records")
+
+        shutil.move(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json",
+                    f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
+        return hp_plant
+
+    def __get_hp_parameters(self, model: str, group_id: int = 0, t_in: int = 0, t_out: int = 0, p_th: int = 0,) \
+                            -> pd.DataFrame:
+        """
+            Loads the content of the database for a specific heat pump model
+            and returns a pandas ``DataFrame`` containing the heat pump parameters.
+            Parameters
+            ----------
+            model : str
+                Name of the heat pump model or "Generic".
+            group_id : numeric, default 0
+                only for model "Generic": Group ID for subtype of heat pump. [1-6].
+            t_in : numeric, default 0
+                only for model "Generic": Input temperature :math:`T` at primary side of the heat pump. [°C]
+            t_out : numeric, default 0
+                only for model "Generic": Output temperature :math:`T` at secondary side of the heat pump. [°C]
+            p_th : numeric, default 0
+                only for model "Generic": Thermal output power at setpoint t_in, t_out (and for
+                water/water, brine/water heat pumps t_amb = -7°C). [W]
+            Returns
+            -------
+            parameters : pd.DataFrame
+                Data frame containing the model parameters.
+            """
+        df = pd.read_csv(f'{self.path_input_data}/prosumers/hp/hp_database.csv', delimiter=',')
+        df = df.loc[df['Model'] == model]
+        parameters = pd.DataFrame()
+        parameters['Manufacturer'] = (df['Manufacturer'].values.tolist())
+        parameters['Model'] = (df['Model'].values.tolist())
+        try:
+            parameters['MAPE_COP'] = df['MAPE_COP'].values.tolist()
+            parameters['MAPE_P_el'] = df['MAPE_P_el'].values.tolist()
+            parameters['MAPE_P_th'] = df['MAPE_P_th'].values.tolist()
+        except:
+            pass
+        parameters['P_th_h_ref [W]'] = (df['P_th_h_ref [W]'].values.tolist())
+        parameters['P_el_h_ref [W]'] = (df['P_el_h_ref [W]'].values.tolist())
+        parameters['COP_ref'] = (df['COP_ref'].values.tolist())
+        parameters['Group'] = (df['Group'].values.tolist())
+        parameters['p1_P_th [1/°C]'] = (df['p1_P_th [1/°C]'].values.tolist())
+        parameters['p2_P_th [1/°C]'] = (df['p2_P_th [1/°C]'].values.tolist())
+        parameters['p3_P_th [-]'] = (df['p3_P_th [-]'].values.tolist())
+        parameters['p4_P_th [1/°C]'] = (df['p4_P_th [1/°C]'].values.tolist())
+        parameters['p1_P_el_h [1/°C]'] = (df['p1_P_el_h [1/°C]'].values.tolist())
+        parameters['p2_P_el_h [1/°C]'] = (df['p2_P_el_h [1/°C]'].values.tolist())
+        parameters['p3_P_el_h [-]'] = (df['p3_P_el_h [-]'].values.tolist())
+        parameters['p4_P_el_h [1/°C]'] = (df['p4_P_el_h [1/°C]'].values.tolist())
+        parameters['p1_COP [-]'] = (df['p1_COP [-]'].values.tolist())
+        parameters['p2_COP [-]'] = (df['p2_COP [-]'].values.tolist())
+        parameters['p3_COP [-]'] = (df['p3_COP [-]'].values.tolist())
+        parameters['p4_COP [-]'] = (df['p4_COP [-]'].values.tolist())
+        try:
+            parameters['P_th_c_ref [W]'] = (df['P_th_c_ref [W]'].values.tolist())
+            parameters['P_el_c_ref [W]'] = (df['P_el_c_ref [W]'].values.tolist())
+            parameters['p1_Pdc [1/°C]'] = (df['p1_Pdc [1/°C]'].values.tolist())
+            parameters['p2_Pdc [1/°C]'] = (df['p2_Pdc [1/°C]'].values.tolist())
+            parameters['p3_Pdc [-]'] = (df['p3_Pdc [-]'].values.tolist())
+            parameters['p4_Pdc [1/°C]'] = (df['p4_Pdc [1/°C]'].values.tolist())
+            parameters['p1_P_el_c [1/°C]'] = (df['p1_P_el_c [1/°C]'].values.tolist())
+            parameters['p2_P_el_c [1/°C]'] = (df['p2_P_el_c [1/°C]'].values.tolist())
+            parameters['p3_P_el_c [-]'] = (df['p3_P_el_c [-]'].values.tolist())
+            parameters['p4_P_el_c [1/°C]'] = (df['p4_P_el_c [1/°C]'].values.tolist())
+            parameters['p1_EER [-]'] = (df['p1_EER [-]'].values.tolist())
+            parameters['p2_EER [-]'] = (df['p2_EER [-]'].values.tolist())
+            parameters['p3_EER [-]'] = (df['p3_EER [-]'].values.tolist())
+            parameters['p4_EER [-]'] = (df['p4_EER [-]'].values.tolist())
+        except:
+            pass
+
+        if model == 'Generic':
+            parameters = parameters.iloc[group_id - 1:group_id]
+
+            def simulate(t_in_primary: Union[float, np.ndarray], t_in_secondary: Union[float, np.ndarray], parameters,
+                         t_amb: Union[float, np.ndarray], mode: int = 1,
+                         p_th_min: Union[float, np.ndarray] = 0) -> dict:
+                """
+                Performs the simulation of the heat pump model.
+                Parameters
+                ----------
+                t_in_primary : numeric or iterable (e.g. pd.Series)
+                    Input temperature on primry side :math:`T` (air, brine, water). [°C]
+                t_in_secondary : numeric or iterable (e.g. pd.Series)
+                    Input temperature on secondary side :math:`T` from heating storage or system. [°C]
+                parameters : pd.DataFrame
+                    Data frame containing the heat pump parameters from hplib.getParameters().
+                t_amb : numeric or iterable (e.g. pd.Series)
+                    Ambient temperature :math:'T' of the air. [°C]
+                mode : int
+                    for heating: 1, for cooling: 2
+                P_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input.
+                At maximum electrical input a electrical heating rod turns on.
+                Returns
+                -------
+                df : pd.DataFrame
+                    with the following columns
+                    T_in = Input temperature :math:`T` at primary side of the heat pump. [°C]
+                    T_out = Output temperature :math:`T` at secondary side of the heat pump. [°C]
+                    T_amb = Ambient / Outdoor temperature :math:`T`. [°C]
+                    COP = Coefficient of Performance.
+                    EER = Energy Efficiency Ratio.
+                    P_el = Electrical input Power. [W]
+                    P_th = Thermal output power. [W]
+                    m_dot = Mass flow at secondary side of the heat pump. [kg/s]
+                """
+
+                delta_t = 5  # Inlet temperature is supposed to be heated up by 5 K
+                cp = 4200  # J/(kg*K), specific heat capacity of water
+                group_id = parameters['Group'].array[0]
+                p1_p_el_h = parameters['p1_P_el_h [1/°C]'].array[0]
+                p2_p_el_h = parameters['p2_P_el_h [1/°C]'].array[0]
+                p3_p_el_h = parameters['p3_P_el_h [-]'].array[0]
+                p4_p_el_h = parameters['p4_P_el_h [1/°C]'].array[0]
+                p1_cop = parameters['p1_COP [-]'].array[0]
+                p2_cop = parameters['p2_COP [-]'].array[0]
+                p3_cop = parameters['p3_COP [-]'].array[0]
+                p4_cop = parameters['p4_COP [-]'].array[0]
+                p_el_ref = parameters['P_el_h_ref [W]'].array[0]
+                p_th_ref = parameters['P_th_h_ref [W]'].array[0]
+                try:
+                    p1_eer = parameters['p1_EER [-]'].array[0]
+                    p2_eer = parameters['p2_EER [-]'].array[0]
+                    p3_eer = parameters['p3_EER [-]'].array[0]
+                    p4_eer = parameters['p4_EER [-]'].array[0]
+                    p1_p_el_c = parameters['p1_P_el_c [1/°C]'].array[0]
+                    p2_p_el_c = parameters['p2_P_el_c [1/°C]'].array[0]
+                    p3_p_el_c = parameters['p3_P_el_c [-]'].array[0]
+                    p4_p_el_c = parameters['p4_P_el_c [1/°C]'].array[0]
+                    p_el_col_ref = parameters['P_el_c_ref [W]'].array[0]
+                except:
+                    p1_eer = np.nan
+                    p2_eer = np.nan
+                    p3_eer = np.nan
+                    p4_eer = np.nan
+                    p1_p_el_c = np.nan
+                    p2_p_el_c = np.nan
+                    p3_p_el_c = np.nan
+                    p4_p_el_c = np.nan
+                    p_el_col_ref = np.nan
+
+                if mode == 2 and group_id > 1:
+                    raise ValueError('Cooling is only possible with heat pumps of group id = 1.')
+
+                t_in = t_in_primary  # info value for dataframe
+                if mode == 1:
+                    t_out = t_in_secondary + delta_t  # Inlet temperature is supposed to be heated up by 5 K
+                    eer = 0
+                if mode == 2:  # Inlet temperature is supposed to be cooled down by 5 K
+                    t_out = t_in_secondary - delta_t
+                    cop = 0
+                # for subtype = air/water heat pump
+                if group_id in (1, 4):
+                    t_amb = t_in
+                t_ambient = t_amb
+                # for regulated heat pumps
+                if group_id in (1, 2, 3):
+                    if mode == 1:
+                        cop = p1_cop * t_in + p2_cop * t_out + p3_cop + p4_cop * t_amb
+                        p_el = p_el_ref * (p1_p_el_h * t_in
+                                           + p2_p_el_h * t_out
+                                           + p3_p_el_h
+                                           + p4_p_el_h * t_amb)
+                        if group_id == 1:
+                            if isinstance(t_in, np.ndarray):
+                                t_in = np.full_like(t_in, -7)
+                            else:
+                                t_in = -7
+                            t_amb = t_in
+
+                        elif group_id == 2:
+                            if isinstance(t_amb, np.ndarray):
+                                t_amb = np.full_like(t_amb, -7)
+                            else:
+                                t_amb = -7
+                        p_el_25 = 0.25 * p_el_ref * (p1_p_el_h * t_in
+                                                     + p2_p_el_h * t_out
+                                                     + p3_p_el_h
+                                                     + p4_p_el_h * t_amb)
+                        if isinstance(p_el, np.ndarray):
+                            p_el = np.where(p_el < p_el_25, p_el_25, p_el)
+                        elif p_el < p_el_25:
+                            p_el = p_el_25
+
+                        p_th = p_el * cop
+
+                        if isinstance(cop, np.ndarray):
+                            # turn on heating rod and compressor
+                            p_el = np.where((cop > 1) & (p_th < p_th_min) & (p_el_ref < p_th_min / cop),
+                                            p_el_ref + p_th_ref, p_el)
+                            p_th = np.where((cop > 1) & (p_th < p_th_min) & (p_el_ref < p_th_min / cop),
+                                            p_el_ref * cop + p_th_ref,
+                                            p_th)
+                            # increase electrical power for compressor
+                            p_el = np.where((cop > 1) & (p_th < p_th_min) & (p_el_ref > p_th_min / cop), p_th_min / cop,
+                                            p_el)
+                            p_th = np.where((cop > 1) & (p_th < p_th_min) & (p_el_ref > p_th_min / cop), p_th_min, p_th)
+                            # only turn on heating rod
+                            p_el = np.where(cop <= 1, p_th_ref, p_el)
+                            p_th = np.where(cop <= 1, p_th_ref, p_th)
+                            cop = p_th / p_el
+                        else:
+                            if cop <= 1:
+                                cop = 1
+                                p_el = p_th_ref
+                                p_th = p_th_ref
+                            elif p_th < p_th_min:
+                                if p_el_ref > p_th_min / cop:
+                                    p_el = p_th_min / cop
+                                    p_th = p_th_min
+                                else:
+                                    p_el = p_el_ref + p_th_ref
+                                    p_th = p_el_ref * cop + p_th_ref
+                                    cop = p_th / p_el
+
+                    if mode == 2:
+                        eer = (p1_eer * t_in + p2_eer * t_out + p3_eer + p4_eer * t_amb)
+                        if isinstance(t_in, np.ndarray):
+                            t_in = np.where(t_in < 25, 25, t_in)
+                        elif t_in < 25:
+                            t_in = 25
+                        t_amb = t_in
+                        p_el = (p1_p_el_c * t_in + p2_p_el_c * t_out + p3_p_el_c + p4_p_el_c * t_amb) * p_el_col_ref
+                        if isinstance(p_el, np.ndarray):
+                            eer = np.where(p_el < 0, 0, eer)
+                            p_el = np.where(p_el < 0, 0, p_el)
+                        elif p_el < 0:
+                            eer = 0
+                            p_el = 0
+                        p_th = -(eer * p_el)
+                        if isinstance(eer, np.ndarray):
+                            p_el = np.where(eer <= 1, 0, p_el)
+                            p_th = np.where(eer <= 1, 0, p_th)
+                            eer = np.where(eer <= 1, 0, eer)
+                        elif eer < 1:
+                            eer = 0
+                            p_el = 0
+                            p_th = 0
+
+                # for subtype = On-Off
+                elif group_id in (4, 5, 6):
+                    p_el = (p1_p_el_h * t_in
+                            + p2_p_el_h * t_out
+                            + p3_p_el_h
+                            + p4_p_el_h * t_amb) * p_el_ref
+
+                    cop = p1_cop * t_in + p2_cop * t_out + p3_cop + p4_cop * t_amb
+
+                    p_th = p_el * cop
+
+                    if isinstance(cop, np.ndarray):
+                        p_el = np.where((cop > 1) & (p_th < p_th_min), p_el + p_th_ref, p_el)
+                        p_th = np.where((cop > 1) & (p_th < p_th_min), p_th + p_th_ref, p_th)
+                        p_el = np.where(cop <= 1, p_th_ref, p_el)
+                        p_th = np.where(cop <= 1, p_th_ref, p_th)
+                        cop = p_th / p_el
+
+                    else:
+                        if cop <= 1:
+                            cop = 1
+                            p_el = p_th_ref
+                            p_th = p_th_ref
+                        elif p_th < p_th_min:
+                            p_th = p_th + p_th_ref
+                            p_el = p_el + p_th_ref
+                            cop = p_th / p_el
+
+                # massflow
+                m_dot = abs(p_th / (delta_t * cp))
+
+                # round
+                result = pd.DataFrame()
+
+                result['T_in'] = [t_in_primary]
+                result['T_out'] = [t_out]
+                result['T_amb'] = [t_ambient]
+                result['COP'] = [cop]
+                result['EER'] = [eer]
+                result['P_el'] = [p_el]
+                result['P_th'] = [p_th]
+                result['m_dot'] = [m_dot]
+                return result
+
+            def get_parameters_fit(model: str, group_id: int = 0, p_th: int = 0) -> pd.DataFrame:
+                """
+                Helper function for leastsquare fit of thermal output power at reference set point.
+                Parameters
+                ----------
+                model : str
+                    Name of the heat pump model.
+                group_id : numeric, default 0
+                    Group ID for a parameter set which represents an average heat pump of its group.
+                p_th : numeric, default 0
+                    Thermal output power. [W]
+                Returns
+                -------
+                parameters : pd.DataFrame
+                    Data frame containing the model parameters.
+                """
+                df = pd.read_csv(f'{self.path_input_data}/prosumers/hp/hp_database.csv', delimiter=',')
+                df = df.loc[df['Model'] == model]
+                parameters = pd.DataFrame()
+
+                parameters['Model'] = (df['Model'].values.tolist())
+                parameters['P_th_h_ref [W]'] = (df['P_th_h_ref [W]'].values.tolist())
+                parameters['P_el_h_ref [W]'] = (df['P_el_h_ref [W]'].values.tolist())
+                parameters['COP_ref'] = (df['COP_ref'].values.tolist())
+                parameters['Group'] = (df['Group'].values.tolist())
+                parameters['p1_P_th [1/°C]'] = (df['p1_P_th [1/°C]'].values.tolist())
+                parameters['p2_P_th [1/°C]'] = (df['p2_P_th [1/°C]'].values.tolist())
+                parameters['p3_P_th [-]'] = (df['p3_P_th [-]'].values.tolist())
+                parameters['p4_P_th [1/°C]'] = (df['p4_P_th [1/°C]'].values.tolist())
+                parameters['p1_P_el_h [1/°C]'] = (df['p1_P_el_h [1/°C]'].values.tolist())
+                parameters['p2_P_el_h [1/°C]'] = (df['p2_P_el_h [1/°C]'].values.tolist())
+                parameters['p3_P_el_h [-]'] = (df['p3_P_el_h [-]'].values.tolist())
+                parameters['p4_P_el_h [1/°C]'] = (df['p4_P_el_h [1/°C]'].values.tolist())
+                parameters['p1_COP [-]'] = (df['p1_COP [-]'].values.tolist())
+                parameters['p2_COP [-]'] = (df['p2_COP [-]'].values.tolist())
+                parameters['p3_COP [-]'] = (df['p3_COP [-]'].values.tolist())
+                parameters['p4_COP [-]'] = (df['p4_COP [-]'].values.tolist())
+
+                if model == 'Generic':
+                    parameters = parameters.iloc[group_id - 1:group_id]
+                    parameters.loc[:, 'P_th_h_ref [W]'] = p_th
+                    t_in_hp = [-7, 0, 10]  # air/water, brine/water, water/water
+                    t_out_fix = 52
+                    t_amb_fix = -7
+                    p1_cop = parameters['p1_COP [-]'].array[0]
+                    p2_cop = parameters['p2_COP [-]'].array[0]
+                    p3_cop = parameters['p3_COP [-]'].array[0]
+                    p4_cop = parameters['p4_COP [-]'].array[0]
+                    if group_id == 1 or group_id == 4:
+                        t_in_fix = t_in_hp[0]
+                    if group_id == 2 or group_id == 5:
+                        t_in_fix = t_in_hp[1]
+                    if group_id == 3 or group_id == 6:
+                        t_in_fix = t_in_hp[2]
+                    cop_ref = p1_cop * t_in_fix + p2_cop * t_out_fix + p3_cop + p4_cop * t_amb_fix
+                    p_el_ref = p_th / cop_ref
+                    parameters.loc[:, 'P_el_h_ref [W]'] = p_el_ref
+                    parameters.loc[:, 'COP_ref'] = cop_ref
+                return parameters
+
+            def fit_func_p_th_ref(p_th: int, t_in: int, t_out: int, group_id: int, p_th_set_point: int) -> int:
+                """
+                Helper function to determine difference between given and calculated
+                thermal output power in [W].
+                Parameters
+                ----------
+                p_th : numeric
+                    Thermal output power. [W]
+                t_in : numeric
+                    Input temperature :math:`T` at primary side of the heat pump. [°C]
+                t_out : numeric
+                    Output temperature :math:`T` at secondary side of the heat pump. [°C]
+                group_id : numeric
+                    Group ID for a parameter set which represents an average heat pump of its group.
+                p_th_set_point : numeric
+                    Thermal output power. [W]
+                Returns
+                -------
+                p_th_diff : numeric
+                    Thermal output power. [W]
+                """
+                if group_id == 1 or group_id == 4:
+                    t_amb = t_in
+                else:
+                    t_amb = -7
+                parameters = get_parameters_fit(model='Generic', group_id=group_id, p_th=p_th)
+                df = simulate(t_in, t_out - 5, parameters, t_amb)
+                p_th_calc = df.P_th.values[0]
+                p_th_diff = p_th_calc - p_th_set_point
+                return p_th_diff
+
+            def fit_p_th_ref(t_in: int, t_out: int, group_id: int, p_th_set_point: int) -> Any:
+                """
+                Determine the thermal output power in [W] at reference conditions (T_in = [-7, 0, 10] ,
+                T_out=52, T_amb=-7) for a given set point for a generic heat pump, using a least-square method.
+                Parameters
+                ----------
+                t_in : numeric
+                    Input temperature :math:`T` at primary side of the heat pump. [°C]
+                t_out : numeric
+                    Output temperature :math:`T` at secondary side of the heat pump. [°C]
+                group_id : numeric
+                    Group ID for a parameter set which represents an average heat pump of its group.
+                p_th_set_point : numeric
+                    Thermal output power. [W]
+                Returns
+                -------
+                p_th : Any
+                    Thermal output power. [W]
+                """
+                P_0 = [1000]  # starting values
+                a = (t_in, t_out, group_id, p_th_set_point)
+                p_th, _ = optimize.leastsq(fit_func_p_th_ref, P_0, args=a)
+                return p_th
+
+            p_th_ref = fit_p_th_ref(t_in, t_out, group_id, p_th)  # may be simplified
+            parameters.loc[:, 'P_th_h_ref [W]'] = p_th_ref
+            t_in_hp = [-7, 0, 10]  # air/water, brine/water, water/water
+            t_out_fix = 52
+            t_amb_fix = -7
+            p1_cop = parameters['p1_COP [-]'].array[0]
+            p2_cop = parameters['p2_COP [-]'].array[0]
+            p3_cop = parameters['p3_COP [-]'].array[0]
+            p4_cop = parameters['p4_COP [-]'].array[0]
+            if (p1_cop * t_in + p2_cop * t_out + p3_cop + p4_cop * t_amb_fix) <= 1.0:
+                raise ValueError('COP too low! Increase t_in or decrease t_out.')
+            if group_id == 1 or group_id == 4:
+                t_in_fix = t_in_hp[0]
+            if group_id == 2 or group_id == 5:
+                t_in_fix = t_in_hp[1]
+            if group_id == 3 or group_id == 6:
+                t_in_fix = t_in_hp[2]
+            cop_ref = p1_cop * t_in_fix + p2_cop * t_out_fix + p3_cop + p4_cop * t_amb_fix
+            p_el_ref = p_th_ref / cop_ref
+            parameters.loc[:, 'P_el_h_ref [W]'] = p_el_ref
+            parameters.loc[:, 'COP_ref'] = cop_ref
+            if group_id == 1:
+                try:
+                    p1_eer = parameters['p1_EER [-]'].array[0]
+                    p2_eer = parameters['p2_EER [-]'].array[0]
+                    p3_eer = parameters['p3_EER [-]'].array[0]
+                    p4_eer = parameters['p4_EER [-]'].array[0]
+                    eer_ref = p1_eer * 35 + p2_eer * 7 + p3_eer + p4_eer * 35
+                    parameters.loc[:, 'P_th_c_ref [W]'] = p_el_ref * 0.6852 * eer_ref
+                    parameters[
+                        'P_el_c_ref [W]'] = p_el_ref * 0.6852  # average value from real Heatpumps (P_el35/7 to P_el-7/52)
+                    parameters.loc[:, 'EER_ref'] = eer_ref
+                except:
+                    pass
+        return parameters
 
     def __create_wind_files(self, **kwargs) -> None:
         """creates the wind files of the respective prosumer
@@ -1098,15 +1558,20 @@ class Scenario:
         # Read necessary keyword arguments
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
-        plant_dict = kwargs["plant_dict"]
+        # plant_dict = kwargs["plant_dict"]
 
         # Read in all wind profiles and select one randomly
         filenames_wind = os.listdir(f'{self.path_input_data}/prosumers/wind/')
         filename_wind = choice(filenames_wind)
 
-        # Copy wind file under plant_id name into prosumer specifications directoryprosumer directory
+        # Copy wind file under plant_id name into prosumer specifications directory
         shutil.copyfile(f"{self.path_input_data}/prosumers/wind/{filename_wind}",
                         f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
+
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_fixedgen_files(self, **kwargs) -> None:
         """creates the fixed generation files of the respective prosumer
@@ -1132,6 +1597,11 @@ class Scenario:
         ft.write_dataframe(df_fixedgen.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}/"
                            f"raw_data_{plant_id}.ft")
+
+        ix = account["list_plants"].index(plant_id)
+        plant_config = account["list_plant_specs"][ix]
+
+        return plant_config
 
     def __create_aggregator(self) -> None:
         """creates the aggregator files if activated
@@ -1492,7 +1962,7 @@ class Scenario:
                 print(f"{category} - {setting}: {config_old[category][setting]} "
                       f"--> {self.config[category][setting]}")
 
-    def __change_prosumer_setting(self, participant_type: str, setting: str, val, val_old, list_prosumers: list = None)\
+    def __change_prosumer_setting(self, participant_type: str, setting: str, val, val_old, list_prosumers: list = None) \
             -> None:
         """edits the provided setting in prosumer for all prosumer provided in list_prosumers
 

@@ -4,6 +4,7 @@ __license__ = ""
 __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
 
+
 import time
 import json
 import string
@@ -17,9 +18,9 @@ import feather as ft
 import numpy as np
 from ruamel.yaml import YAML
 from lemlab.db_connection.db_connection import DatabaseConnection
-from lemlab.agents.prosumer import Prosumer
-from lemlab.agents.aggregator import Aggregator
-from lemlab.agents.retailer import Retailer
+from lemlab.agents import Prosumer
+from lemlab.agents import Aggregator
+from lemlab.agents import Retailer
 import lemlab.lem.clearing_ex_ante as clearing_ex_ante
 import lemlab.lem.settlement as lem_settlement
 import warnings
@@ -581,14 +582,12 @@ class ScenarioExecutor:
             simulation_length = int((ts_delivery_end - ts_delivery_start) / 900 + 1)
             pbar = tqdm(range(simulation_length), total=simulation_length)
 
-            # set up multiprocessing pool for prosumer functionality.
+            # set up multiprocessing pool for prosumer functionality
             # pre-clearing activity is computationally intensive, as it contains utilities and optimization
-
             with mp.Pool(initializer=_par_step_prosumers_init,
                          initargs=(_par_step_prosumers_pre,
                                    self.config,
-                                   path_weather),
-                         processes=1
+                                   path_weather)
                          ) as pool:
                 # main simulation loop, step from ts_delivery start to end
                 while ts_delivery_current <= ts_delivery_end:
@@ -975,6 +974,7 @@ def _par_step_prosumers_init(func, config, path_weather):
                                       lem_config=config["lem"])
     # each multiprocessing worker gets a copy of the weather file for the simulation,
     # as every worker needs to regularly access the same read-only file
+
     df_weather = ft.read_dataframe(path_weather)
     df_weather = df_weather.astype({'ts_delivery_current': 'int', 'ts_delivery_fcast': 'int'})
     df_weather.set_index(["ts_delivery_current", "ts_delivery_fcast"], inplace=True)
@@ -982,16 +982,16 @@ def _par_step_prosumers_init(func, config, path_weather):
     t_first = pd.Timestamp(config["simulation"]["sim_start"],
                            tz=config["simulation"]["sim_start_tz"]).timestamp() - 60
     t_last = t_first + config["simulation"]["sim_length"] * 86400 + 86400
-    t_first_history = t_first - 100*86400
+    t_first_history = t_first - 100 * 86400
 
     # slice weather data into historical data for forecast algorithm training (100 days)
     # as well as perfect forecasting
-    df_weather_history = df_weather.loc[(slice(t_first_history, t_last + 3*86400), slice(None))]
+    df_weather_history = df_weather.loc[(slice(t_first_history, t_last + 3 * 86400), slice(None))]
     df_weather_history = \
         df_weather_history[df_weather_history.index.get_level_values(level=0)
                            == df_weather_history.index.get_level_values(level=1)]
     # slice weather forecasts for required simulation period from full weather file
-    df_weather_fcast = df_weather.loc[(slice(t_first-900, t_last + 1), slice(None))]
+    df_weather_fcast = df_weather.loc[(slice(t_first - 900, t_last + 1), slice(None))]
 
     func.df_weather_history = df_weather_history
     func.df_weather_fcast = df_weather_fcast
