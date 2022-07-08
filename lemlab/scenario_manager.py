@@ -1109,8 +1109,8 @@ class Scenario:
 
         df_hp_param.to_json(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json", orient="records")
 
-        shutil.copyfile(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json",
-                        f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
+        shutil.move(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json",
+                    f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
         return hp_plant
 
     def __get_hp_parameters(self, model: str, group_id: int = 0, t_in: int = 0, t_out: int = 0, p_th: int = 0,) \

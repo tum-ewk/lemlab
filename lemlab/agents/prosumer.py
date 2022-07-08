@@ -182,12 +182,10 @@ class Prosumer:
         rtc_model.q_hp = pyo.Var(self._get_list_plants(plant_type="hp"),
                                  domain=pyo.NonNegativeReals)
 
-        rtc_model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
+        # rtc_model.p_hp_milp = pyo.Var(self._get_list_plants(plant_type="hp"), domain=pyo.Binary)
         res_hp_dict = {}
 
         for _plant in self._get_list_plants(plant_type="hp"):
-            # TODO: the ambient temperature should be read from mpc_table, but it is None for the first iteration
-            # temp_amb = self.mpc_table.loc[self.ts_delivery_prev, f"temp_{_plant}"]
             temp_amb = float(self.df_weather_history.loc[self.ts_delivery_prev, "temp"]) - 273.15
             hp_param = pd.read_json(f"{self.path}/spec_{_plant}.json")
             heatpump = HeatPump(hp_param)
@@ -408,8 +406,8 @@ class Prosumer:
 
         # declare heat balancing constraint
         def balance_heat_rule(_model):
-            expression_right = _model.q_load_fix
-            expression_left = 0
+            expression_right = 0
+            expression_left = _model.q_load_fix
             for _hp in self._get_list_plants(plant_type="hp"):
                 expression_left += _model.q_tes_out[_hp] - _model.q_tes_in[_hp] + _model.q_hp[_hp]
             return expression_left == expression_right
@@ -545,6 +543,7 @@ class Prosumer:
 
             # solve model
             pyo.SolverFactory(self.config_dict["solver"]).solve(rtc_model)
+
             self.get_result_rtc(rtc_model)
 
             # assign results to instance variables for logging
@@ -970,8 +969,8 @@ class Prosumer:
             if self._get_list_plants(plant_type="hp"):
                 model.con_heat_balance = pyo.ConstraintList()
                 for _t in range(self.config_dict["mpc_horizon"]):
-                    expression_heat_left = q_load[_t]
                     expression_heat_right = 0
+                    expression_heat_left = q_load[_t]
                     for _hp in self._get_list_plants(plant_type="hp"):
                         expression_heat_left += model.q_tes_out[_hp, _t] - model.q_tes_in[_hp, _t] + model.q_hp[_hp, _t]
                     model.con_heat_balance.add(expr=(expression_heat_left == expression_heat_right))

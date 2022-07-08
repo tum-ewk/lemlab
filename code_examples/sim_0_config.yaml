@@ -384,7 +384,7 @@ prosumer:
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 
-  "mpc_horizon": 96                        # mpc horizon : 1 - 96   -> unit steps (15 min)
+  "mpc_horizon": 180                        # mpc horizon : 1 - 180   -> unit steps (15 min)
 
   ################################ market agent settings ####################################
 
