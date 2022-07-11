@@ -193,7 +193,7 @@ class ForecastManager:
                         # retrieve heat pump temperature forecasts
                         weather_fcast = "weather_perfect" if self.plant_dict[plant].get("fcast") == "perfect" else "weather_fcast"
                         df_temp = self.__update_single_forecast(id_plant=plant,
-                                                                fcast="weather_fcast", column="temp")
+                                                                fcast=weather_fcast, column="temp")
 
                         df_temp.rename(columns={'temp': f'temp_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
@@ -622,7 +622,7 @@ class ForecastManager:
 
         # squared error, objective
         err = [0] * (len(y) + 1)
-        factor_correction = 1
+
         # calculate model residuals for training data
         for t in range(step_start, step_end):
             par_pointer = 0  # pointer used for establishing dynamic order SARIMA equations
@@ -697,6 +697,7 @@ class ForecastManager:
                 target = sum(init)
 
         # execute a gradient search on the model parameters to minimize the RMSE
+
         result = self.sp_minimize(self._sarma_objective,
                                   x0=init,
                                   method="SLSQP",
@@ -769,6 +770,7 @@ class ForecastManager:
         train_data = train_data.shuffle(buffer_size).batch(batch_size)
 
         val_data = self.tf.data.Dataset.from_tensor_slices((x_val, y_val))
+
         val_data = val_data.shuffle(buffer_size).batch(batch_size)
 
         # internal function that slows down learning rate the further training progresses

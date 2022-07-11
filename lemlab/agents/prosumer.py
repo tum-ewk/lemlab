@@ -625,7 +625,6 @@ class Prosumer:
 
         :return: None
         """
-
         self.mpc_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
 
         # if no plants, revert to simple rule-based controller

@@ -226,7 +226,7 @@ prosumer:
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "smoothed"                    # pv production forecasting method
+  "pv_fcast": "perfect"                     # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
@@ -242,7 +242,6 @@ prosumer:
   "pv_quality": "green_local"               # quality that the generated energy should be labelled with on the lem
 
   ################################ small-scale wind settings ####################################
-  ################################ wind power is coming soon
 
   "wind_fraction": 0.2                      # fraction of prosumers with wind power plants
 
@@ -253,7 +252,7 @@ prosumer:
 
   "wind_controllable": true                 # can the wind inverter be controlled? true or false
 
-  "wind_fcast": "weather_perfect"             # wind production forecasting method
+  "wind_fcast": "weather_perfect"           # wind production forecasting method
                                             #   "weather_perfect" - perfect knowledge of future wind speeds
                                             #                       and turbine model
                                             #   "weather_fcast" - weather forecast from file used with
