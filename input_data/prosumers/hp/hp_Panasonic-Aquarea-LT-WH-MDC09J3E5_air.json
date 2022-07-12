@@ -1,7 +1,0 @@
-{
-  "_comment": "Based on Panasonic Aquarea LT WH-MDC09J3E5 (9 kW)",
-  "ambient_temp": [-7, 2, 7],
-  "cop_w35": [2.63, 3.13, 4.48],
-  "cop_w55": [1.80, 2.12, 2.78],
-  "link": "https://www.aircon.panasonic.eu/DE_de/ranges/aquarea/high-performance/"
-}

@@ -12,9 +12,7 @@ import os
 import feather as ft
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 from bisect import bisect_left
-from scipy.optimize import minimize as sp_minimize
 
 # suppress tensorflow warnings because there are always some drivers for some graphics card missing.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # or any {'0', '1', '2', '3'}
@@ -55,6 +53,13 @@ class ForecastManager:
         self.plant_dict = prosumer_obj.plant_dict
 
         self.fcast_table = None
+        for plant in self.plant_dict:
+            if self.plant_dict[plant].get("fcast", None) in ["nn"]:
+                import tensorflow as tf
+                self.tf = tf
+            elif self.plant_dict[plant].get("fcast", None) in ["sarma"]:
+                from scipy.optimize import minimize as sp_minimize
+                self.sp_minimize = sp_minimize
 
         # set current timestamp from system clock or keyword arg
         self.t_now = prosumer_obj.t_now
@@ -99,7 +104,7 @@ class ForecastManager:
                     # works just fine
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        self._train_sarma(id_plant=plant, column = "power")
+                        self._train_sarma(id_plant=plant, column="power")
                         # set plant as retrained if it was actually done
                         self.plant_dict[plant]["fcast_last_retrain"] = self.ts_delivery_current
 
@@ -186,9 +191,13 @@ class ForecastManager:
 
                     elif self.plant_dict[plant].get("type") == "hp":
                         # retrieve heat pump temperature forecasts
-                        df_temp = self.__update_single_forecast(id_plant=plant, fcast="weather_perfect", column="temp")
+                        weather_fcast = "weather_perfect" if self.plant_dict[plant].get("fcast") == "perfect" else "weather_fcast"
+                        df_temp = self.__update_single_forecast(id_plant=plant,
+                                                                fcast=weather_fcast, column="temp")
+
                         df_temp.rename(columns={'temp': f'temp_{plant}'}, inplace=True)
                         self.fcast_table = self.fcast_table.join(df_temp, how="outer", lsuffix=f"duplicate")
+
                         # retrieve heat load forecasts
                         df_temp = self.__update_single_forecast(id_plant=plant, column="heat")
                         df_temp.rename(columns={'heat': f'heat_{plant}'}, inplace=True)
@@ -463,7 +472,7 @@ class ForecastManager:
             # neural network for pv plant
             # load saved neural network model
             path = pathlib.Path(filepath)
-            nn_model = tf.keras.models.load_model(path.parent.joinpath(f"fcast_model_{id_plant}.hdf5"))
+            nn_model = self.tf.keras.models.load_model(path.parent.joinpath(f"fcast_model_{id_plant}.hdf5"))
             # set forecasting timeframe
             ts_d_start = self.ts_delivery_current
             ts_d_end = self.ts_delivery_current + 900 * (1 + self.config_dict["mpc_horizon"]
@@ -649,7 +658,6 @@ class ForecastManager:
         return np.sqrt(np.mean(np.square(err)))
 
     def _train_sarma(self, id_plant, column):
-
         """
         Trains a SARMA model of the given order and the set initial parameters
         and returns the optimized model parameters.
@@ -678,7 +686,7 @@ class ForecastManager:
         y = y[-training_time:]
 
         # generate random starting point for optimization if no initial parameters are supplied
-        init = self.plant_dict[id_plant]["fcast_order"]
+        init = self.plant_dict[id_plant]["fcast_param"]
 
         if init is None:
             target = 3
@@ -689,11 +697,12 @@ class ForecastManager:
                 target = sum(init)
 
         # execute a gradient search on the model parameters to minimize the RMSE
-        result = sp_minimize(self._sarma_objective,
-                             x0=init,
-                             method="SLSQP",
-                             args=(y, order),
-                             tol=1e-4)
+
+        result = self.sp_minimize(self._sarma_objective,
+                                  x0=init,
+                                  method="SLSQP",
+                                  args=(y, order),
+                                  tol=1e-4)
 
         # extract optimal fcast parameters
         optimal_param = []
@@ -756,32 +765,33 @@ class ForecastManager:
         buffer_size = 100
         batch_size = 16
 
-        train_data = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+        train_data = self.tf.data.Dataset.from_tensor_slices((x_train, y_train))
         train_data = train_data.repeat(5)
         train_data = train_data.shuffle(buffer_size).batch(batch_size)
 
-        val_data = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+        val_data = self.tf.data.Dataset.from_tensor_slices((x_val, y_val))
+
         val_data = val_data.shuffle(buffer_size).batch(batch_size)
 
         # internal function that slows down learning rate the further training progresses
         def scheduler(epoch, lr):
             if epoch > 10:
-                return lr * tf.math.exp(-0.1)
+                return lr * self.tf.math.exp(-0.1)
             return lr
 
-        callback_lr = tf.keras.callbacks.LearningRateScheduler(scheduler)
+        callback_lr = self.tf.keras.callbacks.LearningRateScheduler(scheduler)
         # define callback for early training stoppage in case no more progress is made for 10 steps
-        callback_es = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
-                                                       patience=10,
-                                                       restore_best_weights=True)
+        callback_es = self.tf.keras.callbacks.EarlyStopping(monitor='val_loss',
+                                    patience=10,
+                                    restore_best_weights=True)
 
-        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        optimizer = self.tf.keras.optimizers.Adam(learning_rate=0.001)
 
         # define neural network layers
-        model = tf.keras.models.Sequential([
-            tf.keras.layers.Dense(26, activation="relu", input_shape=(len(input_par),)),
-            tf.keras.layers.Dense(10, activation="relu"),
-            tf.keras.layers.Dense(1),
+        model = self.tf.keras.models.Sequential([
+            self.tf.keras.layers.Dense(26, activation="relu", input_shape=(len(input_par),)),
+            self.tf.keras.layers.Dense(10, activation="relu"),
+            self.tf.keras.layers.Dense(1),
         ])
         model.compile(optimizer=optimizer, loss='mse')
         model.fit(train_data, epochs=60, verbose=0, validation_data=val_data,
