@@ -296,6 +296,10 @@ prosumer:
 
   "hp_fraction": 0.2                        # fraction of prosumers with heat pumps
 
+  "hp_sizing_power": 1                      # sizing of hp plant
+                                            # 1 = thermal power of hp equals ceiled max heat demand
+                                            # note: if value <1 without other heating devices, the simulation will crash
+
   "hp_type": ["Outdoor Air/Water",
               "Brine/Water",
               "Water/Water"]                # type of heat pump
@@ -331,8 +335,8 @@ prosumer:
 
   "chp_fraction": 0.2                       # fraction of prosumers with chp
 
-  "chp_sizing_power": 1                     # sizing of chp plant
-                                            # 1 = power of chp equals ceiled max heat demand
+  "chp_sizing_power": 1                     # thermal sizing of chp plant
+                                            # 1 = thermal power of chp equals ceiled max heat demand
                                             # note: if value <1 without other heating devices, the simulation will crash
 
   "chp_heat_elec_ratio": 2                  # ratio of heating to electric power (p_th/p_el)
