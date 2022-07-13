@@ -1114,14 +1114,13 @@ class Scenario:
         # Update power and storage capacity information based on peak heat demand
         max_heat = max(abs(df_chp["heat"]))
         chp_power_th = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)  # in W
-        hp_capacity_wh = chp_power_th * choice(self.config["prosumer"]["hp_capacity"])  # in Wh
 
         # read hp electric power from spec dict
         ix = account["list_plants"].index(plant_id)
         chp_plant = account["list_plant_specs"][ix]
         # set thermal power and storage capacity
-        chp_plant["capacity"] *= chp_power_th
-        chp_plant["power_th"] *= chp_power_th
+        chp_plant["capacity"] *= chp_power_th   # multiplication with the sizing factor set in __gen_chp()
+        chp_plant["power_th"] *= chp_power_th   # multiplication with the sizing factor set in __gen_chp()
 
         # set and save initial SoC of thermal storage
         soc_init = chp_plant["capacity"] * self.config["prosumer"]["chp_soc_init"]
