@@ -5,6 +5,7 @@ __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
 
 import json
+import datetime
 import feather as ft
 import pandas as pd
 import numpy as np
@@ -86,28 +87,31 @@ class Prosumer:
         self.controller_real_time()
         self.log_meter_readings(db_obj=db_obj)
 
-        # set market type currently running:
-        market_type = "ex_ante" if db_obj.lem_config["types_clearing_ex_ante"] else "ex_post"
+        # if the user considers the future in any way, the controller strategy will contain the component "mpc"
+        if "mpc" in self.config_dict["controller_strategy"]:
+            # set market type currently running:
+            market_type = "ex_ante" if db_obj.lem_config["types_clearing_ex_ante"] else "ex_post"
 
-        # get most recent market results, update price history
-        self.get_market_results(market_type=market_type,
-                                db_obj=db_obj)
-
-        # update forecasts for all plants, retrain if necessary
-        self.fcast_manager.update_forecasts()
-
-        # execute model predictive control
-        self.controller_model_predictive()
-
-        # finally then, execute market agent if ex-ante market
-        if db_obj.lem_config["types_clearing_ex_ante"]:
-            self.market_agent(db_obj=db_obj, clear_positions=clear_positions)
+            # get most recent market results, update price history
+            self.get_market_results(market_type=market_type,
+                                    db_obj=db_obj)
+            # update forecasts for all plants, retrain if necessary
+            self.fcast_manager.update_forecasts()
+            # execute model predictive control
+            self.controller_model_predictive()
+            # finally then, execute market agent if ex-ante market
+            if db_obj.lem_config["types_clearing_ex_ante"]:
+                self.market_agent(db_obj=db_obj, clear_positions=clear_positions)
 
     def post_clearing_activity(self, db_obj):
         market_type = "ex_ante" if db_obj.lem_config["types_clearing_ex_ante"] else "ex_post"
-        self.get_market_results(market_type=market_type,
-                                db_obj=db_obj)
-        self.set_target_grid_power(market_type)
+        # if the user
+        if "mpc" in self.config_dict["controller_strategy"]:
+            self.get_market_results(market_type=market_type,
+                                    db_obj=db_obj)
+        # if the user
+        if "mpc" in self.config_dict["controller_strategy"]:
+            self.set_target_grid_power(market_type)
 
     # internal functions
 
@@ -498,22 +502,15 @@ class Prosumer:
 
         self.meas_val[self.config_dict['id_meter_grid']] = int(meas_grid)
 
-    def controller_real_time(self, controller=None):
+    def controller_real_time(self):
         """Calculate the behaviour of the instance in the previous time step by applying a selected
         controller_real_time strategy to measurement data and plant specifications. Output is supplied in the form of a
         .json file saved to the user's folder, so that execution can be parallelized.
 
         :return: None
         """
-        # if no plants, revert to simple rule-based controller
-        if controller is None and len(self._get_list_plants()) - len(self._get_list_plants(plant_type="hh")) == 0:
-            controller = "hh"
-        else:
-            controller = "mpc"
-
-        # default controller_real_time
-        if controller == "mpc":
-            # grid power is merely the sum of pv and the fixedgen consumers. The battery remains unused.
+        # if the MPC and market results are active, they provide setpoints that the real time controller must stick to
+        if self.config_dict["controller_strategy"] == "mpc_opt":
             df_target_grid_power = (ft.read_dataframe(f"{self.path}/target_grid_power.ft")
                                     .pipe(pd.DataFrame.set_index, keys="timestamp")
                                     ).loc[self.ts_delivery_prev]
@@ -544,22 +541,160 @@ class Prosumer:
             # solve model
             pyo.SolverFactory(self.config_dict["solver"]).solve(rtc_model)
 
-            self.get_result_rtc(rtc_model)
-
             # assign results to instance variables for logging
-
-        else:
-            # fixedgen load consumption, sum of household loads
-            p_load = float(0)
+            self.get_result_rtc(rtc_model)
+        # if no forecasting and model predictive control are applied, a simple rule-based control strategy can be run
+        elif "rtc" in self.config_dict["controller_strategy"]:
+            meas_grid = 0
+            # household load is simply logged from raw data
             for hh in self._get_list_plants(plant_type="hh"):
-                p_meas = ft.read_dataframe(f"{self.path}/raw_data_{hh}.ft")
-                p_meas.set_index("timestamp", inplace=True)
-                p_meas = float(p_meas[p_meas.index == self.ts_delivery_prev]["power"].values)
-                self.meas_val[hh] = p_meas
-                p_load += p_meas
-            self.meas_val[self.config_dict['id_meter_grid']] = int(p_load)
+                p_meas = ft.read_dataframe(f"{self.path}/raw_data_{hh}.ft").set_index("timestamp")
+                self.meas_val[hh] = float(p_meas[p_meas.index == self.ts_delivery_prev]["power"].values)
+                meas_grid += self.meas_val[hh]
+            # generators feed in maximum power at all times.
+            for pv in self._get_list_plants(plant_type="pv"):
+                p_max = ft.read_dataframe(f"{self.path}/raw_data_{pv}.ft", columns=["timestamp", "power"]
+                                          ).set_index("timestamp")
+                p_max = p_max.loc[self.ts_delivery_prev, "power"]
+                self.meas_val[pv] = p_max * self.plant_dict[pv]["power"]
+                meas_grid += self.meas_val[pv]
+            for wind in self._get_list_plants(plant_type="wind"):
+                current_wind_speed = float(self.df_weather_history.loc[self.ts_delivery_prev, "wind_speed"])
+                with open(f"{self.path}/spec_{wind}.json") as read_file:
+                    spec_file = json.load(read_file)
+                lookup_wind_speed = spec_file["wind_speed_m/s"]
+                lookup_power = spec_file["power_pu"]
+                self.meas_val[wind] = self._lookup(current_wind_speed, lookup_wind_speed, lookup_power) * \
+                                      self.plant_dict[wind]["power"]
+                meas_grid += self.meas_val[wind]
+            for fixedgen in self._get_list_plants(plant_type="fixedgen"):
+                p_max = ft.read_dataframe(f"{self.path}/raw_data_{fixedgen}.ft", columns=["timestamp", "power"]
+                                          ).set_index("timestamp")
+                p_max = p_max.loc[self.ts_delivery_prev, "power"]
+                self.meas_val[fixedgen] = float(p_max * self.plant_dict[fixedgen]["power"])
+
+                meas_grid += p_max * self.plant_dict[fixedgen]["power"]
+            # the electric vehicle charges at maximum power upon arrival
+            for ev in self._get_list_plants(plant_type="ev"):
+                raw_data_ev = ft.read_dataframe(f"{self.path}/raw_data_{ev}.ft").set_index("timestamp")
+                raw_data_ev = raw_data_ev[raw_data_ev.index == self.ts_delivery_prev]
+                raw_data_ev = dict(raw_data_ev.loc[self.ts_delivery_prev])
+                if raw_data_ev["availability"] == 0:
+                    # soc stays the same, do nothing
+                    # power is 0
+                    self.meas_val[ev] = 0
+                else:
+                    # get old soc
+                    with open(f"{self.path}/soc_{ev}.json", "r") as read_file:
+                        ev_soc_old = max(0.05 * self.plant_dict[ev]["capacity"],
+                                         json.load(read_file) - raw_data_ev["distance_driven"] / 100
+                                         * self.plant_dict[ev]["consumption"])
+                    # fully charge the battery immediately, from old SoC to full
+                    soc_missing = self.plant_dict[ev]["capacity"] - ev_soc_old
+                    power_to_full = soc_missing / self.plant_dict[ev]["efficiency"] / 0.25
+                    # limit charging power to maximum possible power
+                    ev_power = min(power_to_full, self.plant_dict[ev]["charging_power"])
+                    # calculate new soc
+                    ev_soc_new = ev_soc_old + 0.25 * ev_power * self.plant_dict[ev]["efficiency"]
+                    with open(f"{self.path}/soc_{ev}.json", "w") as write_file:
+                        json.dump(ev_soc_new, write_file)
+                    # update measured values
+                    self.meas_val[ev] = ev_power * -1
+                    meas_grid += ev_power * -1
+            # the heat pump allows storage to discharge until empty, then charges the storage until full.
+            # Optionally, the heat pump will always turn on at 13:00 to maximize PV self consumption or to profit
+            # from local feed-in
+            for hp in self._get_list_plants(plant_type="hp"):
+                # calculate cop and electric power limit
+                temp_amb = float(self.df_weather_history.loc[self.ts_delivery_prev, "temp"]) - 273.15
+                hp_param = pd.read_json(f"{self.path}/spec_{hp}.json")
+                heatpump = HeatPump(hp_param)
+                t_in_secondary = self.plant_dict[hp]["temperature"] - 5
+                hp_sim_res = heatpump.simulate(t_in_primary=temp_amb, t_in_secondary=t_in_secondary,
+                                               t_amb=temp_amb, mode=1)
+                cop = hp_sim_res['COP']
+                p_el_max = hp_sim_res['P_el'] * -1
+
+                # was the hp previously on or off?
+                state = self.plant_dict[hp].get("rtc_state", "off")
+                # load hp soc
+                with open(f"{self.path}/soc_{hp}.json", "r") as read_file:
+                    hp_soc_old = json.load(read_file)
+                # determine building heat demand
+                p_heat = ft.read_dataframe(f"{self.path}/raw_data_{hp}.ft").set_index("timestamp")
+                p_heat = float(p_heat[p_heat.index == self.ts_delivery_prev]["heat"].values)
+
+                # what happens if we don't charge at all?
+                hp_soc_no_charge = hp_soc_old + 0.25 * p_heat / self.plant_dict[hp]["efficiency"]
+
+                # what power do we need to get the hp to be fully charged in 1 ts?
+                hp_el_power_to_full = \
+                    -1*(self.plant_dict[hp]["capacity"]
+                        - hp_soc_no_charge) /cop /self.plant_dict[hp]["efficiency"] /0.25
+
+                if self.config_dict["controller_strategy"] == "rtc_max_pv" \
+                        and (pd.Timestamp.fromtimestamp(self.ts_delivery_current,
+                                                       tz="Europe/Berlin").time()
+                             == datetime.time(13, 0)):
+                    state = "on"
+
+                if state == "off":
+                    if hp_soc_no_charge >= 0:
+                        p_hp = 0
+                        hp_soc_new = hp_soc_no_charge
+                    else:
+                        p_hp = max(p_el_max, hp_el_power_to_full)
+                        hp_soc_new = hp_soc_no_charge - 0.25 * p_hp * cop * self.plant_dict[hp]["efficiency"]
+                        state = "on"
+                else:
+                    p_hp = max(p_el_max, hp_el_power_to_full)
+                    hp_soc_new = hp_soc_no_charge - 0.25 * p_hp * cop * self.plant_dict[hp]["efficiency"]
+                    if hp_soc_new/self.plant_dict[hp]['capacity'] >= 0.95:
+                        state = "off"
+
+                # update measured values
+                self.meas_val[hp] = p_hp
+                meas_grid += p_hp
+                self.plant_dict[hp]["rtc_state"] = state
+
+                with open(f"{self.path}/config_plants.json", "w") as write_file:
+                    json.dump(self.plant_dict, write_file)
+
+                with open(f"{self.path}/soc_{hp}.json", "w") as write_file:
+                    json.dump(hp_soc_new, write_file)
+            # the battery attempts to maintain grid connection power at 0 if at all possible.
+            for bat in self._get_list_plants(plant_type="bat"):
+                # get old soc
+                with open(f"{self.path}/soc_{bat}.json", "r") as read_file:
+                    bat_soc_old = json.load(read_file)
+                # calc power required to get meas_grid to zero
+                if meas_grid > 0:
+                    grid_power_requirement = -1 * meas_grid
+                    max_power_inv = -1 * self.plant_dict[bat]["power"]
+                    max_power_cap = -1 * 4 * (self.plant_dict[bat]["capacity"] - bat_soc_old) \
+                                    / self.plant_dict[bat]["efficiency"]
+                    bat_power = max(max_power_cap, max_power_inv, grid_power_requirement)
+                    bat_soc_new = bat_soc_old - 0.25 * bat_power * self.plant_dict[bat]["efficiency"]
+
+                elif meas_grid <= 0:
+                    grid_power_requirement = -1 * meas_grid
+                    max_power = self.plant_dict[bat]["power"]
+                    max_power_possible = 4 * bat_soc_old * self.plant_dict[bat]["efficiency"]
+                    # limit result to max_power
+                    bat_power = min(max_power, max_power_possible, grid_power_requirement)
+                    # update SoC
+                    bat_soc_new = bat_soc_old - 0.25 * bat_power / self.plant_dict[bat]["efficiency"]
+
+                with open(f"{self.path}/soc_{bat}.json", "w") as write_file:
+                    json.dump(bat_soc_new, write_file)
+
+                self.meas_val[bat] = bat_power
+                meas_grid += bat_power
+
+        self.meas_val[self.config_dict['id_meter_grid']] = int(meas_grid)
 
         # save calculated values to .json file so that results can be used by later methods in case of parallelization
+
         with open(f"{self.path}/controller_rtc.json", "w") as write_file:
             json.dump(self.meas_val, write_file)
 
