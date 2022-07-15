@@ -430,6 +430,7 @@ class Scenario:
                              "bat": [0] * self.config["prosumer"]["general_number_of"],  # Battery
                              "ev": [0] * self.config["prosumer"]["general_number_of"],  # Electric vehicle
                              "hp": [0] * self.config["prosumer"]["general_number_of"],  # Heat pump
+                             "chp": [0] * self.config["prosumer"]["general_number_of"],  # CHP
                              "wind": [0] * self.config["prosumer"]["general_number_of"],  # Wind turbine
                              "fixedgen": [0] * self.config["prosumer"]["general_number_of"]}  # Fixed generation
 
@@ -453,6 +454,10 @@ class Scenario:
         # Heat pumps
         prosumers_devices["hp"] = self.__gen_rand_bool_list(length=self.config["prosumer"]["general_number_of"],
                                                             share_1s=self.config["prosumer"]["hp_fraction"])
+
+        # CHP
+        prosumers_devices["chp"] = self.__gen_rand_bool_list(length=self.config["prosumer"]["general_number_of"],
+                                                             share_1s=self.config["prosumer"]["chp_fraction"])
 
         # Wind turbines
         prosumers_devices["wind"] = self.__gen_rand_bool_list(length=self.config["prosumer"]["general_number_of"],
@@ -539,6 +544,8 @@ class Scenario:
             self.__gen_ev(list_plant_specs)
         elif key == "hp":
             self.__gen_hp(list_plant_specs)
+        elif key == "chp":
+            self.__gen_chp(list_plant_specs)
         elif key == "wind":
             self.__gen_wind(list_plant_specs, participant_type)
         elif key == "fixedgen":
@@ -671,6 +678,7 @@ class Scenario:
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
                    "has_submeter": True,
+                   "power_th": self.config["prosumer"]["hp_sizing_power"],
                    "hp_type": choice(self.config["prosumer"]["hp_type"]),
                    "temperature": self.config["prosumer"]["hp_temperature"],
                    "capacity": choice(self.config["prosumer"]["hp_capacity"]),
@@ -683,6 +691,34 @@ class Scenario:
                    }
 
         list_plant_specs.append(dict_hp)
+
+    def __gen_chp(self, list_plant_specs: list) -> None:
+        """generates the chp's specifications according to the config file and appends them to the list
+        with all plant specifications
+
+        Args:
+            list_plant_specs: list that contains a dictionary for each plant type with the required information
+
+        Returns:
+            None
+
+        """
+        # Generate dict with all specifications and append to the list
+        dict_chp = {"type": "chp",
+                   "has_submeter": True,
+                   "power_th": self.config["prosumer"]["chp_sizing_power"],
+                   "heat_elec_ratio": self.config["prosumer"]["chp_heat_elec_ratio"],
+                   "efficiency": self.config["prosumer"]["chp_efficiency"],
+                   "capacity": choice(self.config["prosumer"]["chp_capacity"]),
+                   "tes_efficiency": self.config["prosumer"]["chp_tes_efficiency"],
+                   "fcast": self.config["prosumer"]["chp_fcast"],
+                   "fcast_order": [],
+                   "fcast_param": [],
+                   "fcast_retraining_period": self.config["prosumer"]["chp_fcast_retraining_period"],
+                   "fcast_update_period": self.config["prosumer"]["chp_fcast_update_period"],
+                   }
+
+        list_plant_specs.append(dict_chp)
 
     def __gen_wind(self, list_plant_specs: list, participant_type: str) -> None:
         """generates the wind specifications according to the config file and the household parameters and appends them
@@ -863,6 +899,8 @@ class Scenario:
             plant_config = self.__create_ev_files(**kwargs)
         elif plant_type == "hp":
             plant_config = self.__create_hp_files(**kwargs)
+        elif plant_type == "chp":
+            plant_config = self.__create_chp_files(**kwargs)
         elif plant_type == "wind":
             plant_config = self.__create_wind_files(**kwargs)
         elif plant_type == "fixedgen":
@@ -1040,6 +1078,59 @@ class Scenario:
                            f"/raw_data_{plant_id}.ft")
         return plant_dict[plant_id]
 
+    def __create_chp_files(self, **kwargs) -> None:
+        """creates the heat pump files of the respective prosumer
+
+        Args:
+            kwargs: set of arguments that contains the account and plant-ID information
+
+        Returns:
+            None
+
+        """
+
+        # Read necessary keyword arguments
+        account = kwargs["account"]
+        plant_id = kwargs["plant_id"]
+
+        # Find out the annual consumption to identify the correct household heat demand time series
+        hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
+        annual_consumption = hh_plant["annual_consumption"]
+
+        # Read respective household time series from input data directory
+        filename_hh = next(household for household in os.listdir(f'{self.path_input_data}/prosumers/hh/')
+                           if str(annual_consumption) in household)
+        filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
+
+        # Read in respective heat demand column
+        column = "heat"
+        df_chp = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp")*(-1)
+
+        # Write heat demand time series to prosumer specifications directory
+        ft.write_dataframe(df_chp.reset_index(),
+                           f"{self.path_scenario}/prosumer/{account['id_user']}"
+                           f"/raw_data_{plant_id}.ft")
+
+        # Update power and storage capacity information based on peak heat demand
+        max_heat = max(abs(df_chp["heat"]))
+        chp_power_th = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)  # in W
+
+        # read hp electric power from spec dict
+        ix = account["list_plants"].index(plant_id)
+        chp_plant = account["list_plant_specs"][ix]
+        # set thermal power and storage capacity
+        chp_plant["capacity"] *= chp_power_th   # multiplication with the sizing factor set in __gen_chp()
+        chp_plant["power_th"] *= chp_power_th   # multiplication with the sizing factor set in __gen_chp()
+
+        # set and save initial SoC of thermal storage
+        soc_init = chp_plant["capacity"] * self.config["prosumer"]["chp_soc_init"]
+        # Write SoC to prosumer specifications directory
+        with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
+                as write_file:
+            json.dump(soc_init, write_file)
+
+        return chp_plant
+
     def __create_hp_files(self, **kwargs) -> None:
         """creates the heat pump files of the respective prosumer
 
@@ -1055,8 +1146,6 @@ class Scenario:
         account = kwargs["account"]
         plant_id = kwargs["plant_id"]
 
-        #############
-        # in the first step, we identify a dummy heat demand time series as heat pump raw data
         # Find out the annual consumption to identify the correct household heat demand time series
         hh_plant = next(plant for plant in account["list_plant_specs"] if plant["type"] == "hh")
         annual_consumption = hh_plant["annual_consumption"]
@@ -1066,32 +1155,29 @@ class Scenario:
                            if str(annual_consumption) in household)
         filename_hh = f"{self.path_input_data}/prosumers/hh/{filename_hh}"
 
-        # TODO: replace "power" column with "heat" column once it is implemented
-        column = "power"
+        # Read in respective heat demand column
+        column = "heat"
         df_hp = pd.read_csv(filename_hh, usecols=["timestamp", column]).set_index("timestamp")*(-1)
-        df_hp.rename(columns={column: "heat"}, inplace=True)
 
         # Write heat demand time series to prosumer specifications directory
         ft.write_dataframe(df_hp.reset_index(),
                            f"{self.path_scenario}/prosumer/{account['id_user']}"
                            f"/raw_data_{plant_id}.ft")
-        ########
-        # heat pump max thermal power and storage capacity are dimensioned according to the peak heat load
+
         # Update power and storage capacity information based on peak heat demand
         max_heat = max(abs(df_hp["heat"]))
         hp_power_th = math.ceil(max_heat / 10 ** (len(str(max_heat)) - 1)) * 10 ** (len(str(max_heat)) - 1)  # unit in W
-        hp_capacity = choice(self.config["prosumer"]["hp_capacity"])
-        hp_capacity_wh = hp_power_th * hp_capacity
 
         # read hp electric power from spec dict
         ix = account["list_plants"].index(plant_id)
         hp_plant = account["list_plant_specs"][ix]
+
         # set thermal power and storage capacity
-        hp_plant["capacity"] = hp_capacity_wh
-        hp_plant['power_th'] = hp_power_th
+        hp_plant["capacity"] *= hp_power_th
+        hp_plant['power_th'] *= hp_power_th
 
         # set and save initial SoC of thermal storage
-        soc_init = hp_capacity_wh * self.config["prosumer"]["hp_soc_init"]
+        soc_init = hp_plant["capacity"] * self.config["prosumer"]["hp_soc_init"]
         # Write SoC to prosumer specifications directory
         with open(f"{self.path_scenario}/prosumer/{account['id_user']}/soc_{plant_id}.json", "w") \
                 as write_file:
@@ -1111,6 +1197,7 @@ class Scenario:
 
         shutil.move(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json",
                     f"{self.path_scenario}/prosumer/{account['id_user']}/spec_{plant_id}.json")
+
         return hp_plant
 
     def __get_hp_parameters(self, model: str, group_id: int = 0, t_in: int = 0, t_out: int = 0, p_th: int = 0,) \
