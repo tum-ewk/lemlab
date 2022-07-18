@@ -368,6 +368,7 @@ class Scenario:
             # Update individual prosumer info in dict
             prosumer_info.update({
                 "list_plant_specs": list_plant_specs,
+                "controller_strategy": self.config["prosumer"]["controller_strategy"],
                 "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
                 "ma_bid_max": self.config["retailer"]["price_sell"],
