@@ -1,5 +1,4 @@
-from lemlab import ScenarioExecutor, Scenario
-
+from lemlab import ScenarioExecutor
 
 if __name__ == "__main__":
     sim_name = "test_sim"
