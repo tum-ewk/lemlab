@@ -360,7 +360,7 @@ prosumer:
 
   ################################ combined heat and power (chp) settings ####################################
 
-  "chp_fraction": 0.2                       # fraction of prosumers with chp
+  "chp_fraction": 0                       # fraction of prosumers with chp
 
   "chp_sizing_power": 1                     # thermal sizing of chp plant
                                             # 1 = thermal power of chp equals ceiled max heat demand

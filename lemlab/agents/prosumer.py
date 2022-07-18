@@ -691,7 +691,7 @@ class Prosumer:
                 self.meas_val[bat] = bat_power
                 meas_grid += bat_power
 
-        self.meas_val[self.config_dict['id_meter_grid']] = int(meas_grid)
+            self.meas_val[self.config_dict['id_meter_grid']] = int(meas_grid)
 
         # save calculated values to .json file so that results can be used by later methods in case of parallelization
 
