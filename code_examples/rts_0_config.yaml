@@ -293,25 +293,34 @@ prosumer:
   "bat_quality": "local"                    # quality that the generated energy should be labelled with on the lem
 
   ################################ heat pump settings ####################################
-  ################################ heat pumps are coming soon
 
-  "hp_fraction": 0                          # fraction of prosumers with heat pumps
+  "hp_fraction": 0.2                        # fraction of prosumers with heat pumps
 
-  "hp_type": ["ground", "air", "air"]       # type of heat pump
+  "hp_sizing_power": 1                      # sizing of hp plant
+                                            # 1 = thermal power of hp equals ceiled max heat demand
+                                            # note: if value <1 without other heating devices, the simulation will crash
+
+  "hp_type": ["Outdoor Air/Water",
+              "Brine/Water",
+              "Water/Water"]                # type of heat pump
                                             #   "ground" - ground-water heat pump
                                             #   "air" - air-water heat pump
                                             #   "water" - water-water heat pump
                                             # each prosumer selects a random value off this list
 
-  hp_temperature: 35                        # supply temperature of the heating system
+  "hp_temperature": 50                      # supply temperature of the heating system
                                             # needs to match value in heat pump specification file
 
   "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
                                             # maximum power, which is the ceiled maximum heat demand from file
+                                            # note: value randomly chosen from list
 
-  "hp_soc_init": 0.1                        # initial soc of the storage (0-1)
+  "hp_soc_init": 0.0                        # initial soc of the storage (0-1)
 
-  "hp_fcast": "nn"                          # heating demand forecasting technique
+  "hp_tes_efficiency": 0.98                 # charging and discharging efficiency of thermal energy storage
+
+  "hp_fcast": "perfect"                     # heating demand forecasting technique
+                                            #   "perfect" - perfect forecast of heating demand
                                             #   "nn" - neural network based on the included weather data
                                             #   "mr" - multiple regression based on the included weather data
 
@@ -319,6 +328,37 @@ prosumer:
                                             # how many seconds between retraining periods?
 
   "hp_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
+
+  ################################ combined heat and power (chp) settings ####################################
+
+  "chp_fraction": 0.2                       # fraction of prosumers with chp
+
+  "chp_sizing_power": 1                     # thermal sizing of chp plant
+                                            # 1 = thermal power of chp equals ceiled max heat demand
+                                            # note: if value <1 without other heating devices, the simulation will crash
+
+  "chp_heat_elec_ratio": 2                  # ratio of heating to electric power (p_th/p_el)
+
+  "chp_efficiency": 0.9                     # efficiency of chp plant: (e_th + e_el)/e_tot
+
+  "chp_capacity": [2, 3]                    # storage capacity in hours of chp power
+                                            # note: value randomly chosen from list
+
+  "chp_soc_init": 0                         # initial soc of the storage (0-1)
+
+  "chp_tes_efficiency": 0.98                # charging and discharging efficiency of thermal energy storage
+
+  "chp_fcast": "perfect"                    # heating demand forecasting technique
+                                            #   "perfect" - perfect forecast of heating demand
+                                            #   "nn" - neural network based on the included weather data
+                                            #   "mr" - multiple regression based on the included weather data
+
+  "chp_fcast_retraining_period": 86400      # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "chp_fcast_update_period": 3600           # forecasts are periodically updated and saved to file where the
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 

@@ -153,11 +153,39 @@ prosumer:
 
   ################################ general settings ################################
 
-  "general_number_of": 20                    # number of prosumers (single family homes) to simulate
+  "general_number_of": 20                   # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
                                             # preferably miqp capable, e.g. "gurobi" and "cplex"
                                             # glpk is possible, for limitations see documentation
+
+  ################################ controller settings ####################################
+
+  "controller_strategy": "mpc_opt"          # control technique to be used by prosumers
+                                            #     rtc_self_opt - renewables and fix_gen produce at max power
+                                            #                    ev charges immediately at max power
+                                            #                    hp and chp produce at max power to fill storage and cover demand
+                                            #     rtc_max_pv   - same as rtc_self_opt but HP always turns on at 13:00
+                                            #                    in order to maximize PV self consumption
+                                            #  NOTE: rtc controllers can only be used with ex-post markets,
+                                            #        as forecasting and trading cannot take place
+                                            #     mpc_opt      - model predictive controller with forecasting and MILP
+                                            #                    RTC follows MPC and/or market results
+                                            # Note: any prosumer without any controllable plants will default to a
+                                            #       rule-based controller
+
+  "mpc_horizon": 96                         # mpc horizon : 1 - ~180 -> how many delivery period into the future are to be considered
+
+  "mpc_price_fcast": "flat"              # forecast model to be used for the lem market price
+                                            #     "flat" - no meaningful forecasting, flat price curve
+                                            #     "naive" - today will be identical to yesterday
+
+  "mpc_price_fcast_retraining_period": 86400 # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "mpc_price_fcast_update_period": 3600     # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   ################################ household load settings ####################################
 
@@ -295,6 +323,10 @@ prosumer:
 
   "hp_fraction": 0.2                        # fraction of prosumers with heat pumps
 
+  "hp_sizing_power": 1                      # sizing of hp plant
+                                            # 1 = thermal power of hp equals ceiled max heat demand
+                                            # note: if value <1 without other heating devices, the simulation will crash
+
   "hp_type": ["Outdoor Air/Water",
               "Brine/Water",
               "Water/Water"]                # type of heat pump
@@ -303,17 +335,19 @@ prosumer:
                                             #   "water" - water-water heat pump
                                             # each prosumer selects a random value off this list
 
-  hp_temperature: 50                        # supply temperature of the heating system
+  "hp_temperature": 50                      # supply temperature of the heating system
                                             # needs to match value in heat pump specification file
 
   "hp_capacity": [2, 3]                     # storage capacity in hours of installed heat pump capacity in hours of
                                             # maximum power, which is the ceiled maximum heat demand from file
+                                            # note: value randomly chosen from list
 
   "hp_soc_init": 0.0                        # initial soc of the storage (0-1)
 
   "hp_tes_efficiency": 0.98                 # charging and discharging efficiency of thermal energy storage
 
   "hp_fcast": "perfect"                     # heating demand forecasting technique
+                                            #   "perfect" - perfect forecast of heating demand
                                             #   "nn" - neural network based on the included weather data
                                             #   "mr" - multiple regression based on the included weather data
 
@@ -324,6 +358,36 @@ prosumer:
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 
+  ################################ combined heat and power (chp) settings ####################################
+
+  "chp_fraction": 0.2                       # fraction of prosumers with chp
+
+  "chp_sizing_power": 1                     # thermal sizing of chp plant
+                                            # 1 = thermal power of chp equals ceiled max heat demand
+                                            # note: if value <1 without other heating devices, the simulation will crash
+
+  "chp_heat_elec_ratio": 2                  # ratio of heating to electric power (p_th/p_el)
+
+  "chp_efficiency": 0.9                     # efficiency of chp plant: (e_th + e_el)/e_tot
+
+  "chp_capacity": [2, 3]                    # storage capacity in hours of chp power
+                                            # note: value randomly chosen from list
+
+  "chp_soc_init": 0                         # initial soc of the storage (0-1)
+
+  "chp_tes_efficiency": 0.98                # charging and discharging efficiency of thermal energy storage
+
+  "chp_fcast": "perfect"                    # heating demand forecasting technique
+                                            #   "perfect" - perfect forecast of heating demand
+                                            #   "nn" - neural network based on the included weather data
+                                            #   "mr" - multiple regression based on the included weather data
+
+  "chp_fcast_retraining_period": 86400      # models should be periodically retrained based on new data
+                                            # how many seconds between retraining periods?
+
+  "chp_fcast_update_period": 3600           # forecasts are periodically updated and saved to file where the
+                                            # most current forecast can be retrieved by model predictive controllers
+                                            # and market agents. How many seconds between updates?
 
   ################################ electric vehicle settings ####################################
 
@@ -368,22 +432,6 @@ prosumer:
   "fixedgen_controllable": false            # can the generator be controlled? (can power be decreased?)
 
   "fixedgen_quality": "local"               # quality that the generated energy should be labelled with on the lem
-
-
-  ################################ model predictive controller settings ####################################
-
-  "mpc_price_fcast": "flat"                 # forecast model to be used for the lem market price
-                                            #     "flat" - no meaningful forecasting, flat price assumed
-                                            #     "naive" - expected price same as previous day (initialized flat)
-
-  "mpc_price_fcast_retraining_period": 86400 # models should be periodically retrained based on new data
-                                            # how many seconds between retraining periods?
-
-  "mpc_price_fcast_update_period": 3600     # forecasts are periodically updated and saved to file where the
-                                            # most current forecast can be retrieved by model predictive controllers
-                                            # and market agents. How many seconds between updates?
-
-  "mpc_horizon": 180                        # mpc horizon : 1 - 180   -> unit steps (15 min)
 
   ################################ market agent settings ####################################
 
