@@ -131,18 +131,18 @@ Research Associate @ TUM EWK
 
 ## References
 #### Original Platform Paper:
-&nbsp;&nbsp;&nbsp;&nbsp; Holistic Design of Local Energy Markets: the lemlab Simulation and Testing Toolbox
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Sebastian Dirk Lumpp, Michel Zade, Markus Doepfert, Peter Tzscheutler
+&nbsp;&nbsp;&nbsp;&nbsp; Holistic Design of Local Energy Markets: the lemlab Simulation and Testing Toolbox  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Sebastian Dirk Lumpp, Michel Zade, Markus Doepfert, Peter Tzscheutschler  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In Progress
 
 #### Market matching algorithms:
-&nbsp;&nbsp;&nbsp;&nbsp;[Satisfying user preferences in community-based local energy markets — Auction-based clearing approaches](https://doi.org/10.1016/j.apenergy.2021.118004)
-&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Sebastian Dirk Lumpp, Peter Tzscheutschler, Ulrich Wagner
+&nbsp;&nbsp;&nbsp;&nbsp;[Satisfying user preferences in community-based local energy markets — Auction-based clearing approaches](https://doi.org/10.1016/j.apenergy.2021.118004)  
+&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Sebastian Dirk Lumpp, Peter Tzscheutschler, Ulrich Wagner  
 &nbsp;&nbsp;&nbsp;&nbsp;Applied Energy, 2022
 
 #### Blockchain implementation of a LEM:
-&nbsp;&nbsp;&nbsp;&nbsp;[Evaluating the added value of blockchains to local energy markets—Comparing the performance of blockchain-based and centralised implementations](https://doi.org/10.1049/stg2.12058)
-&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Marcello Feroce, Arturo Guridi, Sebastian Dirk Lumpp, Peter Tzscheutschler
+&nbsp;&nbsp;&nbsp;&nbsp;[Evaluating the added value of blockchains to local energy markets—Comparing the performance of blockchain-based and centralised implementations](https://doi.org/10.1049/stg2.12058)  
+&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Marcello Feroce, Arturo Guridi, Sebastian Dirk Lumpp, Peter Tzscheutschler  
 &nbsp;&nbsp;&nbsp;&nbsp;IET Smart Grid, 2022
 
 ## License
