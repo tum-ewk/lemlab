@@ -106,11 +106,11 @@ class ScenarioAnalyzer:
         """
 
         self.plot_virtual_feeder_flow()             # plots the virtual power flow of the LEM
-        #self.plot_mcp()                             # plots the market clearing prices and their weighted average
-        #self.plot_balance()                         # plots the balance of each household at the end
-        #self.plot_price_type()                      # plots price vs. type of energy over time
-        #self.plot_household()                       # plots the power profile of one household as example
-        #self.plot_average_mcp_per_type()            # plots the weighted costs per energy for each household type
+        self.plot_mcp()                             # plots the market clearing prices and their weighted average
+        self.plot_balance()                         # plots the balance of each household at the end
+        self.plot_price_type()                      # plots price vs. type of energy over time
+        self.plot_household()                       # plots the power profile of one household as example
+        self.plot_average_mcp_per_type()            # plots the weighted costs per energy for each household type
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -142,30 +142,31 @@ class ScenarioAnalyzer:
         cols = cols[1:] + [cols[0]]
         df_results = df_results[cols]
         df_results = df_results.sort_index()
-        df_results = df_results.drop(columns=["positive_flow_kW", "negative_flow_kW"])
+        #df_results = df_results.drop(columns=["positive_flow_kW", "negative_flow_kW"])
         # Plots
+
         scplotter = ScenarioPlotter()
-        colors = ["black"]
-        labels = ["Netto"]
+        colors = ["green", "0.3", "#a02222"]
+        labels = ["Positive flow", "Net flow", "Negative flow"]
         xvalues = df_results.index.values
         yvalues = df_results.transpose().values.tolist()
         for idx, yvalue in enumerate(yvalues):
-            scplotter.ax.plot(xvalues, yvalue, color=colors[idx], label=labels[idx], linewidth=1)
-            #scplotter.ax.axhline(0, color='black', linewidth=1.1)
+            scplotter.ax.plot(xvalues, yvalue, color=colors[idx], label=labels[idx])
+        max_val = max(df_results["positive_flow_kW"]) * 1.2
+        min_val = min(df_results["negative_flow_kW"]) * 1.2
 
-        plt.axhspan(-100, 0, facecolor='red', alpha=0.2)
-        plt.axhspan(0, 100, facecolor='green', alpha=0.2)
+        plt.axhspan(min_val, 0, facecolor='red', alpha=0.2)
+        plt.axhspan(0, max_val, facecolor='green', alpha=0.2)
         # Figure setup
         xlims = [min(xvalues), max(xvalues)]
-        scplotter.figure_setup(title="Virtual microgrid power flow summary",
-                               ylabel="Leistung (kW)",
-                               legend_labels=("Netto",),
-                               xlims=xlims,
-                               xticks_style="date")
+        scplotter.figure_setup(title="Virtual microgrid power flow summary", ylabel="Power (kW)",
+                               legend_labels=("Positive flow", "Net flow", "Negative flow"),
+                               xlims=xlims, xticks_style="date")
         if self.save_figures:
             self.__save_figure(name="virtual_feeder_flow")
         if self.show_figures:
             plt.show()
+
 
     def determine_autarky(self) -> None:
         """This function calculates the degree of energy independency of the simulated LEM"""
@@ -369,7 +370,7 @@ class ScenarioAnalyzer:
         else:
             raise NameError
 
-    def plot_household(self, type_household: tuple = (1, 1, 1, 0, 0, 0), id_user: int = None) -> None:
+    def plot_household(self, type_household: tuple = (1, 1, 0, 1, 0, 0), id_user: int = None) -> None:
         """gathers information about the chosen example household and calls the subfunctions to plot the power profile
         and the power purchases and sales over time
 

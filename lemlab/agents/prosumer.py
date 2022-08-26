@@ -1633,13 +1633,11 @@ class HeatPump:
             Input temperature on primry side :math:`T` (air, brine, water). [°C]
         t_in_secondary : numeric or iterable (e.g. pd.Series)
             Input temperature on secondary side :math:`T` from heating storage or system. [°C]
-        parameters : pd.DataFrame
-            Data frame containing the heat pump parameters from hplib.getParameters().
         t_amb : numeric or iterable (e.g. pd.Series)
             Ambient temperature :math:'T' of the air. [°C]
         mode : int
             for heating: 1, for cooling: 2
-        P_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input. At maximum electrical input a electrical heating rod turns on.
+        p_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input. At maximum electrical input a electrical heating rod turns on.
 
         Returns
         -------
