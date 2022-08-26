@@ -1,5 +1,6 @@
 import lemlab
 
+# this example demonstrates how to end or pause a real-time simulation
 
 if __name__ == "__main__":
     sim_name = "test_rts"

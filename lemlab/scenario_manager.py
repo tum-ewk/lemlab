@@ -18,6 +18,7 @@ import feather as ft
 import math
 from scipy import optimize
 
+
 class Scenario:
     """
     A class used to generate or edit a scenario.
@@ -34,7 +35,7 @@ class Scenario:
     config : dict
         config file that contains all required settings to set up a new or edit an existing scenario
     yaml : function
-        function that allows reading and writing yaml files without changing their original format
+        allows reading and writing yaml files without changing their original format
 
     Public Methods
     -------
@@ -216,7 +217,8 @@ class Scenario:
         self.path_input_data = f"{self.config['simulation']['path_input_data']}"
 
         # Create scenario directory tree (if scenario exists, delete and recreate)
-        self.__create_folders([(f"{self.path_scenario}", True),
+        self.__create_folders([(f"{self.config['simulation']['path_scenarios']}", True),
+                               (f"{self.path_scenario}", True),
                                (f"{self.path_scenario}/lem", True),
                                (f"{self.path_scenario}/retailer", True),
                                (f"{self.path_scenario}/prosumer", True),
@@ -406,7 +408,7 @@ class Scenario:
 
         Comment: The configuration of the household demands is only required when the household are sized using a
                  distribution.
-                 Currently each household cannot have more than one of each type of device.
+                 Currently, each household cannot have more than one of each type of device.
 
         Args:
 
@@ -486,6 +488,7 @@ class Scenario:
 
         # Dict containing all specifications of the household
         dict_hh = {"type": "hh",
+                   "activated": True,
                    "has_submeter": self.config["prosumer"]["hh_has_submeter"],
                    "fcast": self.config["prosumer"]["hh_fcast"],
                    "fcast_order": [],
@@ -569,6 +572,7 @@ class Scenario:
 
         # Dict containing all specifications of the PV system
         dict_pv = {"type": "pv",
+                   "activated": True,
                    "has_submeter": True,
                    }
 
@@ -614,6 +618,7 @@ class Scenario:
 
         # Dict containing all specifications of the battery
         dict_bat = {"type": "bat",
+                    "activated": True,
                     "has_submeter": True,
                     }
 
@@ -648,6 +653,7 @@ class Scenario:
 
         # Generate dict with all specifications and append to the list
         dict_ev = {"type": "ev",
+                   "activated": True,
                    "has_submeter": True,
                    "efficiency": self.config["prosumer"]["ev_efficiency"],
                    "v2g": self.config["prosumer"]["ev_v2g"],
@@ -678,6 +684,7 @@ class Scenario:
 
         # Generate dict with all specifications and append to the list
         dict_hp = {"type": "hp",
+                   "activated": True,
                    "has_submeter": True,
                    "power_th": self.config["prosumer"]["hp_sizing_power"],
                    "hp_type": choice(self.config["prosumer"]["hp_type"]),
@@ -706,18 +713,19 @@ class Scenario:
         """
         # Generate dict with all specifications and append to the list
         dict_chp = {"type": "chp",
-                   "has_submeter": True,
-                   "power_th": self.config["prosumer"]["chp_sizing_power"],
-                   "heat_elec_ratio": self.config["prosumer"]["chp_heat_elec_ratio"],
-                   "efficiency": self.config["prosumer"]["chp_efficiency"],
-                   "capacity": choice(self.config["prosumer"]["chp_capacity"]),
-                   "tes_efficiency": self.config["prosumer"]["chp_tes_efficiency"],
-                   "fcast": self.config["prosumer"]["chp_fcast"],
-                   "fcast_order": [],
-                   "fcast_param": [],
-                   "fcast_retraining_period": self.config["prosumer"]["chp_fcast_retraining_period"],
-                   "fcast_update_period": self.config["prosumer"]["chp_fcast_update_period"],
-                   }
+                    "activated": True,
+                    "has_submeter": True,
+                    "power_th": self.config["prosumer"]["chp_sizing_power"],
+                    "heat_elec_ratio": self.config["prosumer"]["chp_heat_elec_ratio"],
+                    "efficiency": self.config["prosumer"]["chp_efficiency"],
+                    "capacity": choice(self.config["prosumer"]["chp_capacity"]),
+                    "tes_efficiency": self.config["prosumer"]["chp_tes_efficiency"],
+                    "fcast": self.config["prosumer"]["chp_fcast"],
+                    "fcast_order": [],
+                    "fcast_param": [],
+                    "fcast_retraining_period": self.config["prosumer"]["chp_fcast_retraining_period"],
+                    "fcast_update_period": self.config["prosumer"]["chp_fcast_update_period"],
+                    }
 
         list_plant_specs.append(dict_chp)
 
@@ -736,6 +744,7 @@ class Scenario:
 
         # Dict containing all specifications of the wind power system
         dict_wind = {"type": "wind",
+                     "activated": True,
                      "has_submeter": True,
                      }
 
@@ -782,6 +791,7 @@ class Scenario:
 
         # Dict containing all specifications of the wind power system
         dict_fixedgen = {"type": "fixedgen",
+                         "activated": True,
                          "has_submeter": True,
                          }
 
@@ -1192,7 +1202,7 @@ class Scenario:
         hp_param_generic = hp_dataset.loc[(hp_dataset['Model'] == 'Generic') & (hp_dataset['Type'] == hp_type) &
                                           (hp_dataset['Subtype'] == 'On-Off')]  # generic fitting parameter
         df_hp_param = self.__get_hp_parameters(model='Generic', group_id=int(hp_param_generic["Group"].values),
-                                               t_in=0, t_out=hp_t_out, p_th=hp_power_th)  # specific fitting parameter
+                                               t_in=-7, t_out=hp_t_out, p_th=hp_power_th)  # specific fitting parameter
 
         df_hp_param.to_json(f"{self.path_input_data}/prosumers/hp/hp_{hp_type[0:5]}.json", orient="records")
 
@@ -1202,7 +1212,7 @@ class Scenario:
         return hp_plant
 
     def __get_hp_parameters(self, model: str, group_id: int = 0, t_in: int = 0, t_out: int = 0, p_th: int = 0,) \
-                            -> pd.DataFrame:
+            -> pd.DataFrame:
         """
             Loads the content of the database for a specific heat pump model
             and returns a pandas ``DataFrame`` containing the heat pump parameters.
@@ -1289,8 +1299,8 @@ class Scenario:
                     Ambient temperature :math:'T' of the air. [°C]
                 mode : int
                     for heating: 1, for cooling: 2
-                P_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input.
-                At maximum electrical input a electrical heating rod turns on.
+                p_th_min : Minimum thermal power output [W]. Inverter heat pumps increase electrical Power input.
+                At maximum electrical input, an electrical heating rod turns on.
                 Returns
                 -------
                 df : pd.DataFrame
@@ -1625,8 +1635,8 @@ class Scenario:
                     p4_eer = parameters['p4_EER [-]'].array[0]
                     eer_ref = p1_eer * 35 + p2_eer * 7 + p3_eer + p4_eer * 35
                     parameters.loc[:, 'P_th_c_ref [W]'] = p_el_ref * 0.6852 * eer_ref
-                    parameters[
-                        'P_el_c_ref [W]'] = p_el_ref * 0.6852  # average value from real Heatpumps (P_el35/7 to P_el-7/52)
+                    parameters['P_el_c_ref [W]'] = \
+                        p_el_ref * 0.6852  # average value from real Heatpumps (P_el35/7 to P_el-7/52)
                     parameters.loc[:, 'EER_ref'] = eer_ref
                 except:
                     pass
@@ -1708,7 +1718,7 @@ class Scenario:
         if not self.config["aggregator"]["active"]:  # exit function if aggregator is inactive
             return
 
-        # Check if market type is set to ex-ante. Otherwise set aggregator to False and save the updated config file
+        # Check if market type is set to ex-ante. Otherwise, set aggregator to False and save the updated config file
         if not self.config["lem"]["types_clearing_ex_ante"]:
             print("There can be no aggregator when the market is set to ex-post. The aggregator was deactivated and "
                   "the config file updated and saved.")
@@ -2050,13 +2060,13 @@ class Scenario:
                 print(f"{category} - {setting}: {config_old[category][setting]} "
                       f"--> {self.config[category][setting]}")
 
-    def __change_prosumer_setting(self, participant_type: str, setting: str, val, val_old, list_prosumers: list = None) \
-            -> None:
+    def __change_prosumer_setting(self, participant_type: str, setting: str, val, val_old,
+                                  list_prosumers: list = None) -> None:
         """edits the provided setting in prosumer for all prosumer provided in list_prosumers
 
         Comment:
             If new settings are added to the config file they need to be added to the dictionary of actions in this
-            function so the program knows how to change this setting. Otherwise a warning will be raised. Please see
+            function so the program knows how to change this setting. Otherwise, a warning will be raised. Please see
             the comments within this function on how to add a new setting to the dictionary of actions.
 
         Args:

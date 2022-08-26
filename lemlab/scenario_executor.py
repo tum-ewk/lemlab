@@ -308,9 +308,15 @@ class ScenarioExecutor:
             # if there is no active ex-ante market, no market agent is required.
             if len(self.config["lem"]["types_clearing_ex_ante"]) == 0:
                 prosumer_config["market_agent"] = None
+            list_plants_active = []
+            for plant in plant_config:
+                if plant_config[plant]["activated"] is True:
+                    list_plants_active.append(plant)
+            prosumer_config["list_plants"] = list_plants_active
+            with open(f"{path_prosumer}/config_account.json", "w") as write_file:
+                json.dump(prosumer_config, write_file)
 
             # register user in DB
-
             dict_user = {
                 self.db_conn_admin.db_param.ID_USER:                    [prosumer],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
@@ -445,7 +451,7 @@ class ScenarioExecutor:
 
     def __setup_lem(self, t_override=None) -> None:
         """
-        Finalize LEM lem set up by initializing db and registering retailer account
+        Finalize LEM set up by initializing db and registering retailer account
 
         :param: None
 
@@ -584,14 +590,21 @@ class ScenarioExecutor:
 
             # set up multiprocessing pool for prosumer functionality
             # pre-clearing activity is computationally intensive, as it contains utilities and optimization
+
+            # number of parallel processes should not exceed the number of prosumers being simulated
+            # initializing processes is expensive
+            num_par_processes = min(len(self.__get_active_prosumers()), mp.cpu_count())
+            # num_par_processes = 32
+
             with mp.Pool(initializer=_par_step_prosumers_init,
                          initargs=(_par_step_prosumers_pre,
                                    self.config,
-                                   path_weather)
+                                   path_weather),
+                         processes=num_par_processes
                          ) as pool:
                 # main simulation loop, step from ts_delivery start to end
                 while ts_delivery_current <= ts_delivery_end:
-                    # at one minute past the quarter hour:
+                    # at one minute past the quarter-hour:
                     self.t_now = ts_delivery_current + 60
                     # set new label on progress bar
                     str_time = \
@@ -954,7 +967,7 @@ class ScenarioExecutor:
         return ''.join(choice(characters) for _ in range(length))
 
 
-# parallel functions need to be defined outside of the class to work
+# parallel functions need to be defined outside the class to work
 
 def _par_step_prosumers_init(func, config, path_weather):
     """
@@ -962,11 +975,9 @@ def _par_step_prosumers_init(func, config, path_weather):
 
     Database connections cannot be serialized, therefore a DatabaseConnection instance is attached to each process
 
-    :param func: function to which the DatabaseConnection instance is to be attached
+    param func: function to which the DatabaseConnection instance is to be attached
 
-    :param db_dict: dict, DatabaseConnection parameters from the config YAML
-
-    :param lem_config: dict, LEM config dict required to create a DatabaseConnection object
+    param config: dict, LEM config dict required to create a DatabaseConnection object
 
     """
     # initialize each multiprocessing worker with a database connection

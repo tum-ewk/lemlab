@@ -1,5 +1,6 @@
 import lemlab
 
+# how to restart a paused real-time simulation
 
 if __name__ == "__main__":
     sim_name = "test_rts"
