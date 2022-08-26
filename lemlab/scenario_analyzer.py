@@ -30,12 +30,12 @@ class ScenarioAnalyzer:
         boolean to state if plots are to be saved as png
     path_analyzer : str
         path for the analyzer results to be stored
-    yaml : function
-        function that allows reading and writing yaml files without changing their original format
+    yaml : YAML
+        allows reading and writing of yaml files without changing their original format
     config : dict
         config file that contains all required settings to set up a new or edit an existing scenario
-    db_conn : function
-        function that establishes a connection to the database
+    db_conn : DatabaseConnection
+        establishes a connection to the lemlab database
     max_time : int
         maximum timestep that is to be considered for the analysis
     pv_bat_ev_hp_wind_fix : dataframe
@@ -63,11 +63,12 @@ class ScenarioAnalyzer:
         plots the price of electricity as well as its quality over time
     plot_household(type_household: tuple) -> None
         plots the load profile and the power sales and purchases over time for the chosen type of example household
-    plot_balance_per_type() -> None
-        NOT FINISHED: plots the specific energy costs for each type of participant
+    plot_average_mcp_per_type() -> None
+        plots the specific energy costs for each type of participant
     """
 
-    def __init__(self, path_results, save_figures: bool = False, show_figures: bool = True):
+    def __init__(self, path_results, save_figures: bool = False,
+                 show_figures: bool = True):
         """initializer
 
         Args:
@@ -105,12 +106,11 @@ class ScenarioAnalyzer:
         """
 
         self.plot_virtual_feeder_flow()             # plots the virtual power flow of the LEM
-        self.plot_mcp()                             # plots the market clearing prices and their weighted average
-        self.plot_balance()                         # plots the balance of each household at the end
-        self.plot_price_type()                      # plots price vs. type of energy over time
-        self.plot_household()  # plots the power profile of one household as example
-
-        # self.plot_balance_per_type()                # plots the weighted costs per energy for each household type
+        #self.plot_mcp()                             # plots the market clearing prices and their weighted average
+        #self.plot_balance()                         # plots the balance of each household at the end
+        #self.plot_price_type()                      # plots price vs. type of energy over time
+        #self.plot_household()                       # plots the power profile of one household as example
+        #self.plot_average_mcp_per_type()            # plots the weighted costs per energy for each household type
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -123,7 +123,6 @@ class ScenarioAnalyzer:
         """
 
         print("*** CREATING PLOT OF VIRTUAL POWERFLOW ***")
-        plt.close("all")
 
         # Get IDs of all main meters (1=utility with multiple submeters, 2=utility meter)
         df_meter_info = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
@@ -143,24 +142,79 @@ class ScenarioAnalyzer:
         cols = cols[1:] + [cols[0]]
         df_results = df_results[cols]
         df_results = df_results.sort_index()
-
+        df_results = df_results.drop(columns=["positive_flow_kW", "negative_flow_kW"])
         # Plots
         scplotter = ScenarioPlotter()
-        colors = ["green", "0.3", "#a02222"]
-        labels = ["Positive flow", "Net flow", "Negative flow"]
+        colors = ["black"]
+        labels = ["Netto"]
         xvalues = df_results.index.values
         yvalues = df_results.transpose().values.tolist()
         for idx, yvalue in enumerate(yvalues):
-            scplotter.ax.plot(xvalues, yvalue, color=colors[idx], label=labels[idx])
+            scplotter.ax.plot(xvalues, yvalue, color=colors[idx], label=labels[idx], linewidth=1)
+            #scplotter.ax.axhline(0, color='black', linewidth=1.1)
+
+        plt.axhspan(-100, 0, facecolor='red', alpha=0.2)
+        plt.axhspan(0, 100, facecolor='green', alpha=0.2)
         # Figure setup
         xlims = [min(xvalues), max(xvalues)]
-        scplotter.figure_setup(title="Virtual microgrid power flow summary", ylabel="Power (kW)",
-                               legend_labels=("Positive flow", "Net flow", "Negative flow"),
-                               xlims=xlims, xticks_style="date")
+        scplotter.figure_setup(title="Virtual microgrid power flow summary",
+                               ylabel="Leistung (kW)",
+                               legend_labels=("Netto",),
+                               xlims=xlims,
+                               xticks_style="date")
         if self.save_figures:
             self.__save_figure(name="virtual_feeder_flow")
         if self.show_figures:
             plt.show()
+
+    def determine_autarky(self) -> None:
+        """This function calculates the degree of energy independency of the simulated LEM"""
+
+        # Get IDs of all main meters (1=utility with multiple submeters, 2=utility meter)
+        df_meter_info = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
+        list_submeters = list(df_meter_info[df_meter_info[db_p.TYPE_METER].isin(
+            ["plant submeter", "virtual plant submeter", ""])][db_p.ID_METER])
+
+        # Get power flows of all meters in list_main_meters
+        df_meter_readings_delta = pd.read_csv(f"{self.path_results}/db_snapshot/"
+                                              f"{db_p.NAME_TABLE_READINGS_METER_DELTA}.csv", index_col=0)
+
+        df_results1 = df_meter_readings_delta[df_meter_readings_delta[db_p.ID_METER].isin(list_submeters)]
+        df_results1 = df_results1.groupby(db_p.TS_DELIVERY).sum()
+        df_results1.columns = ["negative_flow_kW", "positive_flow_kW"]
+        df_results1["negative_flow_kW"] = - df_results1["negative_flow_kW"]
+        df_results1["net_flow_kW"] = df_results1["positive_flow_kW"] + df_results1["negative_flow_kW"]
+
+        sum_consumption = df_results1["negative_flow_kW"].sum()
+
+        # Get IDs of all main meters (1=utility with multiple submeters, 2=utility meter)
+
+        list_main_meters = list(df_meter_info[df_meter_info[db_p.TYPE_METER].isin(
+            ["grid meter", "virtual grid meter"])][db_p.ID_METER])
+        # Get power flows of all meters in list_main_meters
+        df_meter_readings_delta = pd.read_csv(f"{self.path_results}/db_snapshot/"
+                                              f"{db_p.NAME_TABLE_READINGS_METER_DELTA}.csv", index_col=0)
+        df_results = df_meter_readings_delta[df_meter_readings_delta[db_p.ID_METER].isin(list_main_meters)]
+        df_results = df_results.groupby(db_p.TS_DELIVERY).sum()
+        df_results.columns = ["negative_flow_kW", "positive_flow_kW"]
+        df_results["negative_flow_kW"] = - df_results["negative_flow_kW"]
+        df_results["net_flow_kW"] = df_results["positive_flow_kW"] + df_results["negative_flow_kW"]
+        df_results["grid_cons"] = df_results[df_results["net_flow_kW"] <= 0][["net_flow_kW"]]
+        df_results["grid_prod"] = df_results[df_results["net_flow_kW"] >= 0][["net_flow_kW"]]
+        df_results.fillna(0, inplace=True)
+        sum_consumption_grid = df_results["grid_cons"].sum()
+
+        autarky = sum_consumption_grid/sum_consumption
+        autarky = 100 - round(autarky * 100, 1)
+
+        print("Autarky")
+        print(autarky)
+        print("Internal consumption")
+        print(sum_consumption)
+        print("External consumption")
+        print(sum_consumption_grid)
+        print("External production")
+        print(df_results["grid_prod"].sum())
 
     def plot_mcp(self, type_market: str = None) -> None:
         """checks the market type to be plotted and calls the respective subfunction to plot the weighted average and
@@ -175,7 +229,6 @@ class ScenarioAnalyzer:
         """
 
         print("*** CREATING PLOT OF ELECTRICITY PRICES ***")
-        plt.close("all")
 
         # Get the market that is to be plotted if none is provided and the corresponding name of the price column
         if type_market is None:
@@ -193,89 +246,6 @@ class ScenarioAnalyzer:
         else:
             raise NameError
 
-    def __mcp_ex_ante(self, type_market, column_price) -> None:
-        """plots the weighted average and the individual market clearing prices for each time step for ex-ante markets
-
-        Args:
-            type_market: string that specifies, which market is to be plotted
-            column_price: string that contains the number of the column that contains the prices
-
-        Returns:
-            None
-
-        """
-
-        # Read and prepare the desired market dataframe
-        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
-                                        index_col=0)
-        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
-        df_market_results["costs_€"] = df_market_results[db_p.QTY_ENERGY_TRADED] * df_market_results[column_price] * \
-                                       self.conv_to_EUR
-
-        # Create dataframe for the results
-        df_results = pd.DataFrame(columns=["timestamp", "total_cost_€", "total_energy_kWh", "avg_price_€/kWh"])
-
-        # Gather values form df_market_results and calculate weighted average
-        df_results["timestamp"] = sorted(df_market_results[db_p.TS_DELIVERY].unique())
-        df_results.set_index("timestamp", inplace=True)
-        df_temp = df_market_results.groupby(db_p.TS_DELIVERY).sum()
-        df_results["total_cost_€"] = df_temp["costs_€"]
-        df_results["total_energy_kWh"] = df_temp[db_p.QTY_ENERGY_TRADED] * self.conv_to_kWh
-        df_results["avg_price_€/kWh"] = df_results["total_cost_€"] / df_results["total_energy_kWh"]
-
-        # Plots
-        # Plot: Weighted average
-        scplotter = ScenarioPlotter()
-        xvalues = df_results.index.values
-        yvalues = (df_results["avg_price_€/kWh"] * 100).tolist()
-        scplotter.ax.scatter(xvalues, yvalues, color="#a02222", alpha=0.8, sizes=np.ones(len(xvalues)) * 20)
-        # Plot: Market prices
-        xvalues = df_market_results.ts_delivery
-        yvalues = (df_market_results[column_price] * self.conv_to_EUR / self.conv_to_kWh * 100).\
-            tolist()
-        scplotter.ax.scatter(xvalues, yvalues, color="#369f28", alpha=0.3, sizes=np.ones(len(xvalues)) * 5)
-        # Figure setup
-        xlims = [min(xvalues), max(xvalues)]
-        scplotter.figure_setup(title="LEM clearing prices", ylabel="Electricity price (ct/kWh)",
-                               xlabel="", legend_labels=("Weighted average", "Market results"),
-                               xlims=xlims, xticks_style="date")
-        if self.save_figures:
-            self.__save_figure(name=f"mcp_{type_market}")
-        if self.show_figures:
-            plt.show()
-
-    def __mcp_ex_post(self, type_market, column_price) -> None:
-        """plots the market clearing price for each time step for ex-post markets
-
-        Args:
-            type_market: string that specifies, which market is to be plotted
-            column_price: string that contains the number of the column that contains the prices
-
-        Returns:
-            None
-
-        """
-
-        # Read the desired market dataframe
-        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
-                                        index_col=0)
-        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
-        df_market_results = df_market_results.sort_index()
-
-        # Plot: Market prices
-        scplotter = ScenarioPlotter()
-        xvalues = df_market_results.ts_delivery
-        yvalues = (df_market_results[column_price] * self.conv_to_EUR / self.conv_to_kWh * 100).to_list()
-        scplotter.ax.scatter(xvalues, yvalues, color="#a02222", alpha=0.8, sizes=np.ones(len(xvalues)) * 20)
-        # Figure setup
-        xlims = [min(xvalues), max(xvalues)]
-        scplotter.figure_setup(title="LEM clearing prices", ylabel="Electricity price (ct/kWh)",
-                               xlims=xlims, xticks_style="date")
-        if self.save_figures:
-            self.__save_figure(name=f"mcp_{type_market}")
-        if self.show_figures:
-            plt.show()
-
     def plot_balance(self) -> None:
         """plots the balance of each market participant
 
@@ -287,13 +257,12 @@ class ScenarioAnalyzer:
         """
 
         print("*** CREATING PLOT OF PARTICIPANT BALANCES ***")
-        plt.close("all")
 
         # Create dataframe to gather all the information and do the necessary calculations
         df_results = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Wind_Fix", "revenue_sold_€",
                                            "cost_bought_€", "balance_€"]).set_index(db_p.ID_USER)
 
-        # Look up each participants main meter id
+        # Look up each participant's main meter id
         df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0, dtype={"id_user": str})
         df_temp = df_meters[df_meters[db_p.TYPE_METER].isin(["grid meter", "virtual grid meter"])]\
             [[db_p.ID_USER, db_p.ID_METER]]
@@ -383,7 +352,6 @@ class ScenarioAnalyzer:
         """
 
         print("*** CREATING PLOT OF PRICE VS TYPE OF ENERGY ***")
-        plt.close("all")
 
         # Get the market that is to be plotted if none is provided and the corresponding name of the price column
         if type_market is None:
@@ -401,144 +369,6 @@ class ScenarioAnalyzer:
         else:
             raise NameError
 
-    def __price_type_ex_ante(self, type_market, column_price) -> None:
-        """plots the average clearing price and the quality of the delivered energy for each time step for
-        ex-ante markets
-
-        Args:
-            type_market: string that specifies, which market is to be plotted
-            column_price: string that contains the number of the column that contains the prices
-
-        Returns:
-            None
-
-        """
-
-        # Get market data and truncate at maximum simulated time step
-        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
-                                        index_col=0)
-        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
-
-        # Dataframe setup with timestamps as indices
-        df_results = pd.DataFrame(columns=["timestamp", "energy_kWh", "cost_€", "price_€/kWh",
-                                           "energy_loc_kWh", "loc_share", "energy_greloc_kWh",
-                                           "greloc_share"])
-        df_results["timestamp"] = sorted(df_market_results[db_p.TS_DELIVERY].unique())
-        df_results.set_index("timestamp", inplace=True)
-
-        # Get data from market results
-        df_results["energy_kWh"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()[db_p.QTY_ENERGY_TRADED] * \
-                                   self.conv_to_kWh
-        df_market_results["costs"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
-                                     df_market_results[column_price]
-        df_results["cost_€"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()["costs"] * self.conv_to_EUR
-        df_results["price_€/kWh"] = df_results["cost_€"] / df_results["energy_kWh"]
-
-        # Get the shares of the different energy types
-        # NOTE: The values of df_results are the total values meaning that the green share includes both green
-        # non-local and local while local included local green and fossil. In df_market_results they are separate
-        df_market_results["energy_loc"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
-                                          df_market_results["share_quality_offers_cleared_local"] / 100
-        df_market_results["energy_greloc"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
-                                             df_market_results["share_quality_offers_cleared_green_local"] / 100
-
-        df_results["energy_loc_kWh"] = (df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_loc"] +
-                                        df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_greloc"]) * \
-                                       self.conv_to_kWh
-        df_results["energy_greloc_kWh"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_greloc"] * \
-                                       self.conv_to_kWh
-
-        df_results["loc_share"] = df_results["energy_loc_kWh"] / df_results["energy_kWh"]
-        df_results["greloc_share"] = df_results["energy_greloc_kWh"] / df_results["energy_kWh"]
-        df_results = df_results.fillna(0)
-        df_results = df_results.sort_index()
-
-        # Plot lines and bars
-        # Plots
-        scplotter = ScenarioPlotter()
-        xvalues = df_results.index.values.tolist()
-        # Local share (left y-axis)
-        yvalues = [x * 100 for x in df_results["loc_share"].tolist()]
-        scplotter.ax.fill_between(xvalues, yvalues, color="#e79208", alpha=0.5, label="Local")
-        # Local share (left y-axis)
-        yvalues = [x * 100 for x in df_results["greloc_share"].tolist()]
-        scplotter.ax.fill_between(xvalues, yvalues, color="#369f28", alpha=0.5, label="Green & local")
-        scplotter.ax.set(ylim=(0, 100))
-        # Price plot (right y-axis)
-        yvalues = [x * 100 for x in df_results["price_€/kWh"].tolist()]
-        scplotter.ax2 = scplotter.ax.twinx()
-        scplotter.ax2.plot(xvalues, yvalues, color="0.2", linewidth=3, alpha=1, label="Price")
-        scplotter.ax2.set(ylim=(min(0, round(min(yvalues) * 1.1, 1)), max(0, round(max(yvalues) * 1.1, 1))))
-        # Figure setup
-        xlims = [min(xvalues), max(xvalues)]
-        lines_1, labels_1 = scplotter.ax.get_legend_handles_labels()
-        lines_2, labels_2 = scplotter.ax2.get_legend_handles_labels()
-        lines = lines_1 + lines_2
-        labels = labels_1 + labels_2
-        scplotter.ax.legend(lines, labels, bbox_to_anchor=(0.5, -0.2), ncol=min(4, len(labels)))
-        scplotter.figure_setup(title="Price vs. sustainability & locality", xlabel="",
-                               ylabel="Share (%)", ylabel_right="Electricity price (ct/kWh)",
-                               xlims=xlims, xticks_style="date")
-        if self.save_figures:
-            self.__save_figure(name=f"price_type_{type_market}")
-        if self.show_figures:
-            plt.show()
-
-    def __price_type_ex_post(self, type_market, column_price) -> None:
-        """plots the average clearing price and the quality of the delivered energy for each time step for
-        ex-post markets
-
-        Args:
-            type_market: string that specifies, which market is to be plotted
-            column_price: string that contains the number of the column that contains the prices
-
-        Returns:
-            None
-
-        """
-
-        # Get market data and truncate at maximum simulated time step
-        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
-                                        index_col=0)
-        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
-        df_market_results.set_index(db_p.TS_DELIVERY, inplace=True)
-        df_market_results = df_market_results.sort_index()
-
-        # Add shares of the same quality (green or local) to receive total values
-        df_market_results["loc_share"] = df_market_results["share_quality_local"] + \
-                                         df_market_results["share_quality_green_local"]
-
-        # Plot lines and bars
-        # Plots
-        scplotter = ScenarioPlotter()
-        xvalues = df_market_results.index.values.tolist()
-        # Local share (left y-axis)
-        yvalues = df_market_results["loc_share"].tolist()
-        scplotter.ax.fill_between(xvalues, yvalues, color="#e79208", alpha=0.5, label="Local")
-        # Local share (left y-axis)
-        yvalues = df_market_results["share_quality_green_local"].tolist()
-        scplotter.ax.fill_between(xvalues, yvalues, color="#369f28", alpha=0.5, label="Green & local")
-        scplotter.ax.set(ylim=(0, 100))
-        # Price plot (right y-axis)
-        yvalues = [x * self.conv_to_EUR / self.conv_to_kWh * 100 for x in df_market_results[column_price]]
-        scplotter.ax2 = scplotter.ax.twinx()
-        scplotter.ax2.plot(xvalues, yvalues, color="0.2", linewidth=3, alpha=1, label="Price")
-        scplotter.ax2.set(ylim=(min(0, round(min(yvalues) * 1.1, 1)), max(0, round(max(yvalues) * 1.1, 1))))
-        # Figure setup
-        xlims = [min(xvalues), max(xvalues)]
-        lines_1, labels_1 = scplotter.ax.get_legend_handles_labels()
-        lines_2, labels_2 = scplotter.ax2.get_legend_handles_labels()
-        lines = lines_1 + lines_2
-        labels = labels_1 + labels_2
-        scplotter.ax.legend(lines, labels, bbox_to_anchor=(0.5, -0.2), ncol=min(4, len(labels)))
-        scplotter.figure_setup(title="Price vs. sustainability & locality", xlabel="",
-                               ylabel="Share (%)", ylabel_right="Electricity price (ct/kWh)",
-                               xlims=xlims, xticks_style="date")
-        if self.save_figures:
-            self.__save_figure(name=f"price_type_{type_market}")
-        if self.show_figures:
-            plt.show()
-
     def plot_household(self, type_household: tuple = (1, 1, 1, 0, 0, 0), id_user: int = None) -> None:
         """gathers information about the chosen example household and calls the subfunctions to plot the power profile
         and the power purchases and sales over time
@@ -555,7 +385,6 @@ class ScenarioAnalyzer:
         """
 
         print("*** CREATING PLOTS OF EXAMPLE HOUSEHOLD ***")
-        plt.close("all")
 
         # Load meter information
         df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0, dtype={"id_user": str})
@@ -660,6 +489,309 @@ class ScenarioAnalyzer:
         self.__plot_household_power(id_user, id_meter, ids, devices, labels, colors)
         self.__plot_household_finance(id_users, id_user, complete_table=False)
 
+    def plot_average_mcp_per_type(self, all_types: bool = False) -> None:
+        """This function plots the specific energy purchasing costs and average total energy purchased
+           for each type of participant.
+
+        Args:
+            all_types: boolean that specifies if plot should show also the non-existing types as column or not
+
+        Returns:
+            None
+
+        """
+
+        print("*** CREATING PLOT OF WEIGHTED BALANCES PER USER TYPE ***")
+
+        # Create dataframe to gather all the information and do the necessary calculations
+        df_info = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Wind_Fix", "energy_sold_kWh",
+                                        "revenue_sold_€", "energy_bought_kWh", "cost_bought_€", "energy_balance_kWh",
+                                        "balance_€", "consumption_kWh", "avg_price_€/kWh"]).set_index(db_p.ID_USER)
+
+        # Look up each participants main meter id
+        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0,
+                                dtype={"id_user": str})
+        df_temp = df_meters[df_meters[db_p.TYPE_METER].isin(["grid meter", "virtual grid meter"])] \
+            [[db_p.ID_USER, db_p.ID_METER]]
+        df_temp.set_index(db_p.ID_USER, inplace=True)
+        df_info[db_p.ID_USER] = df_temp.index
+        df_info.set_index(db_p.ID_USER, inplace=True)
+        df_info[db_p.ID_METER] = df_temp
+
+        # Check which market participants have PV, batteries, EVs, heat pumps, wind and fixed gen
+        df_info["PV_Bat_EV_HP_Wind_Fix"] = self.pv_bat_ev_hp_wind_fix
+
+        # Sort all the transactions according to the user for the time period max_time
+        df_transactions = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_LOGS_TRANSACTIONS}.csv",
+                                      index_col=0)
+        df_transactions = df_transactions[df_transactions[db_p.TS_DELIVERY] <= self.max_time]
+        df_temp_pos = df_transactions[df_transactions[db_p.QTY_ENERGY] >= 0]
+        df_temp_pos = df_temp_pos.groupby(db_p.ID_USER).sum()
+        df_info["energy_sold_kWh"] = df_temp_pos[db_p.QTY_ENERGY] * self.conv_to_kWh
+        df_info["revenue_sold_€"] = df_temp_pos[db_p.DELTA_BALANCE] * self.conv_to_EUR
+        df_temp_neg = df_transactions[df_transactions[db_p.QTY_ENERGY] < 0]
+        df_temp_neg_energy = df_temp_neg[df_temp_neg[db_p.TYPE_TRANSACTION].isin(["market"])]. \
+            groupby(db_p.ID_USER).sum()
+        df_info["energy_bought_kWh"] = - df_temp_neg_energy[db_p.QTY_ENERGY] * self.conv_to_kWh
+        # df_temp_neg_cost = df_temp_neg.groupby(db_p.ID_USER).sum()
+        df_info["cost_bought_€"] = - df_temp_neg_energy[db_p.DELTA_BALANCE] * self.conv_to_EUR
+
+        df_info = df_info.fillna(0)
+        df_info["energy_balance_kWh"] = df_info["energy_sold_kWh"] - df_info["energy_bought_kWh"]
+        df_info["balance_€"] = df_info["revenue_sold_€"] - df_info["cost_bought_€"]
+        df_info["n_participants"] = 1
+        # Get the power consumption of every household by checking the submeter's delta readings
+        df_consumption = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_READINGS_METER_DELTA}.csv",
+                                     index_col=0)
+        df_meters = df_meters.set_index("id_meter")
+        df_consumption = df_consumption[df_consumption[db_p.TS_DELIVERY] <= self.max_time].sort_values(db_p.TS_DELIVERY)
+        df_consumption = df_consumption.groupby("id_meter").sum()
+
+        df_consumption["main_meter"], df_consumption["id_user"] = df_meters["id_meter_super"], df_meters["id_user"]
+        # Sort out all main meter, and PV, wind and fixed gen meters as only the consumption of the household load,
+        # the heatpump, the ev the battery is important (current method simply adds up energy_in)
+        df_consumption = df_consumption[df_consumption["main_meter"] != "0000000000"]  # delete main meter
+        df_consumption = df_consumption[df_consumption["energy_in"] > 0]  # delete all generators
+        df_consumption["energy_consumed"] = df_consumption["energy_in"]  # "- df_consumption["energy_out"]",
+        #     if battery discharge to be subtracted
+        df_consumption = df_consumption.groupby("id_user").sum()
+        df_info["consumption_kWh"] = df_consumption["energy_consumed"] / 1000
+        # avg_price: negative balance means positive price  (you have to pay for every kWh);
+        # positive balance means negative price (you receive money for every kWh)
+        df_info["avg_price_€/kWh"] = - df_info["balance_€"].abs() / df_info["consumption_kWh"]
+        df_info["avg_price_€/kWh"] = - df_info["cost_bought_€"].abs() / df_info["energy_bought_kWh"]
+        df_info.loc[abs(df_info["avg_price_€/kWh"]) == float("inf"), "avg_price_€/kWh"] = 0
+
+        # Group all participants by PV_Bat_EV_HP_Wind_Fix and create list of single values for boxplots
+        df_temp = df_info.groupby("PV_Bat_EV_HP_Wind_Fix").sum()
+        df_temp["avg_price_€/kWh"] = - df_temp["balance_€"] / df_temp["consumption_kWh"]
+        df_temp["avg_price_€/kWh"] = - df_temp["cost_bought_€"].abs() / df_temp["energy_bought_kWh"]
+
+        df_temp["n_avg_price_ct/kWh"] = 0
+        df_temp["n_avg_price_ct/kWh"] = df_temp["n_avg_price_ct/kWh"].astype("object")
+
+        df_temp["n_avg_energy_bought_kWh"] = df_temp["energy_bought_kWh"]/df_temp["n_participants"]
+        for user_type in df_temp.index.values:
+            df_temp.at[user_type, "n_avg_price_ct/kWh"] = list(
+                df_info[df_info["PV_Bat_EV_HP_Wind_Fix"] == user_type]["avg_price_€/kWh"] * -100)
+
+        # Create dataframe to store the information for the graph depending on display type
+        if all_types and len(df_temp) < 16:
+            df_results = pd.DataFrame(columns=["PV_Bat_EV_HP_Wind_Fix", "avg_price_€/kWh", "n_participants",
+                                               "n_avg_price_ct/kWh"])
+            df_results["PV_Bat_EV_HP_Wind_Fix"] = list(it.product([0, 1], repeat=len(df_temp.index.values[0])))
+            df_results.set_index("PV_Bat_EV_HP_Wind_Fix", inplace=True)
+            df_results["avg_price_€/kWh"] = df_temp["avg_price_€/kWh"]
+            df_results["n_participants"] = df_temp["n_participants"]
+            df_results["n_avg_price_ct/kWh"] = df_temp["n_avg_price_ct/kWh"]
+            df_results = df_results.fillna(0)
+        else:
+            df_results = df_temp
+        df_results.loc[abs(df_results["avg_price_€/kWh"]) == float("inf"), "avg_price_€/kWh"] = 0
+
+        # Transpose list of indices and replace the booleans with checkmarks and blanks for the table
+        base_cell_texts = self.create_checkmarks(df_results.index.values)
+        base_rows = ["PV", "Battery", "EV", "Heat pump", "Wind", "Fixed gen"]
+
+        cell_texts = []
+        rows = []
+
+        for i, row in enumerate(base_cell_texts):
+            num_char = 0
+            for entry in row:
+                num_char += len(entry)
+            if num_char:
+                rows.append(base_rows[i])
+                cell_texts.append(base_cell_texts[i])
+
+        # Plots
+        # Box plot (commented out lines are for manual sorting)
+        # order = [1, 0, 3, 5, 2, 4]
+        scplotter = ScenarioPlotter()
+        raw_data = list(df_results["n_avg_price_ct/kWh"])
+        # drop nan
+        data = []
+        for entry in raw_data:
+            data.append([datapoint for datapoint in entry if not (math.isnan(datapoint))])
+
+        scplotter.ax2 = scplotter.ax.twinx()
+        plt1 = scplotter.ax.bar(x=list(range(1, len(data)+1)), height=list(df_results["n_avg_energy_bought_kWh"]),
+                                label="Average energy import")
+        # scplotter.ax.legend(loc="lower right")
+        plt2 = scplotter.ax2.boxplot(data, showfliers=False)
+
+        scplotter.ax2.legend([plt1, plt2["whiskers"][1]],
+                            ["Mean quantity of energy purchased", "Mean price of energy purchased"],
+                            loc='lower left')
+                            # bbox_to_anchor=(0, 0))
+
+        # Create table
+        columns = [f"n={round(x)}" for x in df_results["n_participants"]]
+        # columns = [columns[i] for i in order]
+
+        # cell_texts = list(map(list, zip(*cell_texts)))
+        # cell_texts = [cell_texts[i] for i in order]
+        # cell_texts = list(map(list, zip(*cell_texts)))
+        the_table = scplotter.ax.table(cellText=cell_texts, rowLabels=rows, colLabels=columns,
+                                       loc="bottom", cellLoc="center", colLoc="center")
+        self.change_table_height(the_table, 1.2)
+        # Figure setup
+        scplotter.grid_b_minor = True
+        scplotter.figure_setup(ylabel_right="Price (c/kWh)",
+                               ylabel="Energy (kWh)")
+        scplotter.ax2.set_ylim([0, 10])
+        scplotter.ax.set_ylim([0, 40])
+        # scplotter.ax2.legend(["", "box"])
+        # scplotter.ax.legend(["bar"])
+
+
+        if self.save_figures:
+            self.__save_figure(name=f"balance_per_type")
+        if self.show_figures:
+            plt.show()
+
+    # internal functions
+
+    def __price_type_ex_ante(self, type_market, column_price) -> None:
+        """plots the average clearing price and the quality of the delivered energy for each time step for
+        ex-ante markets
+
+        Args:
+            type_market: string that specifies, which market is to be plotted
+            column_price: string that contains the number of the column that contains the prices
+
+        Returns:
+            None
+
+        """
+
+        # Get market data and truncate at maximum simulated time step
+        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
+                                        index_col=0)
+        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
+
+        # Dataframe setup with timestamps as indices
+        df_results = pd.DataFrame(columns=["timestamp", "energy_kWh", "cost_€", "price_€/kWh",
+                                           "energy_loc_kWh", "loc_share", "energy_greloc_kWh",
+                                           "greloc_share"])
+        df_results["timestamp"] = sorted(df_market_results[db_p.TS_DELIVERY].unique())
+        df_results.set_index("timestamp", inplace=True)
+
+        # Get data from market results
+        df_results["energy_kWh"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()[db_p.QTY_ENERGY_TRADED] * \
+                                   self.conv_to_kWh
+        df_market_results["costs"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
+                                     df_market_results[column_price]
+        df_results["cost_€"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()["costs"] * self.conv_to_EUR
+        df_results["price_€/kWh"] = df_results["cost_€"] / df_results["energy_kWh"]
+
+        # Get the shares of the different energy types
+        # NOTE: The values of df_results are the total values meaning that the green share includes both green
+        # non-local and local while local included local green and fossil. In df_market_results they are separate
+        df_market_results["energy_loc"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
+                                          df_market_results["share_quality_offers_cleared_local"] / 100
+        df_market_results["energy_greloc"] = df_market_results[db_p.QTY_ENERGY_TRADED] * \
+                                             df_market_results["share_quality_offers_cleared_green_local"] / 100
+
+        df_results["energy_loc_kWh"] = (df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_loc"] +
+                                        df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_greloc"]) * \
+                                       self.conv_to_kWh
+        df_results["energy_greloc_kWh"] = df_market_results.groupby(db_p.TS_DELIVERY).sum()["energy_greloc"] * \
+                                       self.conv_to_kWh
+
+        df_results["loc_share"] = df_results["energy_loc_kWh"] / df_results["energy_kWh"]
+        df_results["greloc_share"] = df_results["energy_greloc_kWh"] / df_results["energy_kWh"]
+        df_results = df_results.fillna(0)
+        df_results = df_results.sort_index()
+
+        # Plot lines and bars
+        # Plots
+        scplotter = ScenarioPlotter()
+        xvalues = df_results.index.values.tolist()
+        # Local share (left y-axis)
+        yvalues = [x * 100 for x in df_results["loc_share"].tolist()]
+        scplotter.ax.fill_between(xvalues, yvalues, color="#e79208", alpha=0.5, label="Local")
+        # Local share (left y-axis)
+        yvalues = [x * 100 for x in df_results["greloc_share"].tolist()]
+        scplotter.ax.fill_between(xvalues, yvalues, color="#369f28", alpha=0.5, label="Green & local")
+        scplotter.ax.set(ylim=(0, 100))
+        # Price plot (right y-axis)
+        yvalues = [x for x in df_results["price_€/kWh"].tolist()]
+        scplotter.ax2 = scplotter.ax.twinx()
+        scplotter.ax2.plot(xvalues, yvalues, color="0.2", linewidth=3, alpha=1, label="Price")
+        scplotter.ax2.set(ylim=(min(0, round(min(yvalues) * 1.1, 1)), max(0, round(max(yvalues) * 1.1, 1))))
+        # Figure setup
+        xlims = [min(xvalues), max(xvalues)]
+        lines_1, labels_1 = scplotter.ax.get_legend_handles_labels()
+        lines_2, labels_2 = scplotter.ax2.get_legend_handles_labels()
+        lines = lines_1 + lines_2
+        labels = labels_1 + labels_2
+        scplotter.ax.legend(lines, labels, bbox_to_anchor=(0.5, -0.2), ncol=min(4, len(labels)))
+        scplotter.figure_setup(title="MCP vs. energy quality", xlabel="",
+                               ylabel="Energy quality share (%)", ylabel_right="Average MCP (€/kWh)",
+                               xlims=xlims, xticks_style="date")
+        if self.save_figures:
+            self.__save_figure(name=f"price_type_{type_market}")
+        if self.show_figures:
+            plt.show()
+
+    def __price_type_ex_post(self, type_market, column_price) -> None:
+        """plots the average clearing price and the quality of the delivered energy for each time step for
+        ex-post markets
+
+        Args:
+            type_market: string that specifies, which market is to be plotted
+            column_price: string that contains the number of the column that contains the prices
+
+        Returns:
+            None
+
+        """
+
+        # Get market data and truncate at maximum simulated time step
+        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
+                                        index_col=0)
+        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
+        df_market_results.set_index(db_p.TS_DELIVERY, inplace=True)
+        df_market_results = df_market_results.sort_index()
+
+        # Add shares of the same quality (green or local) to receive total values
+        df_market_results["loc_share"] = df_market_results["share_quality_local"] + \
+                                         df_market_results["share_quality_green_local"]
+
+        # Plot lines and bars
+        # Plots
+        scplotter = ScenarioPlotter(
+
+        )
+        xvalues = df_market_results.index.values.tolist()
+        # Local share (left y-axis)
+        yvalues = df_market_results["loc_share"].tolist()
+        scplotter.ax.fill_between(xvalues, yvalues, color="#e79208", alpha=0.5, label="Local")
+        # Local share (left y-axis)
+        yvalues = df_market_results["share_quality_green_local"].tolist()
+        scplotter.ax.fill_between(xvalues, yvalues, color="#369f28", alpha=0.5, label="Green & local")
+        scplotter.ax.set(ylim=(0, 100))
+        # Price plot (right y-axis)
+        yvalues = [x * self.conv_to_EUR / self.conv_to_kWh * 100 for x in df_market_results[column_price]]
+        scplotter.ax2 = scplotter.ax.twinx()
+        scplotter.ax2.plot(xvalues, yvalues, color="0.2", linewidth=3, alpha=1, label="Price")
+        scplotter.ax2.set(ylim=(min(0, round(min(yvalues) * 1.1, 1)), max(0, round(max(yvalues) * 1.1, 1))))
+        # Figure setup
+        xlims = [min(xvalues), max(xvalues)]
+        lines_1, labels_1 = scplotter.ax.get_legend_handles_labels()
+        lines_2, labels_2 = scplotter.ax2.get_legend_handles_labels()
+        lines = lines_1 + lines_2
+        labels = labels_1 + labels_2
+        scplotter.ax.legend(lines, labels, bbox_to_anchor=(0.5, -0.2), ncol=min(4, len(labels)))
+        scplotter.figure_setup(title="Price vs. sustainability & locality", xlabel="",
+                               ylabel="Share (%)", ylabel_right="Electricity price (ct/kWh)",
+                               xlims=xlims, xticks_style="date")
+        if self.save_figures:
+            self.__save_figure(name=f"price_type_{type_market}")
+        if self.show_figures:
+            plt.show()
+
     def __plot_household_power(self, id_user, id_meter, ids, devices, labels, colors) -> None:
         """plots the power profile of the example household over time
 
@@ -707,7 +839,7 @@ class ScenarioAnalyzer:
         scplotter.ax.stackplot(xvalues, yvalues, baseline="zero", colors=colors[1:])
         # Figure setup
         xlims = [min(xvalues), max(xvalues)]
-        scplotter.figure_setup(title=f"Power profile of household #{int(id_user)}", ylabel="Power (kW)",
+        scplotter.figure_setup(title=f"Power flow for prosumer #{int(id_user)}", ylabel="Power (kW)",
                                legend_labels=labels, xlims=xlims, xticks_style="date")
         if self.save_figures:
             self.__save_figure(name=f"household_power_({int(id_user)})")
@@ -777,13 +909,13 @@ class ScenarioAnalyzer:
         xvalues = df_balance.index.values
         bar_width = (xvalues[1] - xvalues[0]) * 0.8
         # Y-values of monetary inflow
-        yvalues_pos = [yvalue * 100 for yvalue in df_balance[id_user]["revenue_€"].tolist()]
-        yvalues1_pos = [yvalue * 100 for yvalue in df_balance[id_user]["balancing_pos_€"].tolist()]
+        yvalues_pos = [yvalue for yvalue in df_balance[id_user]["revenue_€"].tolist()]
+        yvalues1_pos = [yvalue for yvalue in df_balance[id_user]["balancing_pos_€"].tolist()]
         # Y-values of monetary outflow
-        yvalues_neg = [yvalue * 100 for yvalue in df_balance[id_user]["market_€"].tolist()]
-        yvalues1_neg = [yvalue * 100 for yvalue in df_balance[id_user]["levies_€"].tolist()]
+        yvalues_neg = [yvalue for yvalue in df_balance[id_user]["market_€"].tolist()]
+        yvalues1_neg = [yvalue for yvalue in df_balance[id_user]["levies_€"].tolist()]
         ybottom = [yvalues_neg[x]+yvalues1_neg[x] for x in range(len(yvalues_neg))] # auxiliary values
-        yvalues2_neg = [yvalue * 100 for yvalue in df_balance[id_user]["balancing_neg_€"].tolist()]
+        yvalues2_neg = [yvalue for yvalue in df_balance[id_user]["balancing_neg_€"].tolist()]
         # Stacked bar chart (Note: Order is different than expected due to legend labeling behavior of matplotlib)
         scplotter.ax.bar(xvalues, yvalues_neg, bar_width,  color="#a02222", alpha=0.9, label="Cost")
         scplotter.ax.bar(xvalues, yvalues_pos, bar_width, color="green", alpha=0.9, label="Revenue")
@@ -794,104 +926,100 @@ class ScenarioAnalyzer:
         scplotter.ax.bar(xvalues, yvalues2_neg, bar_width,  bottom=ybottom, color="#a02222", alpha=0.3,
                          label="Neg. Balancing")
         # Line plot of balance
-        yvalues_bal = [yvalue * 100 for yvalue in (df_balance[id_user]["balance_€"]).to_list()]
+        yvalues_bal = [yvalue for yvalue in (df_balance[id_user]["balance_€"]).to_list()]
         scplotter.ax.plot(xvalues, yvalues_bal, color="0.1", linewidth=2)
         # Figure setup
         xlims = [min(xvalues), max(xvalues)]
         labels = ("Balance", "Cost", "Revenue", "Levies", "Pos. Balancing", "Neg. Balancing")
-        scplotter.figure_setup(title=f"Finances of household #{int(id_user)}", ylabel="Cents", legend_labels=labels,
+        scplotter.figure_setup(title=f"Finances of household #{int(id_user)}", ylabel="Cash flow (€)", legend_labels=labels,
                                xlims=xlims, xticks_style="date")
         if self.save_figures:
             self.__save_figure(name=f"household_finance_({int(id_user)})")
         if self.show_figures:
             plt.show()
 
-    def plot_balance_per_type(self, all_types: bool = False) -> None:
-        """plots the specific energy costs for each type of participant
+    def __mcp_ex_ante(self, type_market, column_price) -> None:
+        """plots the weighted average and the individual market clearing prices for each time step for ex-ante markets
 
         Args:
-            all_types: boolean that specifies if plot should show also the non-existing types as column or not
+            type_market: string that specifies, which market is to be plotted
+            column_price: string that contains the number of the column that contains the prices
 
         Returns:
             None
 
         """
 
-        print("*** CREATING PLOT OF WEIGHTED BALANCES PER USER TYPE (tba) ***")
-        plt.close("all")
+        # Read and prepare the desired market dataframe
+        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
+                                        index_col=0)
+        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
+        df_market_results["costs_€"] = df_market_results[db_p.QTY_ENERGY_TRADED] * df_market_results[column_price] * \
+                                       self.conv_to_EUR
 
-        # Create dataframe to gather all the information and do the necessary calculations
-        df_info = pd.DataFrame(columns=[db_p.ID_USER, db_p.ID_METER, "PV_Bat_EV_HP_Wind_Fix", "energy_sold_kWh",
-                                        "revenue_sold_€", "energy_bought_kWh", "cost_bought_€", "energy_total_kWh",
-                                        "balance_€", "avg_price_€/kWh"]).set_index(db_p.ID_USER)
+        # Create dataframe for the results
+        df_results = pd.DataFrame(columns=["timestamp", "total_cost_€", "total_energy_kWh", "avg_price_€/kWh"])
 
-        # Look up each participants main meter id
-        df_meters = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_INFO_METER}.csv", index_col=0)
-        df_temp = df_meters[df_meters[db_p.INFO_ADDITIONAL].str.contains("main meter")][[db_p.ID_USER, db_p.ID_METER]]
-        df_temp.set_index(db_p.ID_USER, inplace=True)
-        df_info[db_p.ID_USER] = df_temp.index
-        df_info.set_index(db_p.ID_USER, inplace=True)
-        df_info[db_p.ID_METER] = df_temp
-
-        # Check which market participants have PV, batteries, EVs and heat pumps
-        df_info["PV_Bat_EV_HP_Wind_Fix"] = self.__check_pv_bat_ev_hp_wind_fix()
-
-        # Sort all the transactions according to the user for the time period max_time
-        df_transactions = pd.read_csv(f"{self.path_results}/db_snapshot/{db_p.NAME_TABLE_LOGS_TRANSACTIONS}.csv",
-                                      index_col=0)
-        df_transactions = df_transactions[df_transactions[db_p.TS_DELIVERY] <= self.max_time]
-        df_temp_pos = df_transactions[df_transactions[db_p.QTY_ENERGY] >= 0]
-        df_temp_pos = df_temp_pos.groupby(db_p.ID_USER).sum()
-        df_temp_neg = df_transactions[df_transactions[db_p.QTY_ENERGY] < 0]
-        df_temp_neg = df_temp_neg.groupby(db_p.ID_USER).sum()
-        df_info["energy_sold_kWh"] = df_temp_pos[db_p.QTY_ENERGY] * self.conv_to_kWh
-        df_info["revenue_sold_€"] = df_temp_pos[db_p.DELTA_BALANCE] * self.conv_to_EUR
-        df_info["energy_bought_kWh"] = - df_temp_neg[db_p.QTY_ENERGY] * self.conv_to_kWh
-        df_info["cost_bought_€"] = - df_temp_neg[db_p.DELTA_BALANCE] * self.conv_to_EUR
-        df_info["energy_total_kWh"] = df_info["energy_sold_kWh"] - df_info["energy_bought_kWh"]
-        df_info["balance_€"] = df_info["revenue_sold_€"] - df_info["cost_bought_€"]
-        df_info["n_participants"] = 1
-        # avg_price: negative balance means positive price  (you have to pay for every kWh);
-        # positive balance means negative price (you receive money for every kWh)
-        df_info["avg_price_€/kWh"] = - df_info["balance_€"].abs() / df_info["energy_total_kWh"]
-        df_info.loc[abs(df_info["avg_price_€/kWh"]) == float("inf"), "avg_price_€/kWh"] = 0
-
-        # Group all participants by PV_Bat_EV_HP_Wind_Fix
-        df_temp = df_info.groupby("PV_Bat_EV_HP_Wind_Fix").sum()
-        df_temp["avg_price_€/kWh"] = df_temp["balance_€"] / df_temp["energy_total_kWh"]
-
-        # Create dataframe to store the information for the graph depending on display type
-        if all_types and len(df_temp) < 16:
-            df_results = pd.DataFrame(columns=["PV_Bat_EV_HP_Wind_Fix", "avg_price_€/kWh", "n_participants"])
-            df_results["PV_Bat_EV_HP_Wind_Fix"] = list(it.product([0, 1], repeat=len(df_temp.index.values[0])))
-            df_results.set_index("PV_Bat_EV_HP_Wind_Fix", inplace=True)
-            df_results["avg_price_€/kWh"] = df_temp["avg_price_€/kWh"]
-            df_results["n_participants"] = df_temp["n_participants"]
-            df_results = df_results.fillna(0)
-        else:
-            df_results = df_temp
-        df_results.loc[abs(df_results["avg_price_€/kWh"]) == float("inf"), "avg_price_€/kWh"] = 0
-
-        # Transpose list of indices and replace the booleans with checkmarks and blanks for the table
-        cell_texts = self.create_checkmarks(df_results.index.values)
+        # Gather values form df_market_results and calculate weighted average
+        df_results["timestamp"] = sorted(df_market_results[db_p.TS_DELIVERY].unique())
+        df_results.set_index("timestamp", inplace=True)
+        df_temp = df_market_results.groupby(db_p.TS_DELIVERY).sum()
+        df_results["total_cost_€"] = df_temp["costs_€"]
+        df_results["total_energy_kWh"] = df_temp[db_p.QTY_ENERGY_TRADED] * self.conv_to_kWh
+        df_results["avg_price_€/kWh"] = df_results["total_cost_€"] / df_results["total_energy_kWh"]
 
         # Plots
-        # Bar plot
+
+        # Plot: Weighted average
         scplotter = ScenarioPlotter()
-        xvalues = range(len(df_results))
-        yvalues = [x * 100 for x in df_results["avg_price_€/kWh"].to_list()]
-        scplotter.ax.bar(xvalues, yvalues, color="0.6")
-        # Create table
-        columns = [f"n={round(x)}" for x in df_results["n_participants"]]
-        rows = ["PV", "Battery", "EV", "Heat pump", "Wind", "Fixed gen"]
-        the_table = scplotter.ax.table(cellText=cell_texts, rowLabels=rows, colLabels=columns,
-                                       loc="bottom", cellLoc="center", colLoc="center")
-        self.change_table_height(the_table, 1.2)
+        xvalues = df_results.index.values
+        yvalues = (df_results["avg_price_€/kWh"]).tolist()
+        scplotter.ax.plot(xvalues, yvalues, color="#a02222", alpha=0.8) #, sizes=np.ones(len(xvalues)) * 20)
+
+        # Plot: Market prices
+        xvalues = df_market_results.ts_delivery
+        yvalues = (df_market_results[column_price] * self.conv_to_EUR / self.conv_to_kWh).\
+            tolist()
+        scplotter.ax.scatter(xvalues, yvalues, color="#369f28", alpha=0.3, sizes=np.ones(len(xvalues)) * 5)
         # Figure setup
-        scplotter.grid_b_minor = True
-        scplotter.figure_setup(title="Specific costs per type of participant", ylabel="Specific costs (ct/kWh)")
+        xlims = [min(xvalues), max(xvalues)]
+        scplotter.figure_setup(title="Market clearing prices (ex-ante)", ylabel="Market clearing price (€/kWh)",
+                               xlabel="", legend_labels=("Weighted average", "Individual clearing"),
+                               xlims=xlims, xticks_style="date")
         if self.save_figures:
-            self.__save_figure(name=f"balance_per_type")
+            self.__save_figure(name=f"mcp_{type_market}")
+        if self.show_figures:
+            plt.show()
+
+    def __mcp_ex_post(self, type_market, column_price) -> None:
+        """plots the market clearing price for each time step for ex-post markets
+
+        Args:
+            type_market: string that specifies, which market is to be plotted
+            column_price: string that contains the number of the column that contains the prices
+
+        Returns:
+            None
+
+        """
+
+        # Read the desired market dataframe
+        df_market_results = pd.read_csv(f"{self.path_results}/db_snapshot/results_market_{type_market}.csv",
+                                        index_col=0)
+        df_market_results = df_market_results[df_market_results[db_p.TS_DELIVERY] <= self.max_time]
+        df_market_results = df_market_results.sort_index()
+
+        # Plot: Market prices
+        scplotter = ScenarioPlotter()
+        xvalues = df_market_results.ts_delivery
+        yvalues = (df_market_results[column_price] * self.conv_to_EUR / self.conv_to_kWh * 100).to_list()
+        scplotter.ax.scatter(xvalues, yvalues, color="#a02222", alpha=0.8, sizes=np.ones(len(xvalues)) * 20)
+        # Figure setup
+        xlims = [min(xvalues), max(xvalues)]
+        scplotter.figure_setup(title="LEM clearing prices", ylabel="Electricity price (ct/kWh)",
+                               xlims=xlims, xticks_style="date")
+        if self.save_figures:
+            self.__save_figure(name=f"mcp_{type_market}")
         if self.show_figures:
             plt.show()
 
@@ -1085,7 +1213,10 @@ class ScenarioPlotter:
         """
 
         # Style settings
-        plt.style.use("../lemlab/lemlab_plots.mplstyle")
+        path_class_defn = os.path.dirname(__file__)
+        path_plotstyle = os.path.join(path_class_defn, 'lemlab_plots.mplstyle')
+        plt.style.use(path_plotstyle)
+
         # Plots
         self.fig, self.ax = plt.subplots()
         self.ax2 = None
@@ -1130,7 +1261,7 @@ class ScenarioPlotter:
 
         # Scale x-axis tightly
         self.ax.autoscale(enable=True, axis='x', tight=True)
-
+        #self.ax.set_ylim(bottom=-70, top=90)
         # Adjust second y-axis if it exists
         if ylabel_right:
             self.ax2.set_ylabel(ylabel=ylabel_right)

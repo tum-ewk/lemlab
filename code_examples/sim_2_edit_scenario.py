@@ -1,18 +1,34 @@
-import lemlab
-from ruamel.yaml import YAML
+import os
+import shutil
+import json
+
+# in this example, we create an edited scenario from the original
+# by making a copy and deactivating all electric vehicles
 
 if __name__ == "__main__":
 
-    sim_name = "test_sim"
+    sim_name_old = "test_sim"
+    sim_name_new = "test_sim_no_ev"
 
-    # create new config file from which to edit scenario
-    with open(f"../scenarios/{sim_name}/config.yaml") as config_file:
-        config = YAML().load(config_file)
-    config["aggregator"]["active"] = True
-    with open(f"../scenarios/{sim_name}/config_edited.yaml", 'w+') as file:
-        YAML().dump(config, file)
+    # copy/paste original scenario and give it a new name
+    shutil.copytree(src=f"../scenarios/{sim_name_old}/",
+                    dst=f"../scenarios/{sim_name_new}/")
 
-    # generate new scenario from edited config
-    scenario = lemlab.Scenario()
-    scenario.edit_scenario(path_new_config=f"../scenarios/{sim_name}/config_edited.yaml",
-                           name_new_scenario="test_sim_with_agg")
+    # loop through all prosumers in the new scenario
+    for prosumer in os.listdir(f"../scenarios/{sim_name_new}/prosumer"):
+
+        # load plant config file
+        with open(f"../scenarios/{sim_name_new}/prosumer/{prosumer}/config_plants.json") as read_file:
+            config = json.load(read_file)
+
+        # check for EVs
+        for plant in config:
+            # if ev found, deactivate it
+            if config[plant]["type"] == "ev":
+                config[plant]["activated"] = False
+
+        # save edited plant config file
+        with open(f"../scenarios/{sim_name_new}/prosumer/{prosumer}/config_plants.json", 'w+') as write_file:
+            json.dump(config, write_file)
+
+    # the new scenario can now be executed normally

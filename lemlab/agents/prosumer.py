@@ -25,7 +25,7 @@ class Prosumer:
        A single family home can simulate the following physical plants, depending on the selected configuration:
                         1)  Fixed household loads with or without electric vehicles
                         2)  PV plants with or without battery storage
-                        3)  Market agents for trading in double sided electricity markets
+                        3)  Market agents for trading in double-sided electricity markets
 
        Instances of the Prosumer class are created and destroyed once each Simulation step.
 
@@ -722,7 +722,7 @@ class Prosumer:
                                                        * factor_w_to_wh,
                                                        return_val="pos")]}
 
-        for plant in self.plant_dict:
+        for plant in self._get_list_plants():
             log_ems.append(self.meas_val[plant] * factor_w_to_wh)
             dict_new_readings_local[plant] = [self._decomp_float(self.meas_val[plant] * factor_w_to_wh,
                                                                  return_val="neg"),
@@ -1473,11 +1473,11 @@ class Prosumer:
         list_plants = []
         if type(plant_type) is list:
             for plant in self.config_dict["list_plants"]:
-                if self.plant_dict[plant].get("type") in plant_type:
+                if self.plant_dict[plant].get("type") in plant_type and self.plant_dict[plant].get("activated") is True:
                     list_plants.append(plant)
         elif type(plant_type) is str:
             for plant in self.config_dict["list_plants"]:
-                if self.plant_dict[plant].get("type") == plant_type:
+                if self.plant_dict[plant].get("type") == plant_type and self.plant_dict[plant].get("activated") is True:
                     list_plants.append(plant)
         else:
             list_plants = self.config_dict["list_plants"]
