@@ -1,4 +1,4 @@
-timestamp,price_energy_levies_positive,price_energy_levies_negative
+timestamp,price_sell,price_buy
 1613343600,0.02,0.15
 1613344500,0.02,0.15
 1613345400,0.02,0.15
