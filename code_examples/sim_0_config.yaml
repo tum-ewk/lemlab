@@ -12,7 +12,7 @@ simulation:
                                             # simulated at an accelerated rate, before the rts commences
 
   # sim only
-  "sim_start": "2021-03-23 00:00"           # simulation start as unix timestamp
+  "sim_start": "2021-03-24 00:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
   "sim_length": 1                           # length of the simulation in days
 
@@ -67,8 +67,8 @@ lem:
   "types_position": {0: 'offer',
                      1: 'bid'}
 
-  "types_transaction": {0: "market",        # what types of transactions exist (qualities are
-                        1: "balancing",     # subcategories of 0: market)
+  "types_transaction": {0: "market",        # what types of transactions exist, qualities are
+                        1: "balancing",     # subcategories of 0: market
                         2: "levy_prices"}
 
   "positions_delete": true                  # true -> submitted positions are deleted from the market
@@ -156,7 +156,7 @@ prosumer:
   "general_number_of": 20                   # number of prosumers (single family homes) to simulate
 
   "general_solver": "gurobi"                # installed pyomo compatible solver
-                                            # preferably miqp capable, e.g. "gurobi" and "cplex"
+                                            # preferably MIQP capable, e.g. "gurobi" and "cplex"
                                             # glpk is possible, for limitations see documentation
 
   ################################ controller settings ####################################
@@ -176,7 +176,7 @@ prosumer:
 
   "mpc_horizon": 96                         # mpc horizon : 1 - ~180 -> how many delivery period into the future are to be considered
 
-  "mpc_price_fcast": "flat"              # forecast model to be used for the lem market price
+  "mpc_price_fcast": "flat"                 # forecast model to be used for the lem market price
                                             #     "flat" - no meaningful forecasting, flat price curve
                                             #     "naive" - today will be identical to yesterday
 
@@ -189,7 +189,7 @@ prosumer:
 
   ################################ household load settings ####################################
 
-  "hh_has_submeter": true                   # does the household load have a physical submeter or must a virtual meter
+  "hh_has_submeter": false                  # does the household load have a physical submeter or must a virtual meter
                                             # be created?
                                             # Please note that if this value is true, calculate_virtual_submeters in
                                             # "lem" should be set to true, as the settlement algorithm needs to
@@ -229,9 +229,9 @@ prosumer:
                                             #   "smoothed" - prediction value is a moving mean
                                             #                of the future values. window width of
                                             #                9 timesteps
-                                            #   "sarma"   - full sarma model of order below
+                                            #   "sarma"   - full SARMA model of order below
 
-                                            # order of double seasonal arma model
+                                            # order of double SARMA model
   "hh_fcast_sarma_order": [2, 0, 2,         # [ar,    0, ma,
                            2, 0, 0, 96,     #  s1_ar, 0, s1_ma, s1,
                            2, 0, 0, 672]    #  s2_ar, 0, s2_ma, s2]
@@ -325,15 +325,14 @@ prosumer:
 
   "hp_sizing_power": 1                      # sizing of hp plant
                                             # 1 = thermal power of hp equals ceiled max heat demand
-                                            # note: if value <1 without other heating devices, the simulation will crash
+                                            # note: if value <1 without other heating devices, HP capacity will not
+                                            # cover demand and the simulation will crash
 
-  "hp_type": ["Outdoor Air/Water",
-              "Brine/Water",
-              "Water/Water"]                # type of heat pump
-                                            #   "ground" - ground-water heat pump
-                                            #   "air" - air-water heat pump
-                                            #   "water" - water-water heat pump
-                                            # each prosumer selects a random value off this list
+  "hp_type": ["Outdoor Air/Water"]          # type of heat pump
+                                            #   "Outdoor Air/Water" - this is the currently recommended HP type
+                                            #   Other HP types are implemented, however heat source temperature data
+                                            #   are not included
+                                            # Each prosumer selects a random value off this list
 
   "hp_temperature": 50                      # supply temperature of the heating system
                                             # needs to match value in heat pump specification file
@@ -359,8 +358,9 @@ prosumer:
                                             # and market agents. How many seconds between updates?
 
   ################################ combined heat and power (chp) settings ####################################
+  ################################ coming soon ###############################################################
 
-  "chp_fraction": 0                       # fraction of prosumers with chp
+  "chp_fraction": 0                         # fraction of prosumers with chp
 
   "chp_sizing_power": 1                     # thermal sizing of chp plant
                                             # 1 = thermal power of chp equals ceiled max heat demand
@@ -444,7 +444,7 @@ prosumer:
                                             # each prosumer selects a random value off this list
 
   "ma_horizon": [16, 32, 48, 64, 80, 95]    # market agent trading horizon,
-                                            #     possible range : 1 - (mpc_horizon - reopt_step
+                                            #     possible range : 1 - (mpc_horizon - reopt_step)
                                             # each prosumer selects a random value off this list
 
   "ma_preference_quality": ["green_local"]  # some ex-ante markets can consider user preferences
@@ -469,7 +469,7 @@ prosumer:
 ########################################################################################################################
 ########################################### producer configuration #####################################################
 ########################################################################################################################
-# The producer is a sub-class of the prosumer and is therefore modeled as a prosumer without consumption. All settings
+# The producer is a subclass of the prosumer and is therefore modeled as a prosumer without consumption. All settings
 # that cannot be set here are inherited from the prosumer class.
 
 producer:
@@ -579,7 +579,7 @@ aggregator:
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 
-                                            # order of double seasonal arma model
+                                            # order of double SARMA model
   "fcast_sarma_order": [2, 0, 2,            # [ar,    0, ma,
                         2, 0, 0, 96,        #  s1_ar, 0, s1_ma, s1,
                         2, 0, 0, 672]       #  s2_ar, 0, s2_ma, s2]

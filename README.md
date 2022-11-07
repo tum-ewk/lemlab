@@ -109,15 +109,17 @@ Your installation was successful if you see plots similar to the following:
 
 ![feeder flow](./docs/images/virtual_feeder_flow.png)
 
-![market clearing prices](./docs/images/mcp_ex_ante_da.png)
+![market clearing prices](./docs/images/mcp_ex_ante_pda.png)
 
 ![participant balances](./docs/images/balance_0.png)
 
-![prive vs. quality](./docs/images/price_type_ex_ante_da.png)
+![prive vs. quality](./docs/images/price_type_ex_ante_pda.png)
 
-![household power flows](./docs/images/household_power_(20).png)
+![household power flows](./docs/images/household_power_(7).png)
 
-![household spending](./docs/images/household_finance_(20).png)
+![household spending](./docs/images/household_finance_(7).png)
+
+![cost of energy by type](./docs/images/balance_per_type.png)
 
 ## Contact
 Feel free to contact us if you want to contribute to this project, cooperate on an interesting research question
@@ -128,12 +130,24 @@ sebastian.lumpp@tum.de
 Research Associate @ TUM EWK
 
 ## References
-Academic papers describing this platform, as well as the market algorithms, are currently under review
-and will be linked here soon.
+#### Original Platform Paper:
+&nbsp;&nbsp;&nbsp;&nbsp; Holistic Design of Local Energy Markets: the lemlab Simulation and Testing Toolbox  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Sebastian Dirk Lumpp, Michel Zade, Markus Doepfert, Peter Tzscheutschler  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In Progress
+
+#### Market matching algorithms:
+&nbsp;&nbsp;&nbsp;&nbsp;[Satisfying user preferences in community-based local energy markets — Auction-based clearing approaches](https://doi.org/10.1016/j.apenergy.2021.118004)  
+&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Sebastian Dirk Lumpp, Peter Tzscheutschler, Ulrich Wagner  
+&nbsp;&nbsp;&nbsp;&nbsp;Applied Energy, 2022
+
+#### Blockchain implementation of a LEM:
+&nbsp;&nbsp;&nbsp;&nbsp;[Evaluating the added value of blockchains to local energy markets—Comparing the performance of blockchain-based and centralised implementations](https://doi.org/10.1049/stg2.12058)  
+&nbsp;&nbsp;&nbsp;&nbsp;Michel Zade, Marcello Feroce, Arturo Guridi, Sebastian Dirk Lumpp, Peter Tzscheutschler  
+&nbsp;&nbsp;&nbsp;&nbsp;IET Smart Grid, 2022
 
 ## License
 
-Copyright (C) 2021 TUM-EWK
+Copyright (C) 2022 TUM-EWK
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
