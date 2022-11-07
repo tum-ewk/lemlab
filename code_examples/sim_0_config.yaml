@@ -125,15 +125,20 @@ lem:
 
   "path_levy_prices": "levy_prices_1.csv"
 
+  "price_energy_levies_positive": 0.00
   "price_energy_levies_negative": 0.18      # "fixed" levy price if desired
-  "price_energy_levies_positive": 0
 
 ########################################################################################################################
 ########################################### retailer configuration #####################################################
 ########################################################################################################################
 
-retailer:
-  # for the retailer's role in the market, please see the docs
+retailer:                                   # for the retailer's role in the market, please see the docs
+
+  "retail_pricing_mechanism": "fixed"       # how should retail prices be determined?
+                                            #      "fixed" - dual prices as defined below
+                                            #      "file" - prices are given as time series in input file below
+
+  "path_retail_prices": "retail_prices_1.csv"
 
   "price_sell": 0.10                        # retailer market ceiling offer one step before delivery
   "price_buy": 0.01                         # retailer market floor offer one step before delivery
