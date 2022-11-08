@@ -321,10 +321,6 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.ID_USER:                    [prosumer],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
                 self.db_conn_admin.db_param.T_UPDATE_BALANCE:           [t_setup],
-                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [prosumer_config["ma_bid_max"]
-                                                                         * euro_kwh_to_sigma_wh],
-                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [prosumer_config["ma_offer_min"]
-                                                                         * euro_kwh_to_sigma_wh],
                 self.db_conn_admin.db_param.PREFERENCE_QUALITY:         [prosumer_config["ma_preference_quality"]],
                 self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY:
                     [prosumer_config["ma_premium_preference_quality"]],

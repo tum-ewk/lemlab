@@ -1,5 +1,5 @@
 __author__ = "sdlumpp"
-__credits__ = []
+__credits__ = ["TUM-Doepfert"]
 __license__ = ""
 __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
@@ -64,6 +64,10 @@ class Prosumer:
 
         with open(f"{self.path}/config_plants.json", "r") as read_file:
             self.plant_dict = json.load(read_file)
+
+        # get price timeseries for retailer as it sets upper and lower bound of prices
+        path_retailer = "/".join(self.path.split("/", 3)[:-1] + ["retailer"])
+        self.retail_prices = pd.read_feather(f"{path_retailer}/retail_prices.ft").set_index("timestamp")
 
         self.meas_val = {"timestamp": self.ts_delivery_prev}
 
@@ -1306,7 +1310,7 @@ class Prosumer:
         participant in question.
 
         :param db_obj: Database instance, pass the database connection instance to this method
-        :param market_type:
+        :param market_type: Type of market (ex-post or ex-ante)
         :return: none
         """
         if market_type == "ex_ante":
@@ -1316,30 +1320,40 @@ class Prosumer:
                 ts_delivery_last=self.ts_delivery_current + self.config_dict["ma_horizon"] * 900
             )
             self.update_price_history(db_obj, market_type="ex_ante")
-        else:
+        elif market_type == "ex-post":
             self.matched_bids, self.matched_bids_by_timestep = None, None
             self.update_price_history(db_obj,
                                       market_type="ex_post")
+        else:
+            raise Warning(f"Market type {market_type} unknown.")
 
-    def update_user_preferences(self, db_obj):
-        user_info = db_obj.get_info_user(self.config_dict["id_user"])
+    def update_user_preferences(self, db_obj) -> None:
+        """Updates the user preference of the given user ID and saves them to the user's account configuration
 
+        :param db_obj: database object containing the current user preferences
+
+        :return: None
+        """
+
+        # Get user info from database and convert it to panda series
+        user_info = db_obj.get_info_user(self.config_dict["id_user"]).squeeze()
+
+        # Values to be updated with each time step
+        # Set positions boundaries (currently set by the retail prices of that time step)
         self.config_dict["max_bid"] = \
-            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_BID_MAX]) \
-            / db_obj.db_param.EURO_TO_SIGMA * 1000
+            self.retail_prices.at[self.ts_delivery_current, "price_sell"]
         self.config_dict["min_offer"] = \
-            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_OFFER_MIN]) \
-            / db_obj.db_param.EURO_TO_SIGMA * 1000
-        self.config_dict["ma_strategy"] = \
-            user_info.loc[0, db_obj.db_param.STRATEGY_MARKET_AGENT]
-        self.config_dict["ma_horizon"] = \
-            int(user_info.loc[0, db_obj.db_param.HORIZON_TRADING])
-        self.config_dict["ma_preference_quality"] = \
-            user_info.loc[0, db_obj.db_param.PREFERENCE_QUALITY]
-        self.config_dict["id_market_agent"] = \
-            user_info.loc[0, db_obj.db_param.ID_MARKET_AGENT]
+            self.retail_prices.at[self.ts_delivery_current, "price_buy"]
+
+        # Values that stay the same and are simply saved again
+        self.config_dict["ma_strategy"] = user_info[db_obj.db_param.STRATEGY_MARKET_AGENT]
+        self.config_dict["ma_horizon"] = int(user_info[db_obj.db_param.HORIZON_TRADING])
+        self.config_dict["ma_preference_quality"] = user_info[db_obj.db_param.PREFERENCE_QUALITY]
+        self.config_dict["id_market_agent"] = user_info[db_obj.db_param.ID_MARKET_AGENT]
         self.config_dict["ma_premium_preference_quality"] = \
-            float(user_info.loc[0, db_obj.db_param.PREMIUM_PREFERENCE_QUALITY])
+            float(user_info[db_obj.db_param.PREMIUM_PREFERENCE_QUALITY])
+
+        # Save updated values to account config
         with open(f"{self.path}/config_account.json", "w") as write_file:
             json.dump(self.config_dict, write_file)
 
@@ -1348,7 +1362,9 @@ class Prosumer:
         file. In the Strommunity setup, this method must only be called after a re-optimization. In the DSA setup, this
         method should be called after each market clearing, immediately before the beginning of a new market interval.
 
-        :return: None
+        :param market_type: Type of market (ex-post or ex-ante)
+
+        :return: none
         """
         df_target_grid_power = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index("timestamp")
 

@@ -385,8 +385,6 @@ class Scenario:
                 "controller_strategy": self.config["prosumer"]["controller_strategy"],
                 "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
-                "ma_bid_max": self.config["retailer"]["price_sell"],
-                "ma_offer_min": self.config["retailer"]["price_buy"],
                 "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                 "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
             })
