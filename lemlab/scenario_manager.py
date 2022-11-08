@@ -17,8 +17,6 @@ import pandas as pd
 import feather as ft
 import math
 from scipy import optimize
-import datetime
-from pprint import pprint
 
 
 class Scenario:
