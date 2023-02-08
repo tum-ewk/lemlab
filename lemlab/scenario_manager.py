@@ -274,15 +274,27 @@ class Scenario:
 
         # Read balancing price time series from input data directory if set to "file"
         if self.config["lem"]["bal_energy_pricing_mechanism"] == "file":
-            self.__copy_file_csv2ft(source=f"{self.path_input_data}/lem/balancing_prices"
-                                           f"/{self.config['lem']['path_bal_prices']}",
-                                    target=f"{self.path_scenario}/lem/balancing_prices.ft")
+            try:
+                df_balancing_prices = pd.read_csv(f"{self.path_input_data}/lem/balancing_prices/"
+                                                  f"{self.config['lem']['path_bal_prices']}").set_index("timestamp")
+            except FileNotFoundError:
+                raise FileNotFoundError("Balancing price file does not exist. Exiting setup.")
+
+            # Save balancing price time series to lem specification directory
+            ft.write_dataframe(df_balancing_prices.reset_index(),
+                               f"{self.path_scenario}/lem/balancing_prices.ft")
 
         # Read levy price time series from input data directory if set to "file"
         if self.config["lem"]["levy_pricing_mechanism"] == "file":
-            self.__copy_file_csv2ft(source=f"{self.path_input_data}/lem/levy_prices"
-                                           f"/{self.config['lem']['path_levy_prices']}",
-                                    target=f"{self.path_scenario}/lem/levy_prices.ft")
+            try:
+                df_levy_prices = pd.read_csv(f"{self.path_input_data}/lem/levy_prices/"
+                                             f"{self.config['lem']['path_levy_prices']}").set_index("timestamp")
+            except FileNotFoundError:
+                raise FileNotFoundError("Levy price file does not exist. Exiting setup.")
+
+            # Save levy price time series to lem specification directory
+            ft.write_dataframe(df_levy_prices.reset_index(),
+                               f"{self.path_scenario}/lem/levy_prices.ft")
 
         for type_pricing in self.config["lem"]["types_pricing_ex_post"]:
             str_type_pricing = self.config["lem"]["types_pricing_ex_post"][type_pricing]
@@ -306,35 +318,13 @@ class Scenario:
 
         """
 
-        # Check if retailer needs to be created
+        # Check if file needs to be created
         if not self.config["simulation"]["lem_active"]:  # exit function if lem is inactive
             return
-
-        # Assign retailer id to id given in config file
         self.config["retailer"]["id_market_agent"] = self.config["retailer"]["id_user"]
-
         # Save config file to retailer specification directory
         with open(f"{self.path_scenario}/retailer/config_account.json", "w+") as write_file:
             json.dump(self.config["retailer"], write_file)
-
-        # Create price time series based on pricing mechanism
-        # Case 1: "file" -> read retail price time series from input data directory
-        if self.config["retailer"]["retail_pricing_mechanism"] == "file":
-            self.__copy_file_csv2ft(source=f"{self.path_input_data}/lem/retailer"
-                                           f"/{self.config['retailer']['path_retail_prices']}",
-                                    target=f"{self.path_scenario}/retailer/retail_prices.ft")
-        # Case 2: "fixed" -> create retail price time series from input values and save to scenario directory
-        elif self.config["retailer"]["retail_pricing_mechanism"] == "fixed":
-            # Create timeseries dataframe
-            cols = {"price_sell": self.config["retailer"]["price_sell"],
-                    "price_buy": self.config["retailer"]["price_buy"]}
-            df = self.__create_timeseries_df(cols=cols)
-
-            # Save dataframe to scenario directory
-            ft.write_dataframe(df, f"{self.path_scenario}/retailer/retail_prices.ft")
-        else:
-            raise Warning(f'Input values "{self.config["lem"]["bal_energy_pricing_mechanism"]}" for '
-                          f'bal_energy_pricing_mechanism unknown.')
 
     def __create_prosumers(self) -> None:
         """creates the general setup for the prosumers to pass the information on to create the individual prosumers
@@ -383,6 +373,8 @@ class Scenario:
                 "controller_strategy": self.config["prosumer"]["controller_strategy"],
                 "ma_horizon": choice(self.config["prosumer"]["ma_horizon"]),
                 "ma_strategy": choice(self.config["prosumer"]["ma_strategy"]),
+                "ma_bid_max": self.config["retailer"]["price_sell"],
+                "ma_offer_min": self.config["retailer"]["price_buy"],
                 "ma_preference_quality": choice(self.config["prosumer"]["ma_preference_quality"]),
                 "ma_premium_preference_quality": choice(self.config["prosumer"]["ma_premium_preference_quality"]),
             })
@@ -2342,38 +2334,6 @@ class Scenario:
                               f"and thus cannot be changed.\n"
                               f"Please create a new scenario using 'new_scenario()' instead.")
 
-    def __create_timeseries_df(self, cols: dict, add_steps_before: int = 30 * 24 * 4,
-                               add_steps_after: int = 7 * 24 * 4) -> pd.DataFrame:
-        """creates a time series dataframe with the provided input for the simulation period
-
-        Args:
-            cols:               dictionary containing the columns to be added to the dataframe
-            add_steps_before:   number of time steps to be added before the simulation start
-            add_steps_after: :  number of time steps to be added after the simulation end
-
-        Returns:
-            dataframe containing the time series values
-        """
-        # Find duration of simulation
-        sim_start = int(pd.Timestamp(self.config["simulation"]["sim_start"],
-                                     tz=self.config["simulation"]["sim_start_tz"]).timestamp())
-        sim_end = round(sim_start + self.config["simulation"]["sim_length"] * 24 * 60 * 60)
-        
-        # Add specified steps before and after the simulation time range
-        timestep = 900  # not defined in config but needs to be in the future as it might vary
-        sim_start -= add_steps_before * timestep
-        sim_end += add_steps_after * timestep
-        data = {"timestamp": range(sim_start, sim_end, timestep)}
-
-        # Create empty dataframe with timestamp range
-        df = pd.DataFrame(data=data)
-
-        # Add specified columns to dataframe
-        for col in cols:
-            df[col] = cols[col]
-
-        return df
-
     @staticmethod
     def __del_file_contents(path) -> None:
         """deletes all files and folders within the specified path
@@ -2486,23 +2446,3 @@ class Scenario:
         characters = string.ascii_lowercase + string.digits * 3
 
         return ''.join(choice(characters) for _ in range(length))
-
-    @staticmethod
-    def __copy_file_csv2ft(source: str, target: str) -> None:
-        """loads a csv time-series file and saves it as feather file
-
-        Args:
-            source: source path of csv file
-            target: target path of feather file
-        """
-
-        # Load csv file
-        try:
-            df = pd.read_csv(source)  # .set_index("timestamp")
-        except FileNotFoundError:
-            raise FileNotFoundError("File does not exist. Exiting setup.")
-
-        # Save file to specified target directory
-        ft.write_dataframe(df, target)
-        # ft.write_dataframe(df.reset_index(), target)
-

@@ -107,10 +107,10 @@ class ScenarioAnalyzer:
 
         self.plot_virtual_feeder_flow()             # plots the virtual power flow of the LEM
         self.plot_mcp()                             # plots the market clearing prices and their weighted average
-        self.plot_balance()                         # plots the balance of each household at the end
         self.plot_price_type()                      # plots price vs. type of energy over time
         self.plot_household()                       # plots the power profile of one household as example
         self.plot_average_mcp_per_type()            # plots the weighted costs per energy for each household type
+        self.plot_balance()                         # plots the balance of each household at the end
 
     def plot_virtual_feeder_flow(self) -> None:
         """plots the flow within the market over time
@@ -279,12 +279,23 @@ class ScenarioAnalyzer:
                                       index_col=0)
         df_transactions = df_transactions[df_transactions[db_p.TS_DELIVERY] <= self.max_time]
         df_transactions[db_p.DELTA_BALANCE] = df_transactions[db_p.DELTA_BALANCE] * self.conv_to_EUR
+        # df_temp_pos = df_transactions[(df_transactions[db_p.QTY_ENERGY] >= 0) &
+        #                               (df_transactions[db_p.TYPE_TRANSACTION] == 'balancing')]
         df_temp_pos = df_transactions[df_transactions[db_p.QTY_ENERGY] >= 0]
         df_temp_pos = df_temp_pos.groupby(db_p.ID_USER).sum()
+        # df_temp_neg = df_transactions[(df_transactions[db_p.QTY_ENERGY] < 0) &
+        #                               (df_transactions[db_p.TYPE_TRANSACTION] == 'balancing')]
         df_temp_neg = df_transactions[df_transactions[db_p.QTY_ENERGY] < 0]
         df_temp_neg = df_temp_neg.groupby(db_p.ID_USER).sum()
         df_results["revenue_sold_€"] = df_temp_pos[db_p.DELTA_BALANCE]
         df_results["cost_bought_€"] = - df_temp_neg[db_p.DELTA_BALANCE]
+
+        # df_temp_pos = df_transactions[df_transactions[db_p.DELTA_BALANCE] >= 0]
+        # df_temp_pos = df_temp_pos.groupby(db_p.ID_USER).sum()
+        # df_temp_neg = df_transactions[df_transactions[db_p.DELTA_BALANCE] < 0]
+        # df_temp_neg = df_temp_neg.groupby(db_p.ID_USER).sum()
+        # df_results["revenue_sold_€"] = df_temp_pos[db_p.DELTA_BALANCE]
+        # df_results["cost_bought_€"] = - df_temp_neg[db_p.DELTA_BALANCE]
         df_results = df_results.fillna(0)
         df_results["balance_€"] = df_results["revenue_sold_€"] - df_results["cost_bought_€"]
 
@@ -307,7 +318,7 @@ class ScenarioAnalyzer:
 
         # Plots
         # Check number of necessary plots
-        max_par = 20                                                # maximum number of participants in one plot
+        max_par = 21                                                # maximum number of participants in one plot
         num_plots = int(np.ceil((len(df_results) - 1) / max_par))   # for every max_par participants a separate plot
         for x in range(num_plots):
             # Bar plot

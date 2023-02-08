@@ -3,3 +3,16 @@
 **/simulation_results
 **/__pycache__
 **/2022_lumpp_frontiers_lemlab
+code_examples/plot/
+
+code_examples/csv/
+
+code_examples/plot_old/
+
+code_examples/sim_adapive_20agent_1id_3pv_0.5/csv/
+
+code_examples/sim_adapive_20agent_1id_3pv_0.5/plot/
+
+code_examples/sim_adapive_20agent_1id_3pv_0.9/csv/
+
+code_examples/sim_adapive_20agent_1id_3pv_0.9/plot/

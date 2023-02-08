@@ -14,7 +14,7 @@ simulation:
   # sim only
   "sim_start": "2021-03-24 00:00"           # simulation start as unix timestamp
   "sim_start_tz": "europe/berlin"           # timezone of simulation
-  "sim_length": 1                           # length of the simulation in days
+  "sim_length": 7                           # length of the simulation in days
 
   "path_input_data": "../input_data"        # path relative to the lemlab repository
   "path_scenarios": "../scenarios"          # path relative to the lemlab repository
@@ -125,20 +125,15 @@ lem:
 
   "path_levy_prices": "levy_prices_1.csv"
 
-  "price_energy_levies_positive": 0.00
   "price_energy_levies_negative": 0.18      # "fixed" levy price if desired
+  "price_energy_levies_positive": 0
 
 ########################################################################################################################
 ########################################### retailer configuration #####################################################
 ########################################################################################################################
 
-retailer:                                   # for the retailer's role in the market, please see the docs
-
-  "retail_pricing_mechanism": "fixed"       # how should retail prices be determined?
-                                            #      "fixed" - dual prices as defined below
-                                            #      "file" - prices are given as time series in input file below
-
-  "path_retail_prices": "retail_prices_1.csv"
+retailer:
+  # for the retailer's role in the market, please see the docs
 
   "price_sell": 0.10                        # retailer market ceiling offer one step before delivery
   "price_buy": 0.01                         # retailer market floor offer one step before delivery
@@ -179,7 +174,7 @@ prosumer:
                                             # Note: any prosumer without any controllable plants will default to a
                                             #       rule-based controller
 
-  "mpc_horizon": 96                         # mpc horizon : 1 - ~180 -> how many delivery period into the future are to be considered
+  "mpc_horizon": 144                        # mpc horizon : 1 - ~180 -> how many delivery period into the future are to be considered
 
   "mpc_price_fcast": "flat"                 # forecast model to be used for the lem market price
                                             #     "flat" - no meaningful forecasting, flat price curve
@@ -212,9 +207,9 @@ prosumer:
   "hh_sizing_uniform": 3500                 # uniform power consumption for all households +-500
                                             # (hh_load_type = "uniform")
 
-  "hh_sizing_distribution": [0.1, 0.2,      # distribution of the total power consumption of the households.
-                             0.2, 0.2,      # values need not sum to 1
-                             0.2, 0.1]
+  "hh_sizing_distribution": [0.1, 0.1,      # distribution of the total power consumption of the households.
+                             0.1, 0.3,      # values need not sum to 1
+                             0.3, 0.1]
 
   "hh_sizing_distribution_intervals": [1000, 2000, 3000, 4000, 5000]
                                             # intervals that the distribution is applied to. all values
@@ -226,7 +221,7 @@ prosumer:
                                             #         hh_intervals:     [2000, 4000]
                                             #         --> 20% <=2000, 2000< 60% <=4000, 20% >4000
 
-  "hh_fcast": "naive"                       # household load forecasting method
+  "hh_fcast": "smoothed"                    # household load forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "naive"   - today will be the same as yesterday
                                             #   "naive_average" - today will be the same as
@@ -244,31 +239,31 @@ prosumer:
   "hh_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
                                             # how many seconds between retraining periods?
 
-  "hh_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+  "hh_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the 3600
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 
   ################################ small-scale photovoltaic settings ####################################
 
-  "pv_fraction": 0.7                          # fraction of prosumers with pv plants
+  "pv_fraction": 0.5                          # fraction of prosumers with pv plants
 
-  "pv_sizing_power": 1.5                    # sizing of pv plant
+  "pv_sizing_power": 1                    # sizing of pv plant
                                             # 1 = 1000 wp of pv for every 1000 kwh/a of household consumption
 
-  "pv_sizing_power_deviation": 0.2          # random positive/negative deviation from pv_sizing_power
+  "pv_sizing_power_deviation": 0            # random positive/negative deviation from pv_sizing_power
 
   "pv_controllable": true                   # can the pv inverter be controlled? true or false
 
-  "pv_fcast": "perfect"                     # pv production forecasting method
+  "pv_fcast": "perfect"                          # pv production forecasting method
                                             #   "perfect" - perfect knowledge of the future
                                             #   "smoothed" - prediction value is a moving mean of the future values.
                                             #                window width of 9 time steps
                                             #   "nn" - forecast based on weather fcast file
 
-  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data
+  "pv_fcast_retraining_period": 86400       # models should be periodically retrained based on new data 86400
                                             # how many seconds between retraining periods?
 
-  "pv_fcast_update_period": 3600            # forecasts are periodically updated and saved to file where the
+  "pv_fcast_update_period": 86400            # forecasts are periodically updated and saved to file where the
                                             # most current forecast can be retrieved by model predictive controllers
                                             # and market agents. How many seconds between updates?
 
@@ -276,7 +271,7 @@ prosumer:
 
   ################################ small-scale wind settings ####################################
 
-  "wind_fraction": 0.2                      # fraction of prosumers with wind power plants
+  "wind_fraction": 0                      # fraction of prosumers with wind power plants
 
   "wind_sizing_power": 0.7                  # sizing of wind power plant
                                             # 1 = 1000 w of wind for every 1000 kwh/a of household consumption
@@ -302,7 +297,7 @@ prosumer:
 
   ################################ battery settings ####################################
 
-  "bat_fraction": 0.4                       # fraction of prosumers with batteries
+  "bat_fraction": 0.5                       # fraction of prosumers with batteries
 
   "bat_fraction_dependent_on_pv": true      # True: bat_fraction is only applied to pv owners
                                             # False: any prosumer may own a battery
@@ -313,12 +308,12 @@ prosumer:
                                             #   else:
                                             #       battery power = bat_sizing_power * hh consumption p.a. / 1000
 
-  "bat_sizing_capacity": 1                  # battery capacity sizing
+  "bat_sizing_capacity": 2              # battery capacity sizing
                                             #   battery capacity = battery power * bat_sizing_capacity
 
   "bat_efficiency": 0.95                    # one way charging efficiency of the battery
 
-  "bat_soc_init": 0.1                       # initial soc of the battery (0-1)
+  "bat_soc_init": 0.2                       # initial soc of the battery (0-1)
 
   "bat_charge_from_grid": false             # can the battery charge off the grid?
 
@@ -326,7 +321,7 @@ prosumer:
 
   ################################ heat pump settings ####################################
 
-  "hp_fraction": 0.2                        # fraction of prosumers with heat pumps
+  "hp_fraction": 0                        # fraction of prosumers with heat pumps
 
   "hp_sizing_power": 1                      # sizing of hp plant
                                             # 1 = thermal power of hp equals ceiled max heat demand
@@ -396,7 +391,7 @@ prosumer:
 
   ################################ electric vehicle settings ####################################
 
-  "ev_fraction": 0.25                       # fraction of prosumers with evs
+  "ev_fraction": 0                       # fraction of prosumers with evs
 
   "ev_efficiency": 0.9                      # one way charging efficiency of the vehicle
 
@@ -429,7 +424,7 @@ prosumer:
 
   ################################ fixed generator settings ####################################
 
-  "fixedgen_fraction": 0.05                 # fraction of prosumers with constant power generators
+  "fixedgen_fraction": 0                 # fraction of prosumers with constant power generators
                                             # (p.u. power read from file)
 
   "fixedgen_power": 5000                    # peak power of constant power generator
@@ -448,7 +443,7 @@ prosumer:
                                             #          trading is possible
                                             # each prosumer selects a random value off this list
 
-  "ma_horizon": [16, 32, 48, 64, 80, 95]    # market agent trading horizon,
+  "ma_horizon": [95]                        # market agent trading horizon,
                                             #     possible range : 1 - (mpc_horizon - reopt_step)
                                             # each prosumer selects a random value off this list
 

@@ -321,6 +321,10 @@ class ScenarioExecutor:
                 self.db_conn_admin.db_param.ID_USER:                    [prosumer],
                 self.db_conn_admin.db_param.BALANCE_ACCOUNT:            [0],
                 self.db_conn_admin.db_param.T_UPDATE_BALANCE:           [t_setup],
+                self.db_conn_admin.db_param.PRICE_ENERGY_BID_MAX:       [prosumer_config["ma_bid_max"]
+                                                                         * euro_kwh_to_sigma_wh],
+                self.db_conn_admin.db_param.PRICE_ENERGY_OFFER_MIN:     [prosumer_config["ma_offer_min"]
+                                                                         * euro_kwh_to_sigma_wh],
                 self.db_conn_admin.db_param.PREFERENCE_QUALITY:         [prosumer_config["ma_preference_quality"]],
                 self.db_conn_admin.db_param.PREMIUM_PREFERENCE_QUALITY:
                     [prosumer_config["ma_premium_preference_quality"]],
@@ -589,7 +593,7 @@ class ScenarioExecutor:
 
             # number of parallel processes should not exceed the number of prosumers being simulated
             # initializing processes is expensive
-            num_par_processes = min(len(self.__get_active_prosumers()), mp.cpu_count())
+            num_par_processes = min(len(self.__get_active_prosumers()), mp.cpu_count()-2)
             # num_par_processes = 32
 
             with mp.Pool(initializer=_par_step_prosumers_init,
@@ -710,7 +714,7 @@ class ScenarioExecutor:
         # generate input list for parallel processing of prosumers
         for i, _ in enumerate(list_paths_prosumers):
             list_par_inputs.append({"path_prosumer": self.path_results + "/prosumer/" + list_paths_prosumers[i],
-                                    "t_now": self.t_now})
+                                    "t_now": self.t_now, "count": self.step_counter})
         return list_par_inputs
 
     # agent-post-clearing activities
@@ -870,7 +874,8 @@ class ScenarioExecutor:
         list_prosumer_obj = []
         for prosumer in list_prosumers:
             list_prosumer_obj.append(Prosumer(path=f"{self.path_results}/prosumer/{prosumer}",
-                                              t_override=self.t_now))
+                                              t_override=self.t_now,
+                                              count=self.step_counter))
         return list_prosumer_obj
 
     def __get_active_aggregators(self) -> list:
@@ -1020,6 +1025,7 @@ def _par_step_prosumers_pre(list_info_prosumers):
     prosumer = Prosumer(path=list_info_prosumers["path_prosumer"],
                         t_override=list_info_prosumers["t_now"],
                         df_weather_history=_par_step_prosumers_pre.df_weather_history,
-                        df_weather_fcast=_par_step_prosumers_pre.df_weather_fcast)
+                        df_weather_fcast=_par_step_prosumers_pre.df_weather_fcast,
+                        count=list_info_prosumers["count"])
 
     prosumer.pre_clearing_activity(db_obj=_par_step_prosumers_pre.db_conn)
