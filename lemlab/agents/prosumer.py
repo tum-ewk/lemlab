@@ -1,5 +1,5 @@
 __author__ = "sdlumpp"
-__credits__ = ["TUM-Doepfert"]
+__credits__ = []
 __license__ = ""
 __maintainer__ = "sdlumpp"
 __email__ = "sebastian.lumpp@tum.de"
@@ -14,6 +14,9 @@ from typing import Union
 from random import random
 from lemlab.utilities.forecasting import ForecastManager
 from bisect import bisect_left
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 class Prosumer:
@@ -45,7 +48,7 @@ class Prosumer:
                                     determining controller setpoints
     """
 
-    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None):
+    def __init__(self, path, t_override=None, df_weather_history=None, df_weather_fcast=None, count=None):
         """Create a Prosumer instance from a configuration folder created using the Simulation class.
 
         :param path: path to prosumer configuration directory
@@ -53,21 +56,24 @@ class Prosumer:
                             timestamp, otherwise the current time is used.
         """
         # set current timestamp from system clock or keyword arg
+        self.base_quantiles_first = None
         self.t_now = t_override if t_override else pd.Timestamp.now().timestamp()
         # derive previous and next timestamps
         self.ts_delivery_prev = round(pd.Timestamp(self.t_now, unit="s").floor("15min").timestamp() - 15 * 60)
         self.ts_delivery_current = self.ts_delivery_prev + 15 * 60
         self.path = path
+        self.path_out = os.path.join(os.getcwd(), r'csv')
+        if not os.path.exists(self.path_out):
+            os.makedirs(self.path_out)
+        self.path_plot = os.path.join(os.getcwd(), r'plot')
+        if not os.path.exists(self.path_plot):
+            os.makedirs(self.path_plot)
 
         with open(f"{self.path}/config_account.json", "r") as read_file:
             self.config_dict = json.load(read_file)
 
         with open(f"{self.path}/config_plants.json", "r") as read_file:
             self.plant_dict = json.load(read_file)
-
-        # get price timeseries for retailer as it sets upper and lower bound of prices
-        path_retailer = "/".join(self.path.split("/", 3)[:-1] + ["retailer"])
-        self.retail_prices = pd.read_feather(f"{path_retailer}/retail_prices.ft").set_index("timestamp")
 
         self.meas_val = {"timestamp": self.ts_delivery_prev}
 
@@ -85,6 +91,9 @@ class Prosumer:
         self.matched_bids = None
         # df containing net matched market volumes by timestep (multiple matched offers for each timestamp summated)
         self.matched_bids_by_timestep = None
+        self.count = count
+        self.base_quantiles = None
+        self.save_output_result = False
 
     def pre_clearing_activity(self, db_obj, clear_positions=False):
         self.update_user_preferences(db_obj)
@@ -101,11 +110,29 @@ class Prosumer:
                                     db_obj=db_obj)
             # update forecasts for all plants, retrain if necessary
             self.fcast_manager.update_forecasts()
+
+            # if self.config_dict["id_user"] == "0000000021":
+            #     # self.controller_model_predictive_test()
+            #     self.mpc_qtl()
+            # else:
+            #     # execute model predictive control
+            #     self.controller_model_predictive()
+
             # execute model predictive control
             self.controller_model_predictive()
-            # finally then, execute market agent if ex-ante market
+
+            # # finally then, execute market agent if ex-ante market
+            # self.market_agent(db_obj=db_obj, clear_positions=clear_positions)
+
             if db_obj.lem_config["types_clearing_ex_ante"]:
                 self.market_agent(db_obj=db_obj, clear_positions=clear_positions)
+
+                # if self.config_dict["id_user"] == "0000000021":
+                #     # self.market_agent_test(db_obj=db_obj, clear_positions=clear_positions)
+                #     # self.plot_graph_before()
+                #     self.market_agent_qtl(db_obj=db_obj, clear_positions=clear_positions)
+                # else:
+                #     self.market_agent(db_obj=db_obj, clear_positions=clear_positions)
 
     def post_clearing_activity(self, db_obj):
         market_type = "ex_ante" if db_obj.lem_config["types_clearing_ex_ante"] else "ex_post"
@@ -116,6 +143,9 @@ class Prosumer:
         # if the user
         if "mpc" in self.config_dict["controller_strategy"]:
             self.set_target_grid_power(market_type)
+
+        # if self.config_dict["id_user"] == "0000000001":
+        #     self.plot_graph_after()
 
     # internal functions
 
@@ -755,6 +785,1360 @@ class Prosumer:
 
         ft.write_dataframe(df_meter_readings_output, f"{self.path}/buffer_meter_readings.ft")
 
+    def pv_gen(self, x):
+        array = np.array(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'])
+        array[int(x['quantile_number']):] = 0
+        return array
+
+    def controller_model_predictive_test(self, controller=None):
+        """Execute the model predictive controller_real_time for the market participant given the predicted
+        generation, consumption, and market prices for a configurable time horizon.
+
+        The controller_real_time will always attempt to maximize its earnings. If no market price optimization is
+        desired, a flat market price utilities should be input.
+
+        :return: None
+        """
+        ts_delivery_start = pd.Timestamp('2021-03-24 00:00',
+                                         tz='europe/berlin').timestamp()
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]), 900)
+        user_risk_qtl_num = 1
+        self.base_quantiles = np.zeros(9)
+        self.base_quantiles_first = np.zeros(len(self.base_quantiles))
+        self.base_quantiles_first[0] = 1
+        self.base_quantiles[:user_risk_qtl_num] = 1
+
+        # forecast table section
+        self.fcast_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
+
+        self.fcast_table = self.fcast_table[self.fcast_table.index.isin(timesteps)]
+        self.fcast_table[f'power_{self._get_list_plants(plant_type="hh")[0]}'] *= -1
+
+        probability = np.array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+        self.fcast_table['probability'] = np.tile(probability, (len(self.fcast_table), 1)).tolist()
+        # multiplier = np.array([0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1])
+        multiplier = np.array([0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4])
+        self.fcast_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'] =\
+            self.fcast_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'].apply(
+                lambda x: list(np.diff(np.array(x*multiplier).clip(max=self.plant_dict[
+                    self._get_list_plants(plant_type="pv")[0]]["power"]).astype(int), prepend=0)))
+
+        self.fcast_table[f"power_{self.config_dict['id_meter_grid']}"] = 0
+        self.fcast_table[f"power_in_{self.config_dict['id_meter_grid']}"] = 0
+        self.fcast_table[f"power_out_{self.config_dict['id_meter_grid']}"] = 0
+        self.fcast_table['quantile_number'] = int(self.base_quantiles.sum())
+        # self.fcast_table['quantile_number'] = 9
+        self.fcast_table[f'base_power_{self._get_list_plants(plant_type=["pv"])[0]}'] = \
+            self.fcast_table.apply(lambda x: list(np.array(self.pv_gen(x=x))), axis=1)
+        # array_price_quantiles = (1-probability)*(1-self.base_quantiles)
+        # self.fcast_table['price_quantiles'] = np.tile(np.round(array_price_quantiles, 3),
+        #                                               (len(self.fcast_table), 1)).tolist()
+        self.fcast_table['price_quantiles'] = self.fcast_table['probability'].apply(
+            lambda x: list(np.round((1-np.array(x))*(1-self.base_quantiles), 3)))
+        self.fcast_table['balancing_price'] = float(0.10)
+        self.fcast_table[f'power_{self._get_list_plants(plant_type="hh")[0]}_quantiles'] =\
+            np.tile(np.zeros(9).astype(int), (len(self.fcast_table), 1)).tolist()
+        self.fcast_table['matched_bid_pos'] = 0
+        position_number = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])
+        self.fcast_table['position_number'] = np.tile(position_number, (len(self.fcast_table), 1)).tolist()
+        self.fcast_table[f"power_{self.config_dict['id_meter_grid']}_quantiles"] =\
+            np.tile(np.zeros(9).astype(int), (len(self.fcast_table), 1)).tolist()
+        self.fcast_table.index = self.fcast_table.index.astype(dtype='int64')
+        # self.fcast_table.to_csv(os.path.join(self.path_out, f'fcast_table_{self.count}.csv'))
+
+        list_col = [f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                    f"power_{self.config_dict['id_meter_grid']}", 'price', 'quantile_number', 'matched_bid_pos',
+                    f'power_{self._get_list_plants(plant_type="hh")[0]}_quantiles',
+                    f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles']
+
+        # read mpc table
+        if not os.path.isfile(f"{self.path}/controller_mpc.ft"):
+            self.mpc_table = self.fcast_table[list_col]
+        else:
+            self.mpc_table = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index('timestamp')[list_col]
+
+        self.mpc_table = self.mpc_table[self.mpc_table.index.isin(timesteps)].fillna(0)
+        self.fcast_table.update(self.mpc_table)
+        self.mpc_table = self.fcast_table.fillna(0)
+        self.mpc_table.index = self.mpc_table.index.astype(dtype='int64')
+        self.mpc_table = self.mpc_table.astype({'quantile_number': 'int'})
+        self.mpc_table['zero_quantile'] = np.tile(np.zeros(9).astype(int), (len(self.mpc_table), 1)).tolist()
+
+        # matched bids
+        df_matched_bids = self.matched_bids
+        # df_matched_bids.to_csv(os.path.join(self.path_out, f'matched_bids_raw_{self.count}.csv'))
+        # self.matched_bids_by_timestep.to_csv(os.path.join(self.path_out, f'matched_bids_ts_{self.count}.csv'))
+        df_matched_bids['position_number'] = np.where(df_matched_bids['id_user_bid'] == self.config_dict["id_user"],
+                                                      df_matched_bids['number_position_bid'],
+                                                      df_matched_bids['number_position_offer'])
+
+        if df_matched_bids.empty:
+            df_matched_bids = pd.DataFrame(df_matched_bids, index=self.mpc_table.index)
+            df_matched_bids['ts_delivery'] = df_matched_bids.index
+            df_matched_bids = df_matched_bids.fillna(0)
+            df_matched_bids['net_bids'] = 0
+        df_matched_bids = df_matched_bids.groupby(by=['ts_delivery',
+                                                      'position_number']).agg({'net_bids': 'sum'}).reset_index()
+        df_matched_bids.rename(columns={'ts_delivery': 'timestamp'}, inplace=True)
+        df_matched_bids = df_matched_bids.sort_values(by=['timestamp', 'position_number'],
+                                                      ascending=[True, True]).set_index('timestamp')
+        df_matched_bids = df_matched_bids[df_matched_bids.index.isin(timesteps)]
+        # df_matched_bids.to_csv(os.path.join(self.path_out, f'matched_bids_raw_after_{self.count}.csv'))
+        df_matched_bids['net_bids'] *= 4
+        df_matched_bids = df_matched_bids.astype({'position_number': 'int', 'net_bids': 'int'})
+        # df_matched_bids.to_csv(os.path.join(self.path_out, f'matched_bids_{self.count}.csv'))
+
+        if not df_matched_bids.empty:
+            self.mpc_table["matched_bid_quantile"] = df_matched_bids.groupby(df_matched_bids.index).apply(
+                lambda x: list(dict(dict.fromkeys(map(str, range(9)), 0), **dict(zip(x['position_number'].astype(str),
+                                                                                     x['net_bids']))).values()))
+            self.mpc_table['matched_bid_quantile'] = self.mpc_table['matched_bid_quantile'].fillna(
+                self.mpc_table['zero_quantile'])
+        else:
+            self.mpc_table["matched_bid_quantile"] = self.mpc_table['zero_quantile']
+
+        self.mpc_table['matched_bid_pos_quantile'] = self.mpc_table['matched_bid_quantile'].apply(
+            lambda x: list(np.array(x).clip(min=0)))
+
+        self.mpc_table["matched_bid_pos_update"] = self.mpc_table['matched_bid_pos_quantile'].apply(
+            lambda x: np.sum(x)) - self.mpc_table["matched_bid_pos"]
+
+        self.mpc_table["matched_bid_pos"] = self.mpc_table['matched_bid_pos_quantile'].apply(
+            lambda x: np.sum(x))
+
+        # grid meter
+        self.mpc_table[f"power_{self.config_dict['id_meter_grid']}_pos_quantiles"] = self.mpc_table[
+            f"power_{self.config_dict['id_meter_grid']}_quantiles"].apply(
+            lambda x: list(np.array(x).clip(min=0)))
+        self.mpc_table[f"power_{self.config_dict['id_meter_grid']}_pos"] = self.mpc_table[
+            f"power_{self.config_dict['id_meter_grid']}_pos_quantiles"].apply(lambda x: np.sum(x))
+
+        self.mpc_table["state_grid"] = self.mpc_table[f"power_{self.config_dict['id_meter_grid']}_pos"] - \
+                                       self.mpc_table["matched_bid_pos"]
+
+        self.mpc_table = self.mpc_table[self.mpc_table.index.isin(timesteps)]
+        self.mpc_table = self.mpc_table.fillna(0)
+        self.mpc_table['price_quantiles'] = self.mpc_table.apply(lambda x: list(np.round(np.array(
+            x['price_quantiles']) * x['balancing_price'], 3)), axis=1)
+
+        self.mpc_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] = self.mpc_table.apply(
+            lambda x: list(np.array(self.pv_gen(x=x))), axis=1)
+
+        if int(ts_delivery_start + 900) < self.ts_delivery_current:
+
+            # price adaptation
+            self.mpc_table["state_grid_pos"] = self.mpc_table.apply(lambda x:
+            np.array(x[f"power_{self.config_dict['id_meter_grid']}_pos_quantiles"] -
+            np.array(x['matched_bid_pos_quantile'], dtype=float), dtype=float).clip(min=0).sum(), axis=1)
+
+            # self.mpc_table["price"] = np.where(
+            #     self.mpc_table["state_grid_pos"] > 0,
+            #     self.mpc_table["price"] - float(0.0000001) * self.mpc_table["state_grid_pos"],
+            #     self.mpc_table["price"] + (float(0.000001) * self.mpc_table["matched_bid_pos_update"]))
+            self.mpc_table["price"] = np.where(
+                self.mpc_table["matched_bid_pos_update"] > 0,
+                self.mpc_table["price"] + float(0.0001) * self.mpc_table["matched_bid_pos_update"],
+                self.mpc_table["price"] - float(0.00001) * self.mpc_table["state_grid_pos"])
+
+            # quantile shift
+            df_mpc = self.mpc_table[self.mpc_table.index.isin(timesteps)]
+            base_pv = np.sum(pd.DataFrame(
+                df_mpc[f'base_power_{self._get_list_plants(plant_type=["pv"])[0]}'].to_list()).sum(axis=0).to_numpy())
+
+            array_diff = pd.DataFrame(df_mpc[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'
+                                      ].to_list()).sum(axis=0).to_numpy() - pd.DataFrame(
+                df_mpc[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'].to_list()).sum(axis=0).to_numpy()
+
+            user_pref = 0.4
+            if np.sum(array_diff) > 0:
+                if df_mpc['state_grid'].sum() < base_pv * user_pref:
+                    if df_mpc['state_grid'].sum() <= 0:
+                        df_mpc['quantile_number'] = np.where(
+                            df_mpc['quantile_number'] < len(array_diff), df_mpc['quantile_number'] + 1,
+                            df_mpc['quantile_number'])
+                    else:
+                        state_grid_diff = base_pv * user_pref - df_mpc['state_grid'].sum()
+                        array_diff_cumsum = np.cumsum(array_diff)
+                        length = len(array_diff_cumsum[array_diff_cumsum <= state_grid_diff])
+                        df_mpc['quantile_number'] = np.where(df_mpc['quantile_number'] >= length + 1,
+                                                             df_mpc['quantile_number'], length + 1)
+                    self.mpc_table.update(df_mpc)
+            self.mpc_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] = self.mpc_table.apply(
+                lambda x: list(np.array(self.pv_gen(x=x))), axis=1)
+
+        # model declaration
+        model = pyo.AbstractModel()
+        model.t = pyo.Set(initialize=timesteps)
+        model.t_restricted = pyo.Set(initialize=range(
+            int(self.ts_delivery_current + 900), int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]),
+            900), within=model.t)
+
+        # variable definition
+        model.power_pv = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        bat_power = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["power"]
+        bat_capacity = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["capacity"]
+        eta_bat = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["efficiency"]
+        model.power_bat_in = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_power))
+        model.power_bat_out = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_power))
+        model.soc_bat = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_capacity))
+        model.power_bat_milp = pyo.Var(model.t, within=pyo.Boolean)
+        model.power_grid_out = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.power_grid_in = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.scale = pyo.Var(within=pyo.NonNegativeReals)
+        model.deviation_grid_pos = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.deviation_grid_neg = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.balancing_grid_pos = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.balancing_grid_neg = pyo.Var(model.t, within=pyo.NonNegativeReals)
+
+        # parameters
+        dict_power_load = dict(self.mpc_table[f'power_{self._get_list_plants(plant_type="hh")[0]}'])
+        dict_power_pv = dict(self.mpc_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'].apply(lambda x: np.sum(x)))
+        if self.ts_delivery_current % 3600 == 0:
+            self.mpc_table["price"] = 0.055
+        self.mpc_table['price_norm'] = np.interp(self.mpc_table["price"], (self.mpc_table["price"].min(),
+                                                                           self.mpc_table["price"].max()), (0, 1))
+        dict_price_norm = dict(self.mpc_table['price_norm'])
+        dict_matched_bids = dict(self.mpc_table[self.mpc_table.index.isin(timesteps)]["matched_bid_pos"])
+        dict_power_load_base = dict(
+            self.mpc_table[f'power_{self._get_list_plants(plant_type="hh")[0]}_quantiles'].apply(lambda x: np.sum(x)))
+        with open(f'{self.path}/soc_{self._get_list_plants(plant_type="bat")[0]}.json', "r") as read_file:
+            soc_bat_init = json.load(read_file)
+
+
+        # constraints
+        # battery either charge or discharge constraint
+        def battery_charge_constraint(model, t):
+            return model.power_bat_in[t] <= model.power_bat_milp[t] * 1000000
+
+        model.battery_charge_constraint = pyo.Constraint(model.t, rule=battery_charge_constraint)
+
+        def battery_discharge_constraint(model, t):
+            return model.power_bat_out[t] <= (1 - model.power_bat_milp[t]) * 1000000
+
+        model.battery_discharge_constraint = pyo.Constraint(model.t, rule=battery_discharge_constraint)
+
+        # max pv power constraint
+        def pv_max_power_constraint(model, t):
+            return model.power_pv[t] == dict_power_pv[t]
+
+        model.pv_max_power_constraint = pyo.Constraint(model.t, rule=pv_max_power_constraint)
+
+        # battery charge only from pv constraint
+        def battery_charging_pv_only_constraint(model, t):
+            return model.power_bat_in[t] <= dict_power_pv[t]
+
+        model.battery_charging_pv_only_constraint = pyo.Constraint(model.t, rule=battery_charging_pv_only_constraint)
+
+        # initial battery soc constraint
+        def init_soc_battery_constraint(model):
+            return soc_bat_init - (0.25 * model.power_bat_out[self.ts_delivery_current] / eta_bat) + \
+                   (0.25 * model.power_bat_in[self.ts_delivery_current] * eta_bat) == model.soc_bat[self.ts_delivery_current]
+
+        model.init_soc_battery_constraint = pyo.Constraint(rule=init_soc_battery_constraint)
+
+        # soc balance constraint
+        def soc_battery_constraint(model, t):
+            return model.soc_bat[t - int(900)] - (0.25 * model.power_bat_out[t] / eta_bat) + \
+                   (0.25 * model.power_bat_in[t] * eta_bat) == model.soc_bat[t]
+
+        model.soc_battery_constraint = pyo.Constraint(model.t_restricted, rule=soc_battery_constraint)
+
+        # battery ramping constraint
+        def battery_ramping_lower_constraint(model, t):
+            return -0.1 * bat_power <= ((model.power_bat_out[t] - model.power_bat_in[t])
+                                                           - (model.power_bat_out[t - int(900)] -
+                                                              model.power_bat_in[t - int(900)]))
+
+        model.battery_ramping_lower_constraint = pyo.Constraint(model.t_restricted,
+                                                                rule=battery_ramping_lower_constraint)
+
+        def battery_ramping_upper_constraint(model, t):
+            return ((model.power_bat_out[t] - model.power_bat_in[t]) -
+                    (model.power_bat_out[t - int(900)] - model.power_bat_in[t - int(900)])) <= 0.1 * bat_power
+        model.battery_ramping_upper_constraint = pyo.Constraint(model.t_restricted,
+                                                                rule=battery_ramping_upper_constraint)
+
+        # ******************************
+        # energy balance pos constraint
+        def energy_balance_pos_constraint(model, t):
+            return model.power_pv[t] + model.power_bat_out[t] - model.power_bat_in[t] == model.power_grid_out[t]
+            # return model.power_pv[t] + model.power_bat_out[t] - model.power_bat_in[t] - dict_power_load[t] ==\
+            #        model.power_grid_out[t] - model.power_grid_in[t]
+
+        model.energy_balance_pos_constraint = pyo.Constraint(model.t, rule=energy_balance_pos_constraint)
+
+        # energy balance neg constraint
+        def energy_balance_neg_constraint(model, t):
+            return dict_power_load[t] == model.power_grid_in[t]
+
+        model.energy_balance_neg_constraint = pyo.Constraint(model.t, rule=energy_balance_neg_constraint)
+
+        # energy deviation constraint
+        def energy_deviation_constraint(model, t):
+            return model.scale * dict_price_norm[t] == model.power_grid_out[t] - dict_matched_bids[t] - \
+                   dict_power_load[t] + model.deviation_grid_pos[t] - model.deviation_grid_neg[t]
+
+        model.energy_deviation_constraint = pyo.Constraint(model.t, rule=energy_deviation_constraint)
+
+        # energy balancing from matched bids constraint
+        def energy_balancing_bids_constraint(model, t):
+            return dict_matched_bids[t] + dict_power_load[t] + model.balancing_grid_pos[t] - \
+                   model.balancing_grid_neg[t] == model.power_grid_out[t]
+
+        model.energy_balancing_bids_constraint = pyo.Constraint(model.t, rule=energy_balancing_bids_constraint)
+
+        # Define objective function
+        def objective_function(model):
+            # cost = sum((model.balancing_grid_neg[t] + model.deviation_grid_pos[t] +
+            #             model.deviation_grid_neg[t]) * dict_price_norm[t] for t in model.t)
+            cost = sum(model.balancing_grid_neg[t] + model.deviation_grid_pos[t] +
+                       model.deviation_grid_neg[t] for t in model.t)
+            objective_expression = cost
+            return objective_expression
+
+        # Solve model
+        model.objective = pyo.Objective(rule=objective_function, sense=pyo.minimize)  # minimize cost
+
+        instance = model.create_instance()
+        opt = pyo.SolverFactory(self.config_dict["solver"])
+        results = opt.solve(instance, tee=False)
+        # print(results)
+
+        for t in timesteps:
+            self.mpc_table.loc[t, f'power_{self._get_list_plants(plant_type="bat")[0]}'] =\
+                instance.power_bat_out[t].value - instance.power_bat_in[t].value
+            self.mpc_table.loc[t, f'soc_{self._get_list_plants(plant_type="bat")[0]}'] = instance.soc_bat[t].value
+            self.mpc_table.loc[t, f"power_out_{self.config_dict['id_meter_grid']}"] = instance.power_grid_out[t].value
+            self.mpc_table.loc[t, f"power_in_{self.config_dict['id_meter_grid']}"] = instance.power_grid_in[t].value
+            self.mpc_table.loc[t, f"power_{self.config_dict['id_meter_grid']}"] = instance.power_grid_out[t].value -\
+                                                                                  instance.power_grid_in[t].value
+            # self.mpc_table.loc[t, 'delta_grid_meter'] = instance.scale.value * dict_price_norm[t]
+        # self.mpc_table['price_norm'] = np.array(dict_price_norm.values())
+
+        self.mpc_table = self.mpc_table[self.mpc_table.index.isin(timesteps)]
+        # self.mpc_table.to_csv(os.path.join(self.path_out, f'mpc_{self.count}.csv'))
+        ft.write_dataframe(self.mpc_table, f"{self.path}/controller_mpc.ft")
+
+    def market_agent_test(self, db_obj, clear_positions=False):
+
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]), 900)
+
+        df_potential_bids = ft.read_dataframe(f"{self.path}/controller_mpc.ft")
+        df_potential_bids = df_potential_bids[df_potential_bids.index.isin(timesteps)]
+        # df_potential_bids = pd.DataFrame(self.mpc_table[self.mpc_table.index.isin(timesteps)])
+        # ft.write_dataframe(df_potential_bids.reset_index(),
+        #                    os.path.join(self.path_out, f'controller_mpc_{self.count}.ft'))
+        global list_soc
+        list_soc = self.base_quantiles
+        # previous ts soc
+        for bat in self._get_list_plants(plant_type="bat"):
+            with open(f"{self.path}/soc_{bat}.json", "r") as read_file:
+                soc_bat_old = json.load(read_file)
+        list_soc = soc_bat_old * list_soc
+
+        df_potential_bids[[f'soc_{self._get_list_plants(plant_type="bat")[0]}_quantiles',
+                           f'power_{self._get_list_plants(plant_type="bat")[0]}_quantiles',
+                           f'power_{self._get_list_plants(plant_type="hh")[0]}_quantiles',
+                           f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                           f"power_{self._get_list_plants(plant_type=['pv'])[0]}"
+                           f"_out_{self.config_dict['id_meter_grid']}_quantiles",
+                           f"power_{self._get_list_plants(plant_type='bat')[0]}"
+                           f"_out_{self.config_dict['id_meter_grid']}_quantiles"]] = pd.DataFrame(pd.Series(
+            df_potential_bids.apply(lambda x: self.bat_quantile(x=x), axis=1),
+            index=df_potential_bids.index).to_list(), index=df_potential_bids.index)
+
+        ft.write_dataframe(df_potential_bids.reset_index(), f"{self.path}/controller_mpc.ft")
+        if self.save_output_result:
+            df_potential_bids.to_csv(os.path.join(self.path_out, f'mpc_after_{self.count}.csv'))
+            ft.write_dataframe(df_potential_bids.reset_index(),
+                               os.path.join(self.path_out, f'mpc_after_{self.count}.ft'))
+
+        df_potential_bids['price_linear_desc'] = np.linspace(start=0.1, stop=0.01, num=len(df_potential_bids))
+        df_potential_bids = df_potential_bids.explode([f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                                                       'price_quantiles', 'position_number'])
+        df_potential_bids = pd.DataFrame(
+            df_potential_bids[[f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                               'price_quantiles', 'position_number', 'price_linear_desc']])
+        df_potential_bids.rename(columns={f"power_{self.config_dict['id_meter_grid']}_quantiles": "net_bids",
+                                          "price_quantiles": "price"}, inplace=True)
+
+        df_potential_bids['net_bids'] = df_potential_bids['net_bids'].fillna(0)
+        df_potential_bids['net_bids'] /= 4
+        df_potential_bids = df_potential_bids.astype({'price': 'float', 'net_bids': 'int', 'position_number': 'int',
+                                                      'price_linear_desc': 'float'})
+        df_potential_bids = df_potential_bids.set_index(['position_number'], append=True)
+
+        ts = np.unique(np.array(df_potential_bids.index.get_level_values(level='timestamp')))
+        price = np.linspace(start=0.01, stop=0.1, num=len(ts))
+        df_potential_bids_temp = pd.DataFrame({'price': price, 'timestamp': ts}).set_index('timestamp')
+
+        position_number = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])
+        df_potential_bids_temp['position_number'] = np.tile(position_number[:int(self.base_quantiles.sum())],
+                                             (len(df_potential_bids_temp), 1)).tolist()
+        df_potential_bids_temp = df_potential_bids_temp.explode(['position_number']).set_index('position_number',
+                                                                                               append=True)
+        df_potential_bids['price_linear'] = df_potential_bids.index.map(df_potential_bids_temp['price'])
+        df_potential_bids['price'] = df_potential_bids['price_linear'].fillna(df_potential_bids['price'])
+
+        df_potential_bids_temp = pd.DataFrame(df_potential_bids['net_bids'], columns=['net_bids'])
+        df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids']
+
+        # matched bids
+        if not self.matched_bids.empty:
+            df_matched_bids = self.matched_bids
+            df_matched_bids['position_number'] = np.where(df_matched_bids['id_user_bid'] == self.config_dict["id_user"],
+                                                          df_matched_bids['number_position_bid'],
+                                                          df_matched_bids['number_position_offer'])
+            df_matched_bids = df_matched_bids.groupby(by=['ts_delivery',
+                                                          'position_number']).agg({'net_bids': 'sum'}).reset_index()
+            df_matched_bids.rename(columns={'ts_delivery': 'timestamp'}, inplace=True)
+            df_matched_bids = df_matched_bids.sort_values(by=['timestamp', 'position_number'],
+                                                          ascending=[True, True]).set_index('timestamp')
+            df_matched_bids = df_matched_bids[df_matched_bids.index.isin(timesteps)]
+            df_matched_bids = df_matched_bids.astype({'position_number': 'int', 'net_bids': 'int'})
+            df_matched_bids = df_matched_bids.set_index('position_number', append=True)
+            df_matched_bids = df_matched_bids[df_matched_bids.index.isin(df_potential_bids_temp.index)]
+            df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids'] - df_matched_bids['net_bids']
+            df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids_res'].fillna(
+                df_potential_bids_temp['net_bids'])
+
+        df_potential_bids_temp = df_potential_bids_temp.fillna(0).round(0).astype({'net_bids_res': 'int'})
+        df_potential_bids_temp = df_potential_bids_temp[df_potential_bids_temp['net_bids_res'] != 0]
+
+        df_positions = pd.DataFrame(columns=[db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY,
+                                             db_obj.db_param.PRICE_ENERGY, db_obj.db_param.QUALITY_ENERGY,
+                                             db_obj.db_param.PREMIUM_PREFERENCE_QUALITY, db_obj.db_param.TYPE_POSITION,
+                                             db_obj.db_param.NUMBER_POSITION, db_obj.db_param.STATUS_POSITION,
+                                             db_obj.db_param.T_SUBMISSION, db_obj.db_param.TS_DELIVERY,
+                                             'price_linear_desc'],
+                                    index=df_potential_bids_temp.index)
+        euro_kwh_to_sigma_wh = db_obj.db_param.EURO_TO_SIGMA / 1000
+
+        has_renewable = np.zeros(len(df_positions), dtype=bool)
+        has_non_ren = np.zeros(len(df_positions), dtype=bool)
+        for plant in self._get_list_plants("pv") + self._get_list_plants("fixedgen"):
+            if self.plant_dict[plant]["quality"] in ["green_local"]:
+                has_renewable = np.ones(len(df_positions), dtype=bool)
+            if self.plant_dict[plant]["quality"] in ["local"]:
+                has_non_ren = np.ones(len(df_positions), dtype=bool)
+
+        df_positions[db_obj.db_param.ID_USER] = self.config_dict['id_market_agent']
+
+        df_positions[db_obj.db_param.NUMBER_POSITION] = df_positions.index.get_level_values(level='position_number')
+        df_positions[db_obj.db_param.QTY_ENERGY] = df_potential_bids_temp['net_bids_res']
+        df_positions[db_obj.db_param.QTY_ENERGY] = np.where((~df_positions[db_obj.db_param.NUMBER_POSITION].isin([0]))
+                                                            & (df_positions[db_obj.db_param.QTY_ENERGY] < 0),
+                                                            0, df_positions[db_obj.db_param.QTY_ENERGY].abs())
+
+        df_positions[db_obj.db_param.TYPE_POSITION] = np.where(df_potential_bids_temp['net_bids_res'] > 0, "offer", "bid")
+        df_positions[db_obj.db_param.STATUS_POSITION] = 0
+        df_positions[db_obj.db_param.QUALITY_ENERGY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, self.config_dict["ma_preference_quality"],
+            np.where(df_potential_bids_temp['net_bids_res'] > 0 & has_non_ren, "local",
+                     np.where(df_potential_bids_temp['net_bids_res'] > 0 & has_renewable, 'green_local', "na")))
+        df_positions[db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, self.config_dict["ma_premium_preference_quality"], 0)
+        df_positions[db_obj.db_param.T_SUBMISSION] = self.t_now
+        df_positions[db_obj.db_param.TS_DELIVERY] = df_positions.index.get_level_values(level='timestamp')
+        df_positions[db_obj.db_param.PRICE_ENERGY].fillna(df_potential_bids['price'], inplace=True)
+        df_positions['price_linear_desc'].fillna(df_potential_bids['price_linear_desc'], inplace=True)
+        df_positions[[db_obj.db_param.PRICE_ENERGY, 'price_linear_desc']] = df_positions[[db_obj.db_param.PRICE_ENERGY,
+                                                                                          'price_linear_desc']].round(2)
+        # df_positions[db_obj.db_param.PRICE_ENERGY] = np.where(
+        #     df_potential_bids_temp['net_bids_res'] < 0, round(self.config_dict["max_bid"], 6) * euro_kwh_to_sigma_wh,
+        #     np.where(df_positions[db_obj.db_param.PRICE_ENERGY] < self.config_dict["min_offer"],
+        #              round(self.config_dict["min_offer"], 6) * euro_kwh_to_sigma_wh,
+        #              df_positions[db_obj.db_param.PRICE_ENERGY] * euro_kwh_to_sigma_wh))
+        df_positions[db_obj.db_param.PRICE_ENERGY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, df_positions['price_linear_desc'] * euro_kwh_to_sigma_wh,
+            df_positions[db_obj.db_param.PRICE_ENERGY] * euro_kwh_to_sigma_wh)
+        df_positions = df_positions.drop('price_linear_desc', axis=1)
+        df_positions = df_positions[df_positions[db_obj.db_param.QTY_ENERGY] != 0]
+
+        if clear_positions:
+            db_obj.clear_positions(id_user=self.config_dict['id_market_agent'])
+        if not df_positions.empty:
+            if self.save_output_result:
+                df_positions.to_csv(os.path.join(self.path_out, f'positions_{self.count}.csv'))
+            db_obj.post_positions(df_positions, t_override=self.t_now)
+
+    def bat_quantile(self, x):
+        global list_soc
+        list_soc = np.where(list_soc > 0, list_soc, 0)
+        if x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] <= 0:
+            # battery charging method
+
+            # pv to load/grid in
+            pv_base = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] * self.base_quantiles
+            pv_base_cum = np.subtract(np.cumsum(pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+
+            length = len(pv_base_cum[pv_base_cum < 0])
+            pv_base_cum[:length] = 0
+            pv_base_cum[length + 1:] = 0
+
+            pv_base_grid_in = np.subtract(pv_base, pv_base_cum)
+            pv_base_grid_in[length + 1:] = 0
+
+            pv_rem = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] - pv_base_grid_in
+
+            if pv_rem.sum() >= x[f'power_{self._get_list_plants(plant_type="bat")[0]}']:
+                # matched bid aligning for pv
+                matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+                matched_bids_pos_rem = np.subtract(matched_bids_pos, pv_rem).clip(min=0)
+                matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+                pv_res = pv_rem - matched_bids_pos_pv
+
+                if pv_res.sum() >= x[f'power_{self._get_list_plants(plant_type="bat")[0]}']:
+                    # pv to battery
+                    pv_cum = np.add(np.cumsum(pv_res), x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+                    length = len(pv_cum[pv_cum < 0])
+                    pv_cum[:length] = 0
+                    pv_cum[length + 1:] = 0
+                    pv_bat = np.subtract(pv_res, pv_cum)
+                    pv_bat[length + 1:] = 0
+                    pv_rem = np.subtract(pv_res, pv_bat)
+                else:
+                    # pv to battery
+                    pv_cum = np.add(np.cumsum(pv_rem), x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+                    length = len(pv_cum[pv_cum < 0])
+                    pv_cum[:length] = 0
+                    pv_cum[length + 1:] = 0
+                    pv_bat = np.subtract(pv_rem, pv_cum)
+                    pv_bat[length + 1:] = 0
+                    pv_rem -= pv_bat
+
+                    # matched bid aligning for pv
+                    matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+                    matched_bids_pos_rem = np.subtract(matched_bids_pos, pv_rem).clip(min=0)
+                    matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+                    pv_rem -= matched_bids_pos_pv
+
+            else:
+                # pv to battery
+                pv_cum = np.add(np.cumsum(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']),
+                                x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+                length = len(pv_cum[pv_cum < 0])
+                pv_cum[:length] = 0
+                pv_cum[length + 1:] = 0
+                pv_bat = np.subtract(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'], pv_cum)
+                pv_bat[length + 1:] = 0
+                pv_rem = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] - pv_bat
+
+                # pv to load/grid in
+                pv_base = pv_rem * self.base_quantiles
+                pv_base_cum = np.subtract(np.cumsum(pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+
+                length = len(pv_base_cum[pv_base_cum < 0])
+                pv_base_cum[:length] = 0
+                pv_base_cum[length + 1:] = 0
+
+                pv_base_grid_in = np.subtract(pv_base, pv_base_cum)
+                pv_base_grid_in[length + 1:] = 0
+
+                pv_rem -= pv_base_grid_in
+
+                # matched bid aligning for pv
+                matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+                matched_bids_pos_rem = np.subtract(matched_bids_pos, pv_rem).clip(min=0)
+                matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+                pv_rem -= matched_bids_pos_pv
+
+            grid_in_rem = x[f"power_in_{self.config_dict['id_meter_grid']}"] - np.sum(pv_base_grid_in)
+            list_soc = np.add(list_soc, pv_bat * 0.25).round(2)
+            pv_bat *= -1
+
+            # # matched bid aligning for pv
+            # # matched_bids_pos_non_base = x['matched_bid_pos_quantile'] * (1 - self.base_quantiles)
+            # # matched_bids_pos_rem = np.subtract(matched_bids_pos_non_base,
+            # #                                    x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']).clip(min=0)
+            # # matched_bids_pos_pv = matched_bids_pos_non_base - matched_bids_pos_rem
+            #
+            # matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+            # matched_bids_pos_rem = np.subtract(matched_bids_pos,
+            #                                    x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']).clip(min=0)
+            # matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+            # pv_rem = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] - matched_bids_pos_pv
+            #
+            # # pv to battery
+            # pv_cum = np.add(np.cumsum(pv_rem[::-1])[::-1],
+            #                    x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+            # length = len(pv_cum[pv_cum >= 0])
+            # pv_cum[:length - 1] = 0
+            # pv_cum[length:] = 0
+            # pv_bat = np.subtract(pv_rem, pv_cum)
+            # pv_bat[:length - 1] = 0
+            # pv_rem -= pv_bat
+            #
+            # # pv to load/grid in
+            # pv_base = pv_rem * self.base_quantiles
+            # pv_base_cum = np.subtract(np.cumsum(pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+            #
+            # length = len(pv_base_cum[pv_base_cum < 0])
+            # pv_base_cum[:length] = 0
+            # pv_base_cum[length + 1:] = 0
+            #
+            # pv_base_grid_in = np.subtract(pv_base, pv_base_cum)
+            # pv_base_grid_in[length + 1:] = 0
+            #
+            # grid_in_rem = x[f"power_in_{self.config_dict['id_meter_grid']}"] - np.sum(pv_base_grid_in)
+            # pv_rem -= pv_base_grid_in
+            # list_soc = np.add(list_soc, pv_bat * 0.25).round(2)
+            # pv_bat *= -1
+
+            bat_quantile = np.array(pv_bat).round(2)
+            bat_grid_out = np.zeros(len(self.base_quantiles))
+            grid_in = np.add(grid_in_rem * self.base_quantiles_first, pv_base_grid_in).round(2)
+            hh_quantile = np.array(pv_base_grid_in).round(2)
+
+            matched_bids_pos_rem *= (1 - self.base_quantiles)
+
+            if matched_bids_pos_rem.sum() > 0:
+                # pv_grid_out = np.add(matched_bids_pos_pv, pv_base - pv_base_grid_in).round(2)
+                pv_grid_out = np.add(matched_bids_pos_pv, pv_rem * self.base_quantiles).round(2)
+                grid_meter = np.subtract(pv_grid_out, grid_in_rem * self.base_quantiles_first).round(2)
+            else:
+                pv_grid_out = np.subtract((x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] + bat_quantile),
+                                          pv_base_grid_in).round(2)
+                grid_meter = np.subtract((x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] + bat_quantile),
+                                         grid_in).round(2)
+
+        else:
+            # battery discharging method
+
+            # pv to load/grid in
+            pv_base = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] * self.base_quantiles
+            pv_base_cum = np.subtract(np.cumsum(pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+
+            length = len(pv_base_cum[pv_base_cum < 0])
+            pv_base_cum[:length] = 0
+            pv_base_cum[length + 1:] = 0
+
+            pv_base_grid_in = np.subtract(pv_base, pv_base_cum)
+            pv_base_grid_in[length + 1:] = 0
+
+            pv_rem = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] - pv_base_grid_in
+            grid_in_rem = x[f"power_in_{self.config_dict['id_meter_grid']}"] - np.sum(pv_base_grid_in)
+
+            # bat to grid in
+            bat_rem = x[f'power_{self._get_list_plants(plant_type="bat")[0]}']
+            list_soc_base = list_soc * self.base_quantiles
+            if grid_in_rem < bat_rem:
+                soc_base_cum = np.subtract(np.cumsum(list_soc_base), grid_in_rem * 0.25)
+            else:
+                soc_base_cum = np.subtract(np.cumsum(list_soc_base), bat_rem * 0.25)
+
+            length = len(soc_base_cum[soc_base_cum < 0])
+            soc_base_cum[:length] = 0
+            soc_base_cum[length + 1:] = 0
+
+            grid_in_bat = np.subtract(list_soc_base, soc_base_cum)
+            grid_in_bat[length + 1:] = 0
+
+            list_soc = np.subtract(list_soc, grid_in_bat)
+            grid_in_bat *= 4
+
+            grid_in_rem -= np.sum(grid_in_bat).round(2)
+            bat_rem -= np.sum(grid_in_bat).round(2)
+
+            # matched bids aligning for pv
+            matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+            matched_bids_pos_rem = np.subtract(matched_bids_pos, pv_rem).clip(min=0)
+            matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+            pv_rem -= matched_bids_pos_pv
+
+            # matched bids aligning for battery
+            soc_rem = np.subtract(list_soc, matched_bids_pos_rem * 0.25).clip(min=0)
+            matched_bids_pos_bat = (list_soc - soc_rem) * 4
+            matched_bids_pos_bat_cum = np.subtract(np.cumsum(matched_bids_pos_bat), bat_rem)
+
+            length = len(matched_bids_pos_bat_cum[matched_bids_pos_bat_cum < 0])
+            matched_bids_pos_bat_cum[:length] = 0
+            matched_bids_pos_bat_cum[length + 1:] = 0
+
+            matched_bids_pos_bat = np.subtract(matched_bids_pos_bat, matched_bids_pos_bat_cum)
+            matched_bids_pos_bat[length + 1:] = 0
+
+            matched_bids_pos_rem -= matched_bids_pos_bat
+            list_soc = np.subtract(list_soc, matched_bids_pos_bat * 0.25).round(2)
+            bat_rem -= np.sum(matched_bids_pos_bat)
+
+            # # matched bids aligning for pv
+            # # matched_bids_pos_non_base = x['matched_bid_pos_quantile'] * (1 - self.base_quantiles)
+            # # matched_bids_pos_rem = np.subtract(matched_bids_pos_non_base,
+            # #                                    x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']).clip(min=0)
+            # # matched_bids_pos_pv = matched_bids_pos_non_base - matched_bids_pos_rem
+            #
+            # matched_bids_pos = np.array(x['matched_bid_pos_quantile']).astype(float)
+            # matched_bids_pos_rem = np.subtract(matched_bids_pos,
+            #                                    x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']).clip(min=0)
+            # matched_bids_pos_pv = matched_bids_pos - matched_bids_pos_rem
+            # pv_rem = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] - matched_bids_pos_pv
+            #
+            # # matched bids aligning for battery
+            # soc_rem = np.subtract(list_soc, matched_bids_pos_rem * 0.25).clip(min=0)
+            # matched_bids_pos_bat = (list_soc - soc_rem) * 4
+            # matched_bids_pos_bat_cum = np.subtract(np.cumsum(matched_bids_pos_bat),
+            #                                        x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+            #
+            # length = len(matched_bids_pos_bat_cum[matched_bids_pos_bat_cum < 0])
+            # matched_bids_pos_bat_cum[:length] = 0
+            # matched_bids_pos_bat_cum[length + 1:] = 0
+            #
+            # matched_bids_pos_bat = np.subtract(matched_bids_pos_bat, matched_bids_pos_bat_cum)
+            # matched_bids_pos_bat[length + 1:] = 0
+            #
+            # matched_bids_pos_rem -= matched_bids_pos_bat
+            # list_soc = np.subtract(list_soc, matched_bids_pos_bat * 0.25).round(2)
+            # bat_rem = x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] - np.sum(matched_bids_pos_bat)
+            #
+            # # pv to load/grid in
+            # pv_base = pv_rem * self.base_quantiles
+            # pv_base_cum = np.subtract(np.cumsum(pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+            #
+            # length = len(pv_base_cum[pv_base_cum < 0])
+            # pv_base_cum[:length] = 0
+            # pv_base_cum[length + 1:] = 0
+            #
+            # pv_base_grid_in = np.subtract(pv_base, pv_base_cum)
+            # pv_base_grid_in[length + 1:] = 0
+            # grid_in_rem = x[f"power_in_{self.config_dict['id_meter_grid']}"] - np.sum(pv_base_grid_in)
+            #
+            # # bat to grid in
+            # list_soc_base = list_soc * self.base_quantiles
+            # if grid_in_rem < bat_rem:
+            #     soc_base_cum = np.subtract(np.cumsum(list_soc_base), grid_in_rem * 0.25)
+            # else:
+            #     soc_base_cum = np.subtract(np.cumsum(list_soc_base), bat_rem * 0.25)
+            #
+            # length = len(soc_base_cum[soc_base_cum < 0])
+            # soc_base_cum[:length] = 0
+            # soc_base_cum[length + 1:] = 0
+            #
+            # grid_in_bat = np.subtract(list_soc_base, soc_base_cum)
+            # grid_in_bat[length + 1:] = 0
+            #
+            # list_soc = np.subtract(list_soc, grid_in_bat)
+            # grid_in_bat *= 4
+            #
+            # grid_in_rem -= np.sum(grid_in_bat).round(2)
+            # bat_rem -= np.sum(grid_in_bat).round(2)
+
+            matched_bids_pos_rem *= (1 - self.base_quantiles)
+
+            if matched_bids_pos_rem.sum() > 0:
+
+                # final values battery quantiles and battery grid out quantiles
+                bat_quantile = np.array(matched_bids_pos_bat + grid_in_bat).round(2)
+                bat_grid_out = np.array(matched_bids_pos_bat).round(2)
+                pv_grid_out = np.add((x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] * self.base_quantiles -
+                                      pv_base_grid_in), matched_bids_pos_pv * (1 - self.base_quantiles)).round(2)
+            else:
+                # bat to grid out non-base
+                list_soc_non_base = list_soc * (1 - self.base_quantiles)
+                soc_non_base_cum = np.subtract(np.cumsum(list_soc_non_base), bat_rem * 0.25)
+
+                length = len(soc_non_base_cum[soc_non_base_cum < 0])
+                soc_non_base_cum[:length] = 0
+                soc_non_base_cum[length + 1:] = 0
+
+                grid_out_bat_non_base = np.subtract(list_soc_non_base, soc_non_base_cum)
+                grid_out_bat_non_base[length + 1:] = 0
+
+                list_soc = np.subtract(list_soc, grid_out_bat_non_base)
+                grid_out_bat_non_base *= 4
+
+                bat_rem -= np.sum(grid_out_bat_non_base).round(2)
+
+                # bat to grid out base
+                list_soc_base = list_soc * self.base_quantiles
+                soc_base_cum = np.subtract(np.cumsum(list_soc_base), bat_rem * 0.25)
+
+                length = len(soc_base_cum[soc_base_cum < 0])
+                soc_base_cum[:length] = 0
+                soc_base_cum[length + 1:] = 0
+
+                grid_out_bat_base = np.subtract(list_soc_base, soc_base_cum)
+                grid_out_bat_base[length + 1:] = 0
+
+                list_soc = np.subtract(list_soc, grid_out_bat_base)
+                grid_out_bat_base *= 4
+
+                # final values battery quantiles and battery grid out quantiles
+                bat_quantile = np.array(matched_bids_pos_bat + grid_in_bat + grid_out_bat_non_base + grid_out_bat_base
+                                        ).round(2)
+                bat_grid_out = np.array(matched_bids_pos_bat + grid_out_bat_non_base + grid_out_bat_base).round(2)
+                pv_grid_out = np.subtract(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'],
+                                          pv_base_grid_in).round(2)
+
+            hh_quantile = np.array(grid_in_bat + pv_base_grid_in).round(2)
+            grid_meter = np.add(pv_grid_out - grid_in_rem * self.base_quantiles_first, bat_grid_out).round(2)
+
+
+        list_soc = np.where(list_soc > 0, list_soc, 0)
+        return [list_soc.tolist(), bat_quantile.tolist(), hh_quantile.tolist(), grid_meter.tolist(),
+                pv_grid_out.tolist(), np.array(bat_grid_out).round(2).tolist()]
+
+    def bat_quantile_test(self, x):
+        global list_soc
+        list_soc = np.where(list_soc > 0, list_soc, 0)
+        if x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] <= 0:
+            array_add = np.add(np.cumsum(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'][::-1])[::-1],
+                               x[f'power_{self._get_list_plants(plant_type="bat")[0]}'])
+            length = len(array_add[array_add >= 0])
+            array_add[:length - 1] = 0
+            array_add[length:] = 0
+            array_bat_sub = np.subtract(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'], array_add)
+            array_bat_sub[:length - 1] = 0
+            array_pv_rem = np.subtract(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'], array_bat_sub)
+            array_pv_rem_base = array_pv_rem * np.array([1, 0, 0, 0, 0, 0, 0, 0, 0])
+            array_sub = np.subtract(np.cumsum(array_pv_rem_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+            length = len(array_sub[array_sub < 0])
+            array_sub[:length] = 0
+            array_sub[length + 1:] = 0
+            array_sub_rem_base = np.subtract(array_pv_rem_base, array_sub)
+            array_sub_rem_base[length + 1:] = 0
+
+            list_soc = np.add(list_soc, array_bat_sub * 0.25).round(2)
+            array_bat_sub *= -1
+            array_bat = np.array(array_bat_sub).round(2)
+            array_grid_in = np.add((x[f"power_in_{self.config_dict['id_meter_grid']}"] -
+                                    np.sum(array_sub_rem_base)) * np.array([1, 0, 0, 0, 0, 0, 0, 0, 0]),
+                                   array_sub_rem_base).round(2)
+            array_hh_base = np.array(array_sub_rem_base).round(2)
+            array_grid_meter = np.subtract(array_pv_rem, array_grid_in).round(2)
+            array_pv_out = np.subtract(array_pv_rem, array_sub_rem_base).round(2)
+        else:
+            array_pv_base = x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']\
+                            * np.array([1, 0, 0, 0, 0, 0, 0, 0, 0])
+            array_sub = np.subtract(np.cumsum(array_pv_base), x[f"power_in_{self.config_dict['id_meter_grid']}"])
+            length = len(array_sub[array_sub < 0])
+            array_sub[:length] = 0
+            array_sub[length + 1:] = 0
+            array_sub_pv_base = np.subtract(array_pv_base, array_sub)
+            array_sub_pv_base[length + 1:] = 0
+            grid_in_rem = x[f"power_in_{self.config_dict['id_meter_grid']}"] - np.sum(array_sub_pv_base)
+            list_soc_base = list_soc * np.array([1, 0, 0, 0, 0, 0, 0, 0, 0])
+
+            if grid_in_rem < x[f'power_{self._get_list_plants(plant_type="bat")[0]}']:
+                array_soc_sub = np.subtract(np.cumsum(list_soc_base[::-1])[::-1], grid_in_rem * 0.25)
+            else:
+                array_soc_sub = np.subtract(np.cumsum(list_soc_base[::-1])[::-1],
+                                            x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] * 0.25)
+
+            length = len(array_soc_sub[array_soc_sub >= 0])
+            array_soc_sub[:length - 1] = 0
+            array_soc_sub[length:] = 0
+            array_grid_in_sub = np.subtract(list_soc_base, array_soc_sub)
+            array_grid_in_sub[:length - 1] = 0
+            list_soc = np.subtract(list_soc, array_grid_in_sub)
+            grid_in_rem -= np.sum(array_grid_in_sub * 4).round(2)
+            bat_rem = x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] -\
+                      np.sum(array_grid_in_sub * 4).round(2)
+            array_soc_sub = np.subtract(np.cumsum(list_soc[::-1])[::-1], bat_rem * 0.25)
+            length = len(array_soc_sub[array_soc_sub >= 0])
+            array_soc_sub[:length - 1] = 0
+            array_soc_sub[length:] = 0
+            array_bat_sub = np.subtract(list_soc, array_soc_sub)
+            array_bat_sub[:length - 1] = 0
+
+            list_soc = np.subtract(list_soc, array_bat_sub).round(2)
+            array_bat_sub *= 4
+            array_bat = np.array(array_grid_in_sub * 4 + array_bat_sub).round(2)
+            array_grid_in = np.array(grid_in_rem * np.array([1, 0, 0, 0, 0, 0, 0, 0, 0]) +
+                                     array_grid_in_sub * 4 + array_sub_pv_base).round(2)
+            array_hh_base = np.array(array_grid_in_sub * 4 + array_sub_pv_base).round(2)
+            array_grid_meter = np.subtract((array_bat + x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}']),
+                                           array_grid_in).round(2)
+            array_pv_out = np.subtract(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'],
+                                       array_sub_pv_base).round(2)
+        list_soc = np.where(list_soc > 0, list_soc, 0)
+        return [list_soc.tolist(), array_bat.tolist(), array_hh_base.tolist(), array_grid_meter.tolist(),
+                array_pv_out.tolist(), np.array(array_bat_sub).round(2).tolist()]
+
+    def mpc_qtl(self, controller=None):
+        """Execute the model predictive controller_real_time for the market participant given the predicted
+        generation, consumption, and market prices for a configurable time horizon.
+
+        The controller_real_time will always attempt to maximize its earnings. If no market price optimization is
+        desired, a flat market price utilities should be input.
+
+        :return: None
+        """
+
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]), 900)
+        user_risk_qtl_num = 1
+        self.base_quantiles = np.zeros(9)
+        self.base_quantiles_first = np.zeros(len(self.base_quantiles))
+        self.base_quantiles_first[0] = 1
+        self.base_quantiles[:user_risk_qtl_num] = 1
+
+        # forecast table section
+        self.fcast_table = ft.read_dataframe(f"{self.path}/fcasts_current.ft").set_index("timestamp")
+
+        self.fcast_table = self.fcast_table[self.fcast_table.index.isin(timesteps)]
+        self.fcast_table[f'power_{self._get_list_plants(plant_type="hh")[0]}'] *= -1
+
+        probability = np.array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+        self.fcast_table['probability'] = np.tile(probability, (len(self.fcast_table), 1)).tolist()
+        # multiplier = np.array([0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1])
+        multiplier = np.array([0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4])
+        self.fcast_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'] =\
+            self.fcast_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'].apply(
+                lambda x: list(np.diff(np.array(x*multiplier).clip(max=self.plant_dict[
+                    self._get_list_plants(plant_type="pv")[0]]["power"]).astype(int), prepend=0)))
+
+        self.fcast_table[f"power_{self.config_dict['id_meter_grid']}"] = 0
+        self.fcast_table[f"power_in_{self.config_dict['id_meter_grid']}"] = 0
+        self.fcast_table[f"power_out_{self.config_dict['id_meter_grid']}"] = 0
+
+        self.fcast_table['price_quantiles'] = self.fcast_table['probability'].apply(
+            lambda x: list(np.round((1-np.array(x))*(1-self.base_quantiles), 3)))
+        self.fcast_table['balancing_price'] = float(0.10)
+        self.fcast_table['matched_bid_pos'] = 0
+        self.fcast_table.index = self.fcast_table.index.astype(dtype='int64')
+        position_number = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])
+        self.fcast_table['position_number'] = np.tile(position_number, (len(self.fcast_table), 1)).tolist()
+
+        self.mpc_table = self.fcast_table.fillna(0)
+        self.mpc_table.index = self.mpc_table.index.astype(dtype='int64')
+        self.mpc_table = self.mpc_table[self.mpc_table.index.isin(timesteps)]
+        self.mpc_table['price_quantiles'] = self.mpc_table.apply(lambda x: list(np.round(np.array(
+            x['price_quantiles']) * x['balancing_price'], 3)), axis=1)
+
+        # model declaration
+        model = pyo.AbstractModel()
+        model.t = pyo.Set(initialize=timesteps)
+        model.t_restricted = pyo.Set(initialize=range(
+            int(self.ts_delivery_current + 900), int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]),
+            900), within=model.t)
+
+        # variable definition
+        model.power_pv = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        bat_power = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["power"]
+        bat_capacity = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["capacity"]
+        eta_bat = self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["efficiency"]
+
+        model.power_bat_in = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_power))
+        model.power_bat_out = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_power))
+        model.soc_bat = pyo.Var(model.t, within=pyo.NonNegativeReals, bounds=(0, bat_capacity))
+        model.power_bat_milp = pyo.Var(model.t, within=pyo.Boolean)
+        model.power_grid_out = pyo.Var(model.t, within=pyo.NonNegativeReals)
+        model.power_grid_in = pyo.Var(model.t, within=pyo.NonNegativeReals)
+
+        # parameters
+        dict_power_load = dict(self.mpc_table[f'power_{self._get_list_plants(plant_type="hh")[0]}'])
+        dict_power_pv = dict(self.mpc_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'].apply(
+            lambda x: np.sum(np.array(x) * self.base_quantiles)))
+        dict_price = dict(self.mpc_table[f'price'])
+        dict_levi_pos = dict(self.mpc_table[f'price_energy_levies_positive'])
+        dict_levi_neg = dict(self.mpc_table[f'price_energy_levies_negative'])
+        with open(f'{self.path}/soc_{self._get_list_plants(plant_type="bat")[0]}.json', "r") as read_file:
+            soc_bat_init = json.load(read_file)
+
+        # constraints
+        # battery either charge or discharge constraint
+        def battery_charge_constraint(model, t):
+            return model.power_bat_in[t] <= model.power_bat_milp[t] * 1000000
+
+        model.battery_charge_constraint = pyo.Constraint(model.t, rule=battery_charge_constraint)
+
+        def battery_discharge_constraint(model, t):
+            return model.power_bat_out[t] <= (1 - model.power_bat_milp[t]) * 1000000
+
+        model.battery_discharge_constraint = pyo.Constraint(model.t, rule=battery_discharge_constraint)
+
+        # max pv power constraint
+        def pv_max_power_constraint(model, t):
+            return model.power_pv[t] == dict_power_pv[t]
+
+        model.pv_max_power_constraint = pyo.Constraint(model.t, rule=pv_max_power_constraint)
+
+        # battery charge only from pv constraint
+        def battery_charging_pv_only_constraint(model, t):
+            return model.power_bat_in[t] <= dict_power_pv[t]
+
+        model.battery_charging_pv_only_constraint = pyo.Constraint(model.t, rule=battery_charging_pv_only_constraint)
+
+        # initial battery soc constraint
+        def init_soc_battery_constraint(model):
+            return soc_bat_init - (0.25 * model.power_bat_out[self.ts_delivery_current] / eta_bat) + \
+                   (0.25 * model.power_bat_in[self.ts_delivery_current] * eta_bat) == model.soc_bat[self.ts_delivery_current]
+
+        model.init_soc_battery_constraint = pyo.Constraint(rule=init_soc_battery_constraint)
+
+        # soc balance constraint
+        def soc_battery_constraint(model, t):
+            return model.soc_bat[t - int(900)] - (0.25 * model.power_bat_out[t] / eta_bat) + \
+                   (0.25 * model.power_bat_in[t] * eta_bat) == model.soc_bat[t]
+
+        model.soc_battery_constraint = pyo.Constraint(model.t_restricted, rule=soc_battery_constraint)
+
+        # battery ramping constraint
+        def battery_ramping_lower_constraint(model, t):
+            return -0.1 * bat_power <= ((model.power_bat_out[t] - model.power_bat_in[t])
+                                                           - (model.power_bat_out[t - int(900)] -
+                                                              model.power_bat_in[t - int(900)]))
+
+        model.battery_ramping_lower_constraint = pyo.Constraint(model.t_restricted,
+                                                                rule=battery_ramping_lower_constraint)
+
+        def battery_ramping_upper_constraint(model, t):
+            return ((model.power_bat_out[t] - model.power_bat_in[t]) -
+                    (model.power_bat_out[t - int(900)] - model.power_bat_in[t - int(900)])) <= 0.1 * bat_power
+        model.battery_ramping_upper_constraint = pyo.Constraint(model.t_restricted,
+                                                                rule=battery_ramping_upper_constraint)
+
+        # ******************************
+        # energy balance pos constraint
+        def energy_balance_constraint(model, t):
+            return model.power_pv[t] + model.power_bat_out[t] - model.power_bat_in[t] - dict_power_load[t] ==\
+                   model.power_grid_out[t] - model.power_grid_in[t]
+
+        model.energy_balance_constraint = pyo.Constraint(model.t, rule=energy_balance_constraint)
+
+        # Define objective function
+        def objective_function(model):
+            cost = sum(model.power_grid_out[t] * (dict_price[t] + dict_levi_pos[t])
+                       - model.power_grid_in[t] * (dict_price[t] + dict_levi_neg[t]) for t in model.t)
+            objective_expression = cost
+            return objective_expression
+
+        # Solve model
+        model.objective = pyo.Objective(rule=objective_function, sense=pyo.maximize)  # minimize cost
+
+        instance = model.create_instance()
+        opt = pyo.SolverFactory(self.config_dict["solver"])
+        opt.solve(instance, tee=False)
+
+        for t in timesteps:
+            self.mpc_table.loc[t, f'power_{self._get_list_plants(plant_type="bat")[0]}'] =\
+                instance.power_bat_out[t].value - instance.power_bat_in[t].value
+            self.mpc_table.loc[t, f'soc_{self._get_list_plants(plant_type="bat")[0]}'] = instance.soc_bat[t].value
+            self.mpc_table.loc[t, f"power_out_{self.config_dict['id_meter_grid']}"] = instance.power_grid_out[t].value
+            self.mpc_table.loc[t, f"power_in_{self.config_dict['id_meter_grid']}"] = instance.power_grid_in[t].value
+            self.mpc_table.loc[t, f"power_{self.config_dict['id_meter_grid']}"] = instance.power_grid_out[t].value -\
+                                                                                  instance.power_grid_in[t].value
+
+        self.mpc_table[f'power_{self._get_list_plants(plant_type=["pv"])[0]}'] = np.array(dict_power_pv.values())
+
+        self.mpc_table = self.mpc_table[self.mpc_table.index.isin(timesteps)]
+        if self.save_output_result:
+            self.mpc_table.to_csv(os.path.join(self.path_out, f'mpc_qtl_{self.count}.csv'))
+        ft.write_dataframe(self.mpc_table, f"{self.path}/controller_mpc.ft")
+
+    def market_agent_qtl(self, db_obj, clear_positions=False):
+
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["mpc_horizon"]), 900)
+
+        df_potential_bids = ft.read_dataframe(f"{self.path}/controller_mpc.ft")
+        df_potential_bids = df_potential_bids[df_potential_bids.index.isin(timesteps)]
+
+        df_potential_bids['price_linear_desc'] = np.linspace(start=0.1, stop=0.01, num=len(df_potential_bids))
+
+        df_potential_bids[f"power_{self.config_dict['id_meter_grid']}_quantiles"] = df_potential_bids.apply(
+            lambda x: list(np.round(np.array(x[f"power_{self.config_dict['id_meter_grid']}"])
+                                    * self.base_quantiles +
+                                    np.array(x[f'power_{self._get_list_plants(plant_type=["pv"])[0]}_quantiles'])
+                                    * (1 - self.base_quantiles), 0)), axis=1)
+
+        if self.save_output_result:
+            df_potential_bids.to_csv(os.path.join(self.path_out, f'mpc_after_qtl_{self.count}.csv'))
+        ft.write_dataframe(df_potential_bids.reset_index(), f"{self.path}/controller_mpc.ft")
+
+        df_potential_bids = df_potential_bids.explode([f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                                                       'price_quantiles', 'position_number'])
+        df_potential_bids = pd.DataFrame(
+            df_potential_bids[[f"power_{self.config_dict['id_meter_grid']}_quantiles",
+                               'price_quantiles', 'position_number', 'price_linear_desc']])
+        df_potential_bids.rename(columns={f"power_{self.config_dict['id_meter_grid']}_quantiles": "net_bids",
+                                          "price_quantiles": "price"}, inplace=True)
+
+        df_potential_bids['net_bids'] = df_potential_bids['net_bids'].fillna(0)
+        df_potential_bids['net_bids'] /= 4
+        df_potential_bids = df_potential_bids.astype({'price': 'float', 'net_bids': 'int', 'position_number': 'int',
+                                                      'price_linear_desc': 'float'})
+        df_potential_bids = df_potential_bids.set_index(['position_number'], append=True)
+
+        ts = np.unique(np.array(df_potential_bids.index.get_level_values(level='timestamp')))
+        price = np.linspace(start=0.01, stop=0.1, num=len(ts))
+        df_potential_bids_temp = pd.DataFrame({'price': price, 'timestamp': ts}).set_index('timestamp')
+
+        position_number = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])
+        df_potential_bids_temp['position_number'] = np.tile(position_number[:int(self.base_quantiles.sum())],
+                                             (len(df_potential_bids_temp), 1)).tolist()
+        df_potential_bids_temp = df_potential_bids_temp.explode(['position_number']).set_index('position_number',
+                                                                                               append=True)
+        df_potential_bids['price_linear'] = df_potential_bids.index.map(df_potential_bids_temp['price'])
+        df_potential_bids['price'] = df_potential_bids['price_linear'].fillna(df_potential_bids['price'])
+
+        df_potential_bids_temp = pd.DataFrame(df_potential_bids['net_bids'], columns=['net_bids'])
+        df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids']
+
+        # matched bids
+        if not self.matched_bids.empty:
+            df_matched_bids = self.matched_bids
+            df_matched_bids['position_number'] = np.where(df_matched_bids['id_user_bid'] == self.config_dict["id_user"],
+                                                          df_matched_bids['number_position_bid'],
+                                                          df_matched_bids['number_position_offer'])
+            df_matched_bids = df_matched_bids.groupby(by=['ts_delivery',
+                                                          'position_number']).agg({'net_bids': 'sum'}).reset_index()
+            df_matched_bids.rename(columns={'ts_delivery': 'timestamp'}, inplace=True)
+            df_matched_bids = df_matched_bids.sort_values(by=['timestamp', 'position_number'],
+                                                          ascending=[True, True]).set_index('timestamp')
+            df_matched_bids = df_matched_bids[df_matched_bids.index.isin(timesteps)]
+            df_matched_bids = df_matched_bids.astype({'position_number': 'int', 'net_bids': 'int'})
+            df_matched_bids = df_matched_bids.set_index('position_number', append=True)
+            df_matched_bids = df_matched_bids[df_matched_bids.index.isin(df_potential_bids_temp.index)]
+
+            df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids'] - df_matched_bids['net_bids']
+            df_potential_bids_temp['net_bids_res'] = df_potential_bids_temp['net_bids_res'].fillna(
+                df_potential_bids_temp['net_bids'])
+
+        df_potential_bids_temp = df_potential_bids_temp.fillna(0).round(0).astype({'net_bids_res': 'int'})
+        df_potential_bids_temp = df_potential_bids_temp[df_potential_bids_temp['net_bids_res'] != 0]
+
+        df_positions = pd.DataFrame(columns=[db_obj.db_param.ID_USER, db_obj.db_param.QTY_ENERGY,
+                                             db_obj.db_param.PRICE_ENERGY, db_obj.db_param.QUALITY_ENERGY,
+                                             db_obj.db_param.PREMIUM_PREFERENCE_QUALITY, db_obj.db_param.TYPE_POSITION,
+                                             db_obj.db_param.NUMBER_POSITION, db_obj.db_param.STATUS_POSITION,
+                                             db_obj.db_param.T_SUBMISSION, db_obj.db_param.TS_DELIVERY,
+                                             'price_linear_desc'],
+                                    index=df_potential_bids_temp.index)
+        euro_kwh_to_sigma_wh = db_obj.db_param.EURO_TO_SIGMA / 1000
+
+        has_renewable = np.zeros(len(df_positions), dtype=bool)
+        has_non_ren = np.zeros(len(df_positions), dtype=bool)
+        for plant in self._get_list_plants("pv") + self._get_list_plants("fixedgen"):
+            if self.plant_dict[plant]["quality"] in ["green_local"]:
+                has_renewable = np.ones(len(df_positions), dtype=bool)
+            if self.plant_dict[plant]["quality"] in ["local"]:
+                has_non_ren = np.ones(len(df_positions), dtype=bool)
+
+        df_positions[db_obj.db_param.ID_USER] = self.config_dict['id_market_agent']
+
+        df_positions[db_obj.db_param.NUMBER_POSITION] = df_positions.index.get_level_values(level='position_number')
+
+        df_positions[db_obj.db_param.QTY_ENERGY] = df_potential_bids_temp['net_bids_res']
+
+        df_positions[db_obj.db_param.QTY_ENERGY] = np.where((~df_positions[db_obj.db_param.NUMBER_POSITION].isin([0]))
+                                                            & (df_positions[db_obj.db_param.QTY_ENERGY] < 0),
+                                                            0, df_positions[db_obj.db_param.QTY_ENERGY].abs())
+
+        df_positions[db_obj.db_param.TYPE_POSITION] = np.where(df_potential_bids_temp['net_bids_res'] > 0, "offer", "bid")
+        df_positions[db_obj.db_param.STATUS_POSITION] = 0
+        df_positions[db_obj.db_param.QUALITY_ENERGY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, self.config_dict["ma_preference_quality"],
+            np.where(df_potential_bids_temp['net_bids_res'] > 0 & has_non_ren, "local",
+                     np.where(df_potential_bids_temp['net_bids_res'] > 0 & has_renewable, 'green_local', "na")))
+        df_positions[db_obj.db_param.PREMIUM_PREFERENCE_QUALITY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, self.config_dict["ma_premium_preference_quality"], 0)
+        df_positions[db_obj.db_param.T_SUBMISSION] = self.t_now
+        df_positions[db_obj.db_param.TS_DELIVERY] = df_positions.index.get_level_values(level='timestamp')
+
+        df_positions[db_obj.db_param.PRICE_ENERGY].fillna(df_potential_bids['price'], inplace=True)
+        df_positions['price_linear_desc'].fillna(df_potential_bids['price_linear_desc'], inplace=True)
+        df_positions[[db_obj.db_param.PRICE_ENERGY, 'price_linear_desc']] = df_positions[[db_obj.db_param.PRICE_ENERGY,
+                                                                                          'price_linear_desc']].round(2)
+        df_positions[db_obj.db_param.PRICE_ENERGY] = np.where(
+            df_potential_bids_temp['net_bids_res'] < 0, df_positions['price_linear_desc'] * euro_kwh_to_sigma_wh,
+            df_positions[db_obj.db_param.PRICE_ENERGY] * euro_kwh_to_sigma_wh)
+        df_positions = df_positions.drop('price_linear_desc', axis=1)
+        df_positions = df_positions[df_positions[db_obj.db_param.QTY_ENERGY] != 0]
+
+        if clear_positions:
+            db_obj.clear_positions(id_user=self.config_dict['id_market_agent'])
+        if not df_positions.empty:
+            if self.save_output_result:
+                df_positions.to_csv(os.path.join(self.path_out, f'positions_qtl_{self.count}.csv'))
+            db_obj.post_positions(df_positions, t_override=self.t_now)
+
+    def plot_graph_before(self):
+
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["ma_horizon"]), 900)
+
+        plt.style.use("seaborn-ticks")
+        df_mpc = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index("timestamp")
+        df_mpc = df_mpc[df_mpc.index.isin(timesteps)].reset_index()
+
+        df_mpc["matched_bid_pos"] = df_mpc['matched_bid_quantile'].apply(lambda x: np.sum(np.array(x).clip(min=0)))
+        df_mpc["matched_bid_neg"] = df_mpc['matched_bid_quantile'].apply(lambda x: np.sum(np.array(x).clip(max=0)))
+
+        df_mpc = df_mpc.fillna(0)
+        df_mpc['grid_meter_pos'] = df_mpc[f"power_{self.config_dict['id_meter_grid']}_quantiles"].apply(lambda x: np.sum(np.array(x).clip(min=0)))
+        df_mpc['grid_meter_neg'] = df_mpc[f"power_{self.config_dict['id_meter_grid']}_quantiles"].apply(lambda x: np.sum(np.array(x).clip(max=0)))
+
+        df_mpc["bat_out_grid"] = df_mpc.apply(lambda x: np.sum(
+            x[f"power_{self._get_list_plants(plant_type='bat')[0]}_out_{self.config_dict['id_meter_grid']}_quantiles"])
+        if x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] > 0 else 0, axis=1)
+
+        pv_array = np.stack(df_mpc[f"power_{self._get_list_plants(plant_type=['pv'])[0]}"].values).T
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(20, 15), gridspec_kw={'height_ratios': [3, 1]})
+
+        colors = sns.color_palette("inferno_r", 9, as_cmap=False, desat=0.8)
+        colors.append(sns.color_palette("Blues_r", 1, as_cmap=False)[0])
+        labels = ['pv quantile 1', 'pv quantile 2', 'pv quantile 3', 'pv quantile 4', 'pv quantile 5',
+                  'pv quantile 6', 'pv quantile 7', 'pv quantile 8', 'pv quantile 9', 'battery discharge']
+
+        colors_neg = sns.color_palette("Greens", 2, as_cmap=False, desat=0.8)
+        labels_neg = ['household load', 'battery charge']
+
+        graph_1 = ax1.stackplot(df_mpc['timestamp'], pv_array, df_mpc["bat_out_grid"], step="post", colors=colors,
+                                labels=labels)
+        graph_2 = ax1.stackplot(df_mpc['timestamp'], -df_mpc[f'power_{self._get_list_plants(plant_type="hh")[0]}'],
+                                np.where(df_mpc[f'power_{self._get_list_plants(plant_type="bat")[0]}'] < 0,
+                                         df_mpc[f'power_{self._get_list_plants(plant_type="bat")[0]}'], 0),
+                                step="post", colors=colors_neg, labels=labels_neg)
+
+        graph_3 = ax1.plot(df_mpc['timestamp'], df_mpc['grid_meter_pos'], color='black', drawstyle="steps-post",
+                           label='grid meter pos')
+        graph_4 = ax1.plot(df_mpc['timestamp'], df_mpc["grid_meter_neg"], color='black', drawstyle="steps-post",
+                           linestyle='dashed', label='grid meter neg')
+        graph_5 = ax1.plot(df_mpc['timestamp'], df_mpc['matched_bid_pos'], color='cyan', drawstyle="steps-post",
+                           label='matched bids pos')
+        graph_6 = ax1.plot(df_mpc['timestamp'], df_mpc["matched_bid_neg"], color='cyan', drawstyle="steps-post",
+                           linestyle='dashed', label='matched bids neg')
+
+        ax3 = ax1.twinx()
+        graph_7 = ax3.plot(df_mpc['timestamp'], df_mpc["price_norm"], color='lightcoral', drawstyle="steps-post",
+                           label='price', alpha=0.5)
+        ax2.fill_between(df_mpc['timestamp'], df_mpc[f'soc_{self._get_list_plants(plant_type="bat")[0]}'],
+                         color='steelblue', step='post', alpha=0.5)
+        graph_8 = ax2.plot(df_mpc['timestamp'], df_mpc[f'soc_{self._get_list_plants(plant_type="bat")[0]}'],
+                           color='steelblue', drawstyle="steps-post", label='battery soc')
+
+        graph = graph_1 + graph_2 + graph_3 + graph_4 + graph_5 + graph_6 + graph_7 + graph_8
+        labs = [l.get_label() for l in graph]
+        ax1.legend(graph, labs, loc="upper center", ncol=6)
+        ax1.grid()
+        ax2.set_xlabel("Timestamp")
+        ax1.set_ylabel(r"Power in W")
+        ax2.set_ylabel(r"SOC in Wh")
+        ax3.set_ylabel(r"Price")
+        ax1.set_ylim(-int(self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["power"]),
+                     int(self.plant_dict[self._get_list_plants(plant_type="pv")[0]]["power"]*2))
+        ax2.set_ylim(0, int(self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["capacity"]))
+        ax3.set_ylim(-1, 2)
+
+        if self.save_output_result:
+            plt.savefig(os.path.join(self.path_plot, f'{self.count}_plot_before.png'), bbox_inches='tight')
+        plt.close(fig)
+        # plt.show()
+
+    def plot_graph_after(self):
+
+        timesteps = range(int(self.ts_delivery_current),
+                          int(self.ts_delivery_current + 900 * self.config_dict["ma_horizon"]), 900)
+
+        # matched bids
+        df_matched_bids = self.matched_bids
+        if self.save_output_result:
+            df_matched_bids.to_csv(os.path.join(self.path_out, f'bids_cleared_first_{self.count}.csv'))
+        df_matched_bids['position_number'] = np.where(df_matched_bids['id_user_bid'] == self.config_dict["id_user"],
+                                                      df_matched_bids['number_position_bid'],
+                                                      df_matched_bids['number_position_offer'])
+
+        if df_matched_bids.empty:
+            df_matched_bids = pd.DataFrame(df_matched_bids, index=self.mpc_table.index)
+            df_matched_bids['ts_delivery'] = df_matched_bids.index
+            df_matched_bids = df_matched_bids.fillna(0)
+            df_matched_bids['net_bids'] = 0
+        df_matched_bids = df_matched_bids.groupby(by=['ts_delivery',
+                                                      'position_number']).agg({'net_bids': 'sum'}).reset_index()
+        df_matched_bids.rename(columns={'ts_delivery': 'timestamp'}, inplace=True)
+        df_matched_bids = df_matched_bids.sort_values(by=['timestamp', 'position_number'],
+                                                      ascending=[True, True]).set_index('timestamp')
+        df_matched_bids = df_matched_bids[df_matched_bids.index.isin(timesteps)]
+        df_matched_bids['net_bids'] *= 4
+        df_matched_bids = df_matched_bids.astype({'position_number': 'int', 'net_bids': 'int'})
+        # df_matched_bids.to_csv(os.path.join(self.path_out, f'bids_cleared_sec_{self.count}.csv'))
+
+        plt.style.use("seaborn-ticks")
+        df_mpc = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index("timestamp")
+        df_mpc = df_mpc[df_mpc.index.isin(timesteps)]
+
+        if not df_matched_bids.empty:
+            df_mpc["matched_bid_quantile"] = df_matched_bids.groupby(df_matched_bids.index).apply(
+                lambda x: list(dict(dict.fromkeys(map(str, range(9)), 0), **dict(zip(x['position_number'].astype(str),
+                                                                                     x['net_bids']))).values()))
+            df_mpc['matched_bid_quantile'] = df_mpc['matched_bid_quantile'].fillna(
+                df_mpc['zero_quantile'])
+        else:
+            df_mpc["matched_bid_quantile"] = df_mpc['zero_quantile']
+
+        df_mpc = df_mpc.reset_index()
+        # df_mpc.to_csv(os.path.join(self.path_out, f'bids_cleared_third_{self.count}.csv'))
+
+        df_mpc["matched_bid_pos"] = df_mpc['matched_bid_quantile'].apply(lambda x: np.sum(np.array(x).clip(min=0)))
+        df_mpc["matched_bid_neg"] = df_mpc['matched_bid_quantile'].apply(lambda x: np.sum(np.array(x).clip(max=0)))
+
+        df_mpc = df_mpc.fillna(0)
+        df_mpc['grid_meter_pos'] = df_mpc[f"power_{self.config_dict['id_meter_grid']}_quantiles"].apply(lambda x: np.sum(np.array(x).clip(min=0)))
+        df_mpc['grid_meter_neg'] = df_mpc[f"power_{self.config_dict['id_meter_grid']}_quantiles"].apply(lambda x: np.sum(np.array(x).clip(max=0)))
+
+        df_mpc["bat_out_grid"] = df_mpc.apply(lambda x: np.sum(
+            x[f"power_{self._get_list_plants(plant_type='bat')[0]}_out_{self.config_dict['id_meter_grid']}_quantiles"])
+        if x[f'power_{self._get_list_plants(plant_type="bat")[0]}'] > 0 else 0, axis=1)
+
+        pv_array = np.stack(df_mpc[f"power_{self._get_list_plants(plant_type=['pv'])[0]}"].values).T
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(20, 15), gridspec_kw={'height_ratios': [3, 1]})
+
+        colors = sns.color_palette("inferno_r", 9, as_cmap=False, desat=0.8)
+        colors.append(sns.color_palette("Blues_r", 1, as_cmap=False)[0])
+        labels = ['pv quantile 1', 'pv quantile 2', 'pv quantile 3', 'pv quantile 4', 'pv quantile 5',
+                  'pv quantile 6', 'pv quantile 7', 'pv quantile 8', 'pv quantile 9', 'battery discharge']
+
+        colors_neg = sns.color_palette("Greens", 2, as_cmap=False, desat=0.8)
+        labels_neg = ['household load', 'battery charge']
+
+        graph_1 = ax1.stackplot(df_mpc['timestamp'], pv_array, df_mpc["bat_out_grid"], step="post", colors=colors,
+                                labels=labels)
+        graph_2 = ax1.stackplot(df_mpc['timestamp'], -df_mpc[f'power_{self._get_list_plants(plant_type="hh")[0]}'],
+                                np.where(df_mpc[f'power_{self._get_list_plants(plant_type="bat")[0]}'] < 0,
+                                         df_mpc[f'power_{self._get_list_plants(plant_type="bat")[0]}'], 0),
+                                step="post", colors=colors_neg, labels=labels_neg)
+
+        graph_3 = ax1.plot(df_mpc['timestamp'], df_mpc['grid_meter_pos'], color='black', drawstyle="steps-post",
+                           label='grid meter pos')
+        graph_4 = ax1.plot(df_mpc['timestamp'], df_mpc["grid_meter_neg"], color='black', drawstyle="steps-post",
+                           linestyle='dashed', label='grid meter neg')
+        graph_5 = ax1.plot(df_mpc['timestamp'], df_mpc['matched_bid_pos'], color='cyan', drawstyle="steps-post",
+                           label='matched bids pos')
+        graph_6 = ax1.plot(df_mpc['timestamp'], df_mpc["matched_bid_neg"], color='cyan', drawstyle="steps-post",
+                           linestyle='dashed', label='matched bids neg')
+
+        ax3 = ax1.twinx()
+        graph_7 = ax3.plot(df_mpc['timestamp'], df_mpc["price_norm"], color='lightcoral', drawstyle="steps-post",
+                           label='price', alpha=0.5)
+        ax2.fill_between(df_mpc['timestamp'], df_mpc[f'soc_{self._get_list_plants(plant_type="bat")[0]}'],
+                         color='steelblue', step='post', alpha=0.5)
+        graph_8 = ax2.plot(df_mpc['timestamp'], df_mpc[f'soc_{self._get_list_plants(plant_type="bat")[0]}'],
+                           color='steelblue', drawstyle="steps-post", label='battery soc')
+
+        graph = graph_1 + graph_2 + graph_3 + graph_4 + graph_5 + graph_6 + graph_7 + graph_8
+        labs = [l.get_label() for l in graph]
+        ax1.legend(graph, labs, loc="upper center", ncol=6)
+        ax1.grid()
+        ax2.set_xlabel("Timestamp")
+        ax1.set_ylabel(r"Power in W")
+        ax2.set_ylabel(r"SOC in Wh")
+        ax3.set_ylabel(r"Price")
+        ax1.set_ylim(-int(self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["power"]),
+                     int(self.plant_dict[self._get_list_plants(plant_type="pv")[0]]["power"]*2))
+        ax2.set_ylim(0, int(self.plant_dict[self._get_list_plants(plant_type="bat")[0]]["capacity"]))
+        ax3.set_ylim(-1, 2)
+
+        if self.save_output_result:
+            plt.savefig(os.path.join(self.path_plot, f'{self.count}_plot_after.png'), bbox_inches='tight')
+        plt.close(fig)
+        # plt.show()
+
     def controller_model_predictive(self, controller=None):
         """Execute the model predictive controller_real_time for the market participant given the predicted
         generation, consumption, and market prices for a configurable time horizon.
@@ -1310,7 +2694,7 @@ class Prosumer:
         participant in question.
 
         :param db_obj: Database instance, pass the database connection instance to this method
-        :param market_type: Type of market (ex-post or ex-ante)
+        :param market_type:
         :return: none
         """
         if market_type == "ex_ante":
@@ -1320,40 +2704,30 @@ class Prosumer:
                 ts_delivery_last=self.ts_delivery_current + self.config_dict["ma_horizon"] * 900
             )
             self.update_price_history(db_obj, market_type="ex_ante")
-        elif market_type == "ex-post":
+        else:
             self.matched_bids, self.matched_bids_by_timestep = None, None
             self.update_price_history(db_obj,
                                       market_type="ex_post")
-        else:
-            raise Warning(f"Market type {market_type} unknown.")
 
-    def update_user_preferences(self, db_obj) -> None:
-        """Updates the user preference of the given user ID and saves them to the user's account configuration
+    def update_user_preferences(self, db_obj):
+        user_info = db_obj.get_info_user(self.config_dict["id_user"])
 
-        :param db_obj: database object containing the current user preferences
-
-        :return: None
-        """
-
-        # Get user info from database and convert it to panda series
-        user_info = db_obj.get_info_user(self.config_dict["id_user"]).squeeze()
-
-        # Values to be updated with each time step
-        # Set positions boundaries (currently set by the retail prices of that time step)
         self.config_dict["max_bid"] = \
-            self.retail_prices.at[self.ts_delivery_current, "price_sell"]
+            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_BID_MAX]) \
+            / db_obj.db_param.EURO_TO_SIGMA * 1000
         self.config_dict["min_offer"] = \
-            self.retail_prices.at[self.ts_delivery_current, "price_buy"]
-
-        # Values that stay the same and are simply saved again
-        self.config_dict["ma_strategy"] = user_info[db_obj.db_param.STRATEGY_MARKET_AGENT]
-        self.config_dict["ma_horizon"] = int(user_info[db_obj.db_param.HORIZON_TRADING])
-        self.config_dict["ma_preference_quality"] = user_info[db_obj.db_param.PREFERENCE_QUALITY]
-        self.config_dict["id_market_agent"] = user_info[db_obj.db_param.ID_MARKET_AGENT]
+            float(user_info.loc[0, db_obj.db_param.PRICE_ENERGY_OFFER_MIN]) \
+            / db_obj.db_param.EURO_TO_SIGMA * 1000
+        self.config_dict["ma_strategy"] = \
+            user_info.loc[0, db_obj.db_param.STRATEGY_MARKET_AGENT]
+        self.config_dict["ma_horizon"] = \
+            int(user_info.loc[0, db_obj.db_param.HORIZON_TRADING])
+        self.config_dict["ma_preference_quality"] = \
+            user_info.loc[0, db_obj.db_param.PREFERENCE_QUALITY]
+        self.config_dict["id_market_agent"] = \
+            user_info.loc[0, db_obj.db_param.ID_MARKET_AGENT]
         self.config_dict["ma_premium_preference_quality"] = \
-            float(user_info[db_obj.db_param.PREMIUM_PREFERENCE_QUALITY])
-
-        # Save updated values to account config
+            float(user_info.loc[0, db_obj.db_param.PREMIUM_PREFERENCE_QUALITY])
         with open(f"{self.path}/config_account.json", "w") as write_file:
             json.dump(self.config_dict, write_file)
 
@@ -1362,9 +2736,7 @@ class Prosumer:
         file. In the Strommunity setup, this method must only be called after a re-optimization. In the DSA setup, this
         method should be called after each market clearing, immediately before the beginning of a new market interval.
 
-        :param market_type: Type of market (ex-post or ex-ante)
-
-        :return: none
+        :return: None
         """
         df_target_grid_power = ft.read_dataframe(f"{self.path}/controller_mpc.ft").set_index("timestamp")
 
