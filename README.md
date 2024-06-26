@@ -7,6 +7,8 @@ An open-source tool for the agent-based development and testing of local energy 
 
 Link to our full [documentation](http://lemlab.readthedocs.io).
 
+NOTE: lemlab is not being actively developed any longer. Its successor HAMLET can be found [here](https://github.com/tum-ens/HAMLET).
+
 ## Description
 
 In order to further enable the integration of ever-increasing shares of decentralized electricity generation
